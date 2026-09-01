@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -57,6 +58,32 @@ func Warnf(format string, a ...any) { fmt.Printf(Yellow+"[!] "+Reset+format+"\n"
 func Errf(format string, a ...any)  { fmt.Fprintf(os.Stderr, Red+"[x] "+Reset+format+"\n", a...) }
 func Actionf(format string, a ...any) string {
 	return Yellow + fmt.Sprintf(format, a...) + Reset
+}
+
+// ansiRE matches CSI escape sequences (color codes, cursor movement, screen clears).
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// StripANSI removes ANSI escape sequences from s. Used to compare rendered
+// output against golden files without color noise.
+func StripANSI(s string) string {
+	return ansiRE.ReplaceAllString(s, "")
+}
+
+// Truncate shortens s to at most n runes, appending a single-character ellipsis
+// when it has to cut. It is rune-aware, so multibyte text is never split
+// mid-character. n <= 0 yields an empty string; n == 1 yields the first rune.
+func Truncate(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n == 1 {
+		return string(r[:1])
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // HumanBytes renders a byte count as a human-readable string.

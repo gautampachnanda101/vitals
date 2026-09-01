@@ -274,8 +274,8 @@ func emit(s Snapshot, opts Options) error {
 	ui.Rule()
 	for _, p := range s.Processes {
 		fmt.Printf("  %-7d %-12s %-7.1f %-7.1f %-11s %-4d %s\n",
-			p.PID, truncate(p.User, 12), p.CPUPct, p.MemPct,
-			ui.HumanBytes(int64(p.RSSBytes)), p.Threads, truncate(p.Name, 40))
+			p.PID, ui.Truncate(p.User, 12), p.CPUPct, p.MemPct,
+			ui.HumanBytes(int64(p.RSSBytes)), p.Threads, ui.Truncate(p.Name, 40))
 	}
 	return nil
 }
@@ -298,14 +298,4 @@ func bar(pct float64) string {
 	}
 	return fmt.Sprintf("%s%s%s%s %5.1f%%",
 		color, strings.Repeat("█", filled), strings.Repeat("░", width-filled), ui.Reset, pct)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	if n <= 1 {
-		return s[:n]
-	}
-	return s[:n-1] + "…"
 }
