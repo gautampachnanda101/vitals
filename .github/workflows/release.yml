@@ -1,0 +1,105 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to release (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "bad tag $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "bare=${version#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          bare="${{ steps.v.outputs.bare }}"
+          ldflags="-s -w -X main.version=${bare}"
+          build() {
+            local goos="$1" goarch="$2" oslabel="$3" archlabel="$4" ext="$5"
+            local bin="vitals"; [ "$goos" = windows ] && bin="vitals.exe"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$ldflags" -o "dist/$bin" .
+            local name="vitals_${oslabel}_${archlabel}.${ext}"
+            if [ "$ext" = zip ]; then (cd dist && zip -q "$name" "$bin"); else tar -C dist -czf "dist/$name" "$bin"; fi
+            rm -f "dist/$bin"
+          }
+          build darwin  amd64 Darwin  x86_64 tar.gz
+          build darwin  arm64 Darwin  arm64  tar.gz
+          build linux   amd64 Linux   x86_64 tar.gz
+          build linux   arm64 Linux   arm64  tar.gz
+          build windows amd64 Windows x86_64 zip
+          build windows arm64 Windows arm64  zip
+          cd dist && sha256sum vitals_* > checksums.txt && cat checksums.txt
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.v.outputs.version }}"
+          if gh release view "$version" >/dev/null 2>&1; then
+            gh release upload "$version" dist/vitals_* dist/checksums.txt --clobber
+          else
+            gh release create "$version" --title "vitals $version" --generate-notes dist/vitals_* dist/checksums.txt
+          fi
+
+      - name: Update Homebrew tap (only if a tap token is configured)
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAP: gautampachnanda101/homebrew-tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_GITHUB_TOKEN not set — skipping tap update."
+            exit 0
+          fi
+          version="${{ steps.v.outputs.version }}"; bare="${{ steps.v.outputs.bare }}"
+          sha() { awk -v f="$1" '$2==f{print $1}' dist/checksums.txt; }
+          base="https://github.com/gautampachnanda101/vitals/releases/download/${version}"
+          tmp=$(mktemp -d); git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP}.git" "$tmp"
+          mkdir -p "$tmp/Formula"
+          sed -e "s|__VERSION__|${bare}|g" \
+              -e "s|__BASE__|${base}|g" \
+              -e "s|__SHA_DARWIN_X86_64__|$(sha vitals_Darwin_x86_64.tar.gz)|g" \
+              -e "s|__SHA_DARWIN_ARM64__|$(sha vitals_Darwin_arm64.tar.gz)|g" \
+              -e "s|__SHA_LINUX_X86_64__|$(sha vitals_Linux_x86_64.tar.gz)|g" \
+              -e "s|__SHA_LINUX_ARM64__|$(sha vitals_Linux_arm64.tar.gz)|g" \
+              packaging/homebrew/vitals.rb > "$tmp/Formula/vitals.rb"
+          cd "$tmp"
+          git config user.name "release-bot"; git config user.email "release-bot@users.noreply.github.com"
+          git add Formula/vitals.rb
+          git commit -m "vitals ${version}" && git push || echo "no formula change"

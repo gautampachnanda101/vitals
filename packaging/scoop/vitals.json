@@ -1,0 +1,40 @@
+{
+  "version": "0.0.0",
+  "description": "Local-first system diagnostics: names your bottleneck and the fix",
+  "homepage": "https://github.com/gautampachnanda101/vitals",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/gautampachnanda101/vitals/releases/download/v0.0.0/vitals_Windows_x86_64.zip",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bin": "vitals.exe"
+    },
+    "arm64": {
+      "url": "https://github.com/gautampachnanda101/vitals/releases/download/v0.0.0/vitals_Windows_arm64.zip",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bin": "vitals.exe"
+    }
+  },
+  "post_install": [
+    "Write-Host ''",
+    "Write-Host 'Get a verdict for this machine:  vitals doctor'",
+    "Write-Host 'Full guide:  vitals guide'",
+    "Write-Host ''"
+  ],
+  "checkver": {
+    "github": "https://github.com/gautampachnanda101/vitals"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/gautampachnanda101/vitals/releases/download/v$version/vitals_Windows_x86_64.zip"
+      },
+      "arm64": {
+        "url": "https://github.com/gautampachnanda101/vitals/releases/download/v$version/vitals_Windows_arm64.zip"
+      }
+    },
+    "hash": {
+      "url": "$url.sha256"
+    }
+  }
+}
