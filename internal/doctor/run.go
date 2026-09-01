@@ -34,28 +34,9 @@ func Run(opts RunOptions) int {
 	}
 
 	ui.Header("DOCTOR")
-	fmt.Printf("  %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("  %s\n\n", ui.Key(time.Now().Format("2006-01-02 15:04:05")))
 
-	findings := report.SortedBySeverity()
-	for i, f := range findings {
-		if i > 0 {
-			fmt.Println()
-		}
-		switch f.Severity {
-		case diag.Critical:
-			ui.Errf("%s", f.Title)
-		case diag.Warn:
-			ui.Warnf("%s", f.Title)
-		default:
-			ui.Okf("%s", f.Title)
-		}
-		if f.Detail != "" {
-			fmt.Printf("     %s\n", f.Detail)
-		}
-		for _, fix := range f.Fixes {
-			fmt.Printf("     %s %s\n", ui.Actionf("→"), fix)
-		}
-	}
+	printFindings(report.SortedBySeverity(), true)
 
 	fmt.Println()
 	switch report.Worst() {
@@ -67,6 +48,31 @@ func Run(opts RunOptions) int {
 		ui.Okf("verdict: healthy")
 	}
 	return report.ExitCode()
+}
+
+// printFindings renders a ranked finding list: a severity-coloured title, a
+// dim detail line, and yellow-arrowed fixes. spaced adds a blank line between
+// findings.
+func printFindings(findings []diag.Finding, spaced bool) {
+	for i, f := range findings {
+		if spaced && i > 0 {
+			fmt.Println()
+		}
+		switch f.Severity {
+		case diag.Critical:
+			ui.Errf("%s", f.Title)
+		case diag.Warn:
+			ui.Warnf("%s", f.Title)
+		default:
+			ui.Okf("%s", f.Title)
+		}
+		if f.Detail != "" {
+			fmt.Printf("     %s\n", ui.Key(f.Detail))
+		}
+		for _, fix := range f.Fixes {
+			fmt.Printf("     %s %s\n", ui.Actionf("→"), fix)
+		}
+	}
 }
 
 type JSONEnvelope struct {

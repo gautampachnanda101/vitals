@@ -31,21 +31,27 @@ func Run(asJSON bool) error {
 	for _, d := range devs {
 		fmt.Printf("\n%s[%d] %s%s  %s(%s)%s\n", ui.Bold, d.Index, d.Name, ui.Reset, ui.Dim, d.Vendor, ui.Reset)
 		if d.MemTotalB > 0 {
-			fmt.Printf("  VRAM        %s / %s  (%.0f%%)\n",
-				ui.HumanBytes(int64(d.MemUsedB)), ui.HumanBytes(int64(d.MemTotalB)), d.MemUsedPct())
+			p := d.MemUsedPct()
+			fmt.Printf("  %s %s / %s  (%s)\n", ui.Key("VRAM       "),
+				ui.HumanBytes(int64(d.MemUsedB)), ui.HumanBytes(int64(d.MemTotalB)),
+				ui.Grade(fmt.Sprintf("%.0f%%", p), p, 85, 95))
 		}
 		if d.UtilPct > 0 || d.TempC > 0 {
-			fmt.Printf("  Utilisation %.0f%%    Temp %.0f°C\n", d.UtilPct, d.TempC)
+			fmt.Printf("  %s %s    %s %s\n", ui.Key("Utilisation"),
+				ui.Emph(fmt.Sprintf("%.0f%%", d.UtilPct)),
+				ui.Key("Temp"), ui.Grade(fmt.Sprintf("%.0f°C", d.TempC), d.TempC, 80, 90))
 		}
 		if d.PowerLimitW > 0 {
-			fmt.Printf("  Power       %.0f W / %.0f W\n", d.PowerW, d.PowerLimitW)
+			pp := d.PowerW / d.PowerLimitW * 100
+			fmt.Printf("  %s %s / %.0f W\n", ui.Key("Power      "),
+				ui.Grade(fmt.Sprintf("%.0f W", d.PowerW), pp, 90, 99), d.PowerLimitW)
 		}
 		if d.ClockMaxMHz > 0 {
 			note := ""
 			if d.ClockMHz < 0.9*d.ClockMaxMHz && d.TempC >= 80 {
 				note = ui.Actionf("  ← throttling on heat")
 			}
-			fmt.Printf("  Clock       %.0f MHz / %.0f MHz%s\n", d.ClockMHz, d.ClockMaxMHz, note)
+			fmt.Printf("  %s %.0f MHz / %.0f MHz%s\n", ui.Key("Clock      "), d.ClockMHz, d.ClockMaxMHz, note)
 		}
 		if len(d.Processes) > 0 {
 			fmt.Printf("  %sProcesses holding VRAM%s\n", ui.Bold, ui.Reset)

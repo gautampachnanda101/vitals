@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"vitals/internal/diag"
 	"vitals/internal/ui"
 )
 
@@ -38,54 +37,59 @@ func RunFocus(resource string, opts RunOptions) int {
 		return 0
 	}
 	fmt.Println()
-	for _, f := range report.SortedBySeverity() {
-		switch f.Severity {
-		case diag.Critical:
-			ui.Errf("%s", f.Title)
-		case diag.Warn:
-			ui.Warnf("%s", f.Title)
-		default:
-			ui.Okf("%s", f.Title)
-		}
-		if f.Detail != "" {
-			fmt.Printf("     %s\n", f.Detail)
-		}
-		for _, fix := range f.Fixes {
-			fmt.Printf("     %s %s\n", ui.Actionf("→"), fix)
-		}
-	}
+	printFindings(report.SortedBySeverity(), false)
 	return report.ExitCode()
+}
+
+// pct formats and colour-grades a percentage where higher is worse.
+func pct(v, warn, crit float64) string {
+	return ui.Grade(fmt.Sprintf("%.0f%%", v), v, warn, crit)
+}
+
+func row(label, value string) {
+	fmt.Printf("  %s %s\n", ui.Key(fmt.Sprintf("%-10s", label)), value)
 }
 
 func focusDetail(resource string, s Snapshot) {
 	switch resource {
 	case "cpu":
-		fmt.Printf("  usage      %.0f%%   (user+sys)\n", s.CPU.UsedPct)
-		fmt.Printf("  io-wait    %.0f%%\n", s.CPU.IOWaitPct)
+		row("usage", pct(s.CPU.UsedPct, 70, 90)+ui.Key("  (user+sys)"))
+		row("io-wait", pct(s.CPU.IOWaitPct, 15, 30))
 		if s.CPU.StealPct > 0 {
-			fmt.Printf("  steal      %.0f%%\n", s.CPU.StealPct)
+			row("steal", pct(s.CPU.StealPct, 5, 15))
 		}
-		fmt.Printf("  load1      %.2f on %d cores\n", s.CPU.Load1, s.CPU.Cores)
+		loadTxt := fmt.Sprintf("%.2f on %d cores", s.CPU.Load1, s.CPU.Cores)
+		if s.CPU.Cores > 0 {
+			loadTxt = ui.Grade(loadTxt, s.CPU.Load1, float64(s.CPU.Cores), float64(2*s.CPU.Cores))
+		}
+		row("load1", loadTxt)
 		if s.CPU.FreqMHz > 0 {
-			fmt.Printf("  clock      %.0f MHz\n", s.CPU.FreqMHz)
+			row("clock", fmt.Sprintf("%.0f MHz", s.CPU.FreqMHz))
 		}
 		if s.Thermal.CPUTempC > 0 {
-			fmt.Printf("  package    %.0f°C%s\n", s.Thermal.CPUTempC, throttleNote(s.Thermal.Throttling))
+			row("package", ui.Grade(fmt.Sprintf("%.0f°C", s.Thermal.CPUTempC), s.Thermal.CPUTempC, 80, 92)+throttleNote(s.Thermal.Throttling))
 		}
 	case "mem", "memory":
-		fmt.Printf("  RAM used   %.0f%%\n", s.Memory.UsedPct)
-		fmt.Printf("  swap used  %.0f%%\n", s.Memory.SwapUsedPct)
-		fmt.Printf("  swap in    %s/s\n", ui.HumanBytes(int64(s.Memory.SwapInPerSec)))
-		fmt.Printf("  swap out   %s/s\n", ui.HumanBytes(int64(s.Memory.SwapOutPerSec)))
+		row("RAM used", pct(s.Memory.UsedPct, 75, 90))
+		row("swap used", pct(s.Memory.SwapUsedPct, 50, 80))
+		row("swap in", ui.HumanBytes(int64(s.Memory.SwapInPerSec))+"/s")
+		out := ui.HumanBytes(int64(s.Memory.SwapOutPerSec)) + "/s"
+		if s.Memory.SwapOutPerSec > 0 {
+			out = ui.Grade(out, 1, 0, 0) // any active swap-out is red
+		}
+		row("swap out", out)
 	case "disk":
-		fmt.Printf("  %-22s %8s %12s %7s %8s\n", "MOUNT", "USED", "FREE", "UTIL", "AWAIT")
+		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-22s %8s %12s %7s %8s", "MOUNT", "USED", "FREE", "UTIL", "AWAIT")))
 		for _, d := range s.Disks {
-			fmt.Printf("  %-22s %7.0f%% %12s %6.0f%% %6.0fms\n",
-				ui.Truncate(d.Mount, 22), d.UsedPct,
-				ui.HumanBytes(int64(d.FreeBytes)), d.UtilPct, d.AwaitMS)
+			fmt.Printf("  %-22s %8s %12s %7s %8s\n",
+				ui.Truncate(d.Mount, 22),
+				ui.Grade(fmt.Sprintf("%.0f%%", d.UsedPct), d.UsedPct, 85, 95),
+				ui.HumanBytes(int64(d.FreeBytes)),
+				ui.Grade(fmt.Sprintf("%.0f%%", d.UtilPct), d.UtilPct, 80, 95),
+				ui.Grade(fmt.Sprintf("%.0fms", d.AwaitMS), d.AwaitMS, 20, 50))
 		}
 	case "net", "network":
-		fmt.Printf("  %-12s %12s %12s\n", "IFACE", "RX/s", "TX/s")
+		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-12s %12s %12s", "IFACE", "RX/s", "TX/s")))
 		shown := 0
 		for _, n := range s.Net {
 			if n.RxBytesPerSec < 1 && n.TxBytesPerSec < 1 {
@@ -96,7 +100,7 @@ func focusDetail(resource string, s Snapshot) {
 			shown++
 		}
 		if shown == 0 {
-			fmt.Println("  (no interface is currently transferring data)")
+			fmt.Println(ui.Key("  (no interface is currently transferring data)"))
 		}
 	case "power", "battery":
 		p := s.Power
@@ -104,18 +108,18 @@ func focusDetail(resource string, s Snapshot) {
 		if p.OnBattery {
 			src = "battery"
 		}
-		fmt.Printf("  source     %s\n", src)
+		row("source", src)
 		if p.Percent > 0 {
-			fmt.Printf("  charge     %.0f%%\n", p.Percent)
+			row("charge", ui.GradeLow(fmt.Sprintf("%.0f%%", p.Percent), p.Percent, 20, 8))
 		}
 		if p.MinutesLeft > 0 {
-			fmt.Printf("  remaining  ~%d min\n", p.MinutesLeft)
+			row("remaining", fmt.Sprintf("~%d min", p.MinutesLeft))
 		}
 		if p.DesignCapacityF > 0 {
-			fmt.Printf("  health     %.0f%% of design capacity\n", p.DesignCapacityF*100)
+			row("health", ui.GradeLow(fmt.Sprintf("%.0f%% of design", p.DesignCapacityF*100), p.DesignCapacityF*100, 80, 60))
 		}
 		if p.Percent == 0 && !p.OnBattery {
-			fmt.Println("  (no battery detected)")
+			fmt.Println(ui.Key("  (no battery detected)"))
 		}
 	}
 }

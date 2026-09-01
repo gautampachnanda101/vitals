@@ -70,6 +70,45 @@ func Actionf(format string, a ...any) string {
 	return Yellow + fmt.Sprintf(format, a...) + Reset
 }
 
+// Key renders a field label (dim, so values stand out beside it).
+func Key(s string) string { return Dim + s + Reset }
+
+// Emph renders a value with bold emphasis.
+func Emph(s string) string { return Bold + s + Reset }
+
+// colorFor returns the ANSI colour for a value where higher means worse:
+// green below warn, yellow from warn, red from crit.
+func colorFor(v, warn, crit float64) string {
+	switch {
+	case v >= crit:
+		return Red
+	case v >= warn:
+		return Yellow
+	default:
+		return Green
+	}
+}
+
+// Grade wraps text in green / yellow / red according to where v sits relative
+// to the warn and crit thresholds (higher v = worse). Use it for percentages,
+// temperatures, latencies — anything with a "too high" direction.
+func Grade(text string, v, warn, crit float64) string {
+	return colorFor(v, warn, crit) + text + Reset
+}
+
+// GradeLow is Grade for values where lower means worse (free space, battery %,
+// headroom): green above warn, yellow at/below warn, red at/below crit.
+func GradeLow(text string, v, warn, crit float64) string {
+	c := Green
+	switch {
+	case v <= crit:
+		c = Red
+	case v <= warn:
+		c = Yellow
+	}
+	return c + text + Reset
+}
+
 // ansiRE matches CSI escape sequences (color codes, cursor movement, screen clears).
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 

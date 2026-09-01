@@ -336,11 +336,14 @@ func emit(s Snapshot, opts Options) error {
 	}
 
 	fmt.Printf("\n%sTop %d processes by %s%s\n", ui.Bold, len(s.Processes), strings.ToUpper(opts.SortBy), ui.Reset)
-	fmt.Printf("  %-7s %-12s %-7s %-7s %-11s %-4s %s\n", "PID", "USER", "%CPU", "%MEM", "RSS", "THR", "COMMAND")
+	fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-7s %-12s %-7s %-7s %-11s %-4s %s", "PID", "USER", "%CPU", "%MEM", "RSS", "THR", "COMMAND")))
 	ui.Rule()
 	for _, p := range s.Processes {
-		fmt.Printf("  %-7d %-12s %-7.1f %-7.1f %-11s %-4d %s\n",
-			p.PID, ui.Truncate(p.User, 12), p.CPUPct, p.MemPct,
+		// Pad inside the colour wrap so ANSI codes don't skew column widths.
+		cpu := ui.Grade(fmt.Sprintf("%-7.1f", p.CPUPct), p.CPUPct, 60, 100)
+		memc := ui.Grade(fmt.Sprintf("%-7.1f", p.MemPct), float64(p.MemPct), 10, 25)
+		fmt.Printf("  %-7d %-12s %s %s %-11s %-4d %s\n",
+			p.PID, ui.Truncate(p.User, 12), cpu, memc,
 			ui.HumanBytes(int64(p.RSSBytes)), p.Threads, ui.Truncate(p.Name, 40))
 	}
 	return nil

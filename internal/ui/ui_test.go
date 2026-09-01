@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHumanBytes(t *testing.T) {
 	cases := []struct {
@@ -85,6 +88,36 @@ func TestDisableColor(t *testing.T) {
 	}
 	if got := Actionf("x"); got != "x" {
 		t.Errorf("Actionf still wraps in color: %q", got)
+	}
+}
+
+func TestGrade(t *testing.T) {
+	// Colours differ by band; text is always preserved verbatim after StripANSI.
+	lo := Grade("40%", 40, 60, 85)
+	mid := Grade("70%", 70, 60, 85)
+	hi := Grade("90%", 90, 60, 85)
+	if StripANSI(lo) != "40%" || StripANSI(mid) != "70%" || StripANSI(hi) != "90%" {
+		t.Fatalf("Grade mangled the text: %q %q %q", StripANSI(lo), StripANSI(mid), StripANSI(hi))
+	}
+	if ColorEnabled() {
+		if lo == mid || mid == hi || lo == hi {
+			t.Errorf("Grade bands not distinct: %q %q %q", lo, mid, hi)
+		}
+		if !strings.Contains(lo, "32m") || !strings.Contains(mid, "33m") || !strings.Contains(hi, "31m") {
+			t.Errorf("Grade colours wrong: lo=%q mid=%q hi=%q", lo, mid, hi)
+		}
+	}
+}
+
+func TestGradeLow(t *testing.T) {
+	full := GradeLow("80%", 80, 20, 8)
+	low := GradeLow("15%", 15, 20, 8)
+	crit := GradeLow("5%", 5, 20, 8)
+	if StripANSI(full) != "80%" || StripANSI(low) != "15%" || StripANSI(crit) != "5%" {
+		t.Fatal("GradeLow mangled the text")
+	}
+	if ColorEnabled() && (full == low || low == crit) {
+		t.Errorf("GradeLow bands not distinct: %q %q %q", full, low, crit)
 	}
 }
 

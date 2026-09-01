@@ -28,10 +28,11 @@ func Run() error {
 		return fmt.Errorf("read virtual memory: %w", err)
 	}
 
-	fmt.Printf("\n  %-28s %12s\n", "Total physical RAM:", ui.HumanBytes(int64(vm.Total)))
-	fmt.Printf("  %-28s %12s  (%.1f%%)\n", "Used:", ui.HumanBytes(int64(vm.Used)), vm.UsedPercent)
-	fmt.Printf("  %-28s %12s\n", "Available:", ui.HumanBytes(int64(vm.Available)))
-	fmt.Printf("  %-28s %12s\n", "Free (unallocated):", ui.HumanBytes(int64(vm.Free)))
+	fmt.Printf("\n  %s %12s\n", ui.Key(fmt.Sprintf("%-28s", "Total physical RAM:")), ui.HumanBytes(int64(vm.Total)))
+	fmt.Printf("  %s %12s  (%s)\n", ui.Key(fmt.Sprintf("%-28s", "Used:")), ui.HumanBytes(int64(vm.Used)),
+		ui.Grade(fmt.Sprintf("%.1f%%", vm.UsedPercent), vm.UsedPercent, 75, 90))
+	fmt.Printf("  %s %12s\n", ui.Key(fmt.Sprintf("%-28s", "Available:")), ui.HumanBytes(int64(vm.Available)))
+	fmt.Printf("  %s %12s\n", ui.Key(fmt.Sprintf("%-28s", "Free (unallocated):")), ui.HumanBytes(int64(vm.Free)))
 
 	fmt.Printf("\n%sDetailed breakdown:%s\n", ui.Bold, ui.Reset)
 	printIf("Active", vm.Active)
@@ -47,8 +48,9 @@ func Run() error {
 	if err != nil {
 		ui.Warnf("swap stats unavailable: %v", err)
 	} else {
-		fmt.Printf("  %-28s %12s\n", "Swap total:", ui.HumanBytes(int64(sw.Total)))
-		fmt.Printf("  %-28s %12s  (%.1f%%)\n", "Swap used:", ui.HumanBytes(int64(sw.Used)), sw.UsedPercent)
+		fmt.Printf("  %s %12s\n", ui.Key(fmt.Sprintf("%-28s", "Swap total:")), ui.HumanBytes(int64(sw.Total)))
+		fmt.Printf("  %s %12s  (%s)\n", ui.Key(fmt.Sprintf("%-28s", "Swap used:")), ui.HumanBytes(int64(sw.Used)),
+			ui.Grade(fmt.Sprintf("%.1f%%", sw.UsedPercent), sw.UsedPercent, 50, 80))
 		if sw.Sin > 0 || sw.Sout > 0 {
 			fmt.Printf("  %-28s %12s\n", "Cumulative swap-in:", ui.HumanBytes(int64(sw.Sin)))
 			fmt.Printf("  %-28s %12s\n", "Cumulative swap-out:", ui.HumanBytes(int64(sw.Sout)))
