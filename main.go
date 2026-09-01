@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"vitals/internal/clean"
+	"vitals/internal/doctor"
 	"vitals/internal/llm"
 	"vitals/internal/memcheck"
 	"vitals/internal/memhogs"
@@ -65,6 +66,13 @@ func main() {
 	args := argv[1:]
 
 	switch cmd {
+	case "doctor":
+		fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		asJSON := fs.Bool("json", false, "emit the findings and snapshot as JSON")
+		_ = fs.Parse(args)
+		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
+
 	case "clean":
 		fs := flag.NewFlagSet("clean", flag.ExitOnError)
 		dry := fs.Bool("dry-run", false, "report what would be removed without deleting anything")
@@ -143,6 +151,10 @@ GLOBAL FLAGS
   --no-color   disable ANSI colour (also honours the NO_COLOR env var)
 
 COMMANDS
+  doctor     Correlate CPU / memory / disk / thermal / LLM signals into a ranked
+             verdict — what is constraining the machine right now and the exact
+             fix. Exit code: 0 healthy, 1 warning, 2 critical.
+             Flags: --ollama-url URL  --json
   top        Activity-Monitor-style snapshot: system CPU / RAM / load, per-second
              disk and network I/O, and the top processes by CPU or memory.
              Flags: --top N  --sort cpu|mem  --watch  --interval DUR  --json

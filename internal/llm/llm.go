@@ -351,6 +351,15 @@ func parseModels(data []byte, kind string) []string {
 	}
 }
 
+// OllamaModels returns the models Ollama currently holds resident, with their
+// GPU-offload percentage. Exported for `vitals doctor`. Empty when Ollama is
+// not running or has nothing loaded.
+func OllamaModels(ollamaURL string) []ModelState { return ollamaModels(ollamaURL) }
+
+// ScanProcesses returns the running local LLM-runtime processes with current
+// CPU and RSS. Exported for `vitals doctor`.
+func ScanProcesses() []ProcSnapshot { return scanProcesses() }
+
 func ollamaModels(ollamaURL string) []ModelState {
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(strings.TrimRight(ollamaURL, "/") + "/api/ps")

@@ -1,6 +1,19 @@
 package diag
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestSeverityMarshalJSON(t *testing.T) {
+	b, err := json.Marshal(Finding{Severity: Critical, Title: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); got != `{"severity":"critical","title":"x"}` {
+		t.Errorf("marshalled to %s", got)
+	}
+}
 
 func TestSeverityString(t *testing.T) {
 	cases := map[Severity]string{OK: "ok", Warn: "warning", Critical: "critical"}

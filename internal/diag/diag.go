@@ -42,12 +42,17 @@ func (s Severity) ExitCode() int {
 	}
 }
 
+// MarshalJSON renders the severity as its lowercase word.
+func (s Severity) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + s.String() + `"`), nil
+}
+
 // Finding is one observation: what is wrong, the evidence, and concrete fixes.
 type Finding struct {
-	Severity Severity
-	Title    string   // short headline, e.g. "Swap nearly exhausted"
-	Detail   string   // one line of supporting evidence
-	Fixes    []string // concrete commands or actions, most effective first
+	Severity Severity `json:"severity"`
+	Title    string   `json:"title"`
+	Detail   string   `json:"detail,omitempty"`
+	Fixes    []string `json:"fixes,omitempty"`
 }
 
 // Report collects findings from one or more diagnostic passes.
