@@ -174,6 +174,27 @@ var commands = []Command{
 		},
 	},
 	{
+		Name:     "serve",
+		Synopsis: "run a Prometheus /metrics exporter",
+		Long: "Serves the whole snapshot as Prometheus text-exposition metrics on\n" +
+			"http://localhost:9100/metrics, re-collected on each scrape. Metric names\n" +
+			"follow OpenTelemetry semantic conventions (system_cpu_utilization, ...);\n" +
+			"the value-add signals use a vitals_ prefix (vitals_llm_gpu_offload_ratio,\n" +
+			"vitals_verdict). Grafana Agent / Alloy and Prometheus scrape this directly.",
+		Flags: []Flag{
+			{"addr", "ADDR", "listen address (default :9100)"},
+			{"ollama-url", "URL", "base URL of the Ollama server"},
+		},
+		Examples: []string{"vitals serve", "vitals serve --addr :9600"},
+	},
+	{
+		Name:     "export",
+		Synopsis: "print one Prometheus scrape to stdout and exit",
+		Long:     "One-shot form of `serve` for a textfile collector or a quick look.",
+		Flags:    []Flag{{"ollama-url", "URL", "base URL of the Ollama server"}},
+		Examples: []string{"vitals export", "vitals export > /var/lib/node_exporter/textfile/vitals.prom"},
+	},
+	{
 		Name:     "guide",
 		Synopsis: "print the full embedded user guide",
 		Long:     "Writes the complete user guide (bundled into the binary) to stdout.",

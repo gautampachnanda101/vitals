@@ -36,6 +36,7 @@ import (
 	"vitals/internal/llm"
 	"vitals/internal/memcheck"
 	"vitals/internal/memhogs"
+	"vitals/internal/metrics"
 	"vitals/internal/monitor"
 	"vitals/internal/ui"
 )
@@ -156,6 +157,21 @@ func main() {
 			Interval:  *interval,
 			JSON:      *asJSON,
 		}))
+
+	case "serve":
+		fs := newFlagSet("serve")
+		fs.Bool("prometheus", true, "expose Prometheus metrics (the only format today)")
+		addr := fs.String("addr", ":9100", "listen address for /metrics")
+		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		_ = fs.Parse(args)
+		must(metrics.Serve(metrics.Options{OllamaURL: *url, Addr: *addr}))
+
+	case "export":
+		fs := newFlagSet("export")
+		fs.Bool("prometheus", true, "Prometheus text-exposition format (the only format today)")
+		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		_ = fs.Parse(args)
+		must(metrics.RunOnce(metrics.Options{OllamaURL: *url}))
 
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
