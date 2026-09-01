@@ -1,14 +1,25 @@
 [
-  { "name": "Google Chrome",      "pattern": "(?i)google chrome|chrome helper|chromium",              "stop": "quit-app" },
-  { "name": "VS Code",             "pattern": "(?i)\\bcode\\b|vscode|code helper",                     "stop": "quit-app" },
-  { "name": "Node / Web dev",      "pattern": "(?i)\\bnode\\b|next-server|vite|webpack|esbuild",       "stop": "kill" },
-  { "name": "Docker",              "pattern": "(?i)com\\.docker|dockerd|docker desktop",               "stop": "docker-all" },
-  { "name": "Safari",              "pattern": "(?i)safari",                                            "stop": "pattern", "stop_pattern": "Safari" },
-  { "name": "Firefox",             "pattern": "(?i)firefox",                                           "stop": "pattern", "stop_pattern": "firefox" },
-  { "name": "Slack",               "pattern": "(?i)slack",                                             "stop": "quit-app" },
-  { "name": "Ollama",              "pattern": "(?i)ollama",                                            "stop": "ollama" },
-  { "name": "LM Studio",           "pattern": "(?i)lm studio|lmstudio|lms\\b",                         "stop": "quit-app" },
-  { "name": "llama.cpp",           "pattern": "(?i)llama-server|llama\\.cpp|llamacpp",                 "stop": "kill" },
-  { "name": "Java / JetBrains",    "pattern": "(?i)\\bjava\\b|idea|goland|pycharm|webstorm|rubymine",  "stop": "kill" },
-  { "name": "Electron (generic)",  "pattern": "(?i)electron",                                          "stop": "quit-app" }
+  { "name": "Google Chrome",       "pattern": "(?i)google chrome|chrome helper|chromium",                 "stop": "quit-app" },
+  { "name": "Visual Studio Code",   "pattern": "(?i)visual studio code|vscode|code helper|code - insiders", "stop": "quit-app" },
+  { "name": "Firefox",              "pattern": "(?i)firefox",                                             "stop": "pattern", "stop_pattern": "firefox" },
+  { "name": "Safari",               "pattern": "(?i)safari",                                              "stop": "pattern", "stop_pattern": "Safari" },
+  { "name": "Slack",                "pattern": "(?i)slack",                                               "stop": "quit-app" },
+  { "name": "Docker",               "pattern": "(?i)com\\.docker|dockerd|docker desktop",                 "stop": "docker-all" },
+
+  { "name": "Ollama",               "pattern": "(?i)ollama",                                              "stop": "ollama" },
+  { "name": "LM Studio",            "pattern": "(?i)lm studio|lmstudio|lms\\b",                           "stop": "quit-app" },
+  { "name": "llama.cpp",            "pattern": "(?i)llama-server|llama\\.cpp|llamacpp",                   "stop": "kill" },
+  { "name": "vLLM",                 "pattern": "(?i)vllm",                                                "stop": "kill" },
+
+  { "name": "Node / web dev",       "pattern": "(?i)\\bnode\\b|next-server|vite|webpack|esbuild|nodemon", "stop": "kill" },
+  { "name": "Python / data sci",    "pattern": "(?i)\\bpython[0-9.]*\\b|jupyter|uvicorn|gunicorn",        "stop": "kill" },
+  { "name": "JVM / JetBrains",      "pattern": "(?i)\\bjava\\b|idea|goland|pycharm|webstorm|rubymine|clion|datagrip", "stop": "kill" },
+  { "name": "Rust / native build",  "pattern": "(?i)cargo|rustc|\\bclang\\b|\\bcc1\\b|\\bld\\b|\\blld\\b", "stop": "kill" },
+  { "name": "Go toolchain",         "pattern": "(?i)\\bgo build\\b|\\bcompile\\b -p |\\bgopls\\b",         "stop": "kill" },
+  { "name": "Electron (generic)",   "pattern": "(?i)electron",                                            "stop": "quit-app" },
+
+  { "name": "PostgreSQL",           "pattern": "(?i)\\bpostgres\\b|pg_ctl",                               "stop": "kill" },
+  { "name": "MySQL / MariaDB",      "pattern": "(?i)mysqld|mariadbd",                                     "stop": "kill" },
+  { "name": "MongoDB",              "pattern": "(?i)mongod\\b",                                           "stop": "kill" },
+  { "name": "Redis",                "pattern": "(?i)redis-server",                                        "stop": "kill" }
 ]

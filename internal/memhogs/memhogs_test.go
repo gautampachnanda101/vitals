@@ -65,7 +65,7 @@ func TestEmbeddedFamiliesJSONIsValid(t *testing.T) {
 	for _, f := range fams {
 		names[f.name] = true
 	}
-	for _, want := range []string{"Google Chrome", "Docker", "Ollama", "VS Code"} {
+	for _, want := range []string{"Google Chrome", "Docker", "Ollama", "Visual Studio Code"} {
 		if !names[want] {
 			t.Errorf("embedded families missing %q", want)
 		}
@@ -91,6 +91,36 @@ func TestParseFamiliesErrors(t *testing.T) {
 	}
 	if _, err := parseFamilies([]byte(`not json`)); err == nil {
 		t.Error("expected an error for non-JSON")
+	}
+}
+
+func TestBucketFamilies(t *testing.T) {
+	fams, _ := parseFamilies(defaultFamiliesJSON)
+	all := []procInfo{
+		{pid: 1, rss: 300, name: "Google Chrome", cmd: "chrome",
+			exe: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"},
+		{pid: 2, rss: 200, name: "Google Chrome Helper", cmd: "chrome --type=renderer",
+			exe: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/x"},
+		{pid: 3, rss: 500, name: "ollama", cmd: "ollama serve", exe: "/usr/local/bin/ollama"},
+		{pid: 4, rss: 50, name: "sshd", cmd: "sshd", exe: "/usr/sbin/sshd"},
+	}
+	got := bucketFamilies(all, "darwin", fams)
+
+	by := map[string]familyAgg{}
+	for _, b := range got {
+		by[b.name] = b
+	}
+	if c := by["Google Chrome"]; c.procs != 2 || c.totalRSS != 500 || c.topPID != 1 {
+		t.Errorf("Chrome bucket = %+v", c)
+	}
+	if o := by["Ollama"]; o.procs != 1 || o.kind != stopOllama {
+		t.Errorf("Ollama bucket (regex fallback) = %+v", o)
+	}
+	if _, ok := by["sshd"]; ok {
+		t.Error("sshd should not form a family")
+	}
+	if len(got) > 0 && got[0].totalRSS < got[len(got)-1].totalRSS {
+		t.Error("families should be sorted busiest-first")
 	}
 }
 

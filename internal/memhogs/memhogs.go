@@ -1,6 +1,14 @@
 // Package memhogs reports which application families and individual processes
 // are consuming the most memory, with a suggested action for each. Pure Go via
 // gopsutil, so it works on macOS, Linux and Windows.
+//
+// Families are resolved OS-native first (appFamily: the .app bundle on macOS,
+// the systemd/flatpak/snap cgroup scope on Linux, the install directory on
+// Windows), which classifies an unbounded number of GUI apps for free. The
+// embedded families.json is deliberately small: only cross-app groups the OS
+// cannot express ("Node / web dev", "JVM / JetBrains") and headless daemons
+// that have no bundle (postgres, redis, llama.cpp). Users extend it with
+// <config>/vitals/families.json.
 package memhogs
 
 import (
@@ -169,10 +177,81 @@ func stopCommand(kind stopKind, pattern string, pid int32, goos string) string {
 }
 
 type procInfo struct {
-	pid  int32
-	rss  uint64
-	name string
-	cmd  string
+	pid    int32
+	rss    uint64
+	name   string
+	cmd    string
+	exe    string // executable path, for OS-native app grouping
+	cgroup string // /proc/<pid>/cgroup body (Linux only)
+}
+
+type familyAgg struct {
+	name     string
+	procs    int
+	totalRSS uint64
+	topPID   int32
+	topRSS   uint64
+	kind     stopKind
+	pattern  string
+}
+
+// readCgroup returns /proc/<pid>/cgroup for OS-native app grouping on Linux;
+// empty on every other platform.
+func readCgroup(pid int32) string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// bucketFamilies groups processes into application families: the OS-native app
+// identity (.app bundle / cgroup scope / install dir) first, and the cross-app
+// regex families as the fallback and as the source of a more specific stop
+// action (docker prune, ollama stop). Returned busiest-first by total RSS.
+func bucketFamilies(all []procInfo, goos string, fams []family) []familyAgg {
+	buckets := map[string]*familyAgg{}
+	var order []string
+	for _, pi := range all {
+		name := appFamily(goos, pi.exe, pi.cgroup)
+		kind := stopQuitApp
+		pattern := ""
+		hay := pi.name + " " + pi.cmd
+		for _, f := range fams {
+			if f.re.MatchString(hay) {
+				if name == "" {
+					name = f.name
+				}
+				kind, pattern = f.kind, f.pattern
+				break
+			}
+		}
+		if name == "" {
+			continue
+		}
+		b := buckets[name]
+		if b == nil {
+			b = &familyAgg{name: name, kind: kind, pattern: pattern}
+			buckets[name] = b
+			order = append(order, name)
+		} else if b.kind == stopQuitApp && kind != stopQuitApp {
+			b.kind, b.pattern = kind, pattern // a later process gave us a better action
+		}
+		b.procs++
+		b.totalRSS += pi.rss
+		if pi.rss > b.topRSS {
+			b.topRSS, b.topPID = pi.rss, pi.pid
+		}
+	}
+	out := make([]familyAgg, 0, len(order))
+	for _, n := range order {
+		out = append(out, *buckets[n])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].totalRSS > out[j].totalRSS })
+	return out
 }
 
 // Run prints the three report sections.
@@ -197,37 +276,27 @@ func Run(topN int) error {
 		if cmd == "" {
 			cmd = name
 		}
-		all = append(all, procInfo{pid: p.Pid, rss: mi.RSS, name: name, cmd: cmd})
+		exe, _ := p.Exe()
+		all = append(all, procInfo{
+			pid: p.Pid, rss: mi.RSS, name: name, cmd: cmd,
+			exe: exe, cgroup: readCgroup(p.Pid),
+		})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].rss > all[j].rss })
 
 	// Section 1: application family footprints
 	ui.Header("1. APPLICATION FAMILY FOOTPRINTS")
-	fmt.Printf("%-20s %-7s %-14s %-12s %s\n", "FAMILY", "PROCS", "TOTAL RAM", "TOP PID", "SUGGESTED ACTION")
+	fmt.Printf("%-24s %-7s %-14s %-12s %s\n", "FAMILY", "PROCS", "TOTAL RAM", "TOP PID", "SUGGESTED ACTION")
 	ui.Rule()
-	for _, f := range families() {
-		var total uint64
-		var count int
-		var topPID int32
-		var topRSS uint64
-		for _, pi := range all {
-			hay := pi.name + " " + pi.cmd
-			if !f.re.MatchString(hay) {
-				continue
-			}
-			count++
-			total += pi.rss
-			if pi.rss > topRSS {
-				topRSS, topPID = pi.rss, pi.pid
-			}
-		}
-		if count == 0 {
-			continue
-		}
-		action := stopCommand(f.kind, f.pattern, topPID, runtime.GOOS)
-		fmt.Printf("%-20s %-7d %-14s %-12s %s\n",
-			f.name, count, ui.HumanBytes(int64(total)),
-			fmt.Sprintf("PID %d", topPID), ui.Actionf("%s", action))
+	aggs := bucketFamilies(all, runtime.GOOS, families())
+	if len(aggs) > topN {
+		aggs = aggs[:topN]
+	}
+	for _, b := range aggs {
+		action := stopCommand(b.kind, b.pattern, b.topPID, runtime.GOOS)
+		fmt.Printf("%-24s %-7d %-14s %-12s %s\n",
+			ui.Truncate(b.name, 24), b.procs, ui.HumanBytes(int64(b.totalRSS)),
+			fmt.Sprintf("PID %d", b.topPID), ui.Actionf("%s", action))
 	}
 
 	// Section 2: heaviest individual processes
