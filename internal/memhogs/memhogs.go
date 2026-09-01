@@ -4,7 +4,11 @@
 package memhogs
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -35,30 +39,100 @@ type family struct {
 	pattern string // used only by stopPattern
 }
 
+// defaultFamiliesJSON is the built-in family list. It is plain data so the set
+// can grow without touching code, and users can extend or override it.
+//
+//go:embed families.json
+var defaultFamiliesJSON []byte
+
+type familySpec struct {
+	Name        string `json:"name"`
+	Pattern     string `json:"pattern"`
+	Stop        string `json:"stop"`
+	StopPattern string `json:"stop_pattern,omitempty"`
+}
+
+var stopKindNames = map[string]stopKind{
+	"kill":       stopKill,
+	"pattern":    stopPattern,
+	"quit-app":   stopQuitApp,
+	"docker-all": stopDockerAll,
+	"ollama":     stopOllama,
+}
+
+// parseFamilies decodes a family list from JSON, compiling each pattern.
+func parseFamilies(data []byte) ([]family, error) {
+	var specs []familySpec
+	if err := json.Unmarshal(data, &specs); err != nil {
+		return nil, err
+	}
+	out := make([]family, 0, len(specs))
+	for _, s := range specs {
+		if s.Name == "" {
+			return nil, fmt.Errorf("family with empty name")
+		}
+		re, err := regexp.Compile(s.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("family %q: bad pattern: %w", s.Name, err)
+		}
+		kind, ok := stopKindNames[s.Stop]
+		if !ok {
+			return nil, fmt.Errorf("family %q: unknown stop kind %q", s.Name, s.Stop)
+		}
+		out = append(out, family{s.Name, re, kind, s.StopPattern})
+	}
+	return out, nil
+}
+
+// mergeFamilies overlays user-defined families onto the base list: an entry
+// whose name matches a base entry replaces it; a new name is appended.
+func mergeFamilies(base, user []family) []family {
+	merged := append([]family(nil), base...)
+	idx := make(map[string]int, len(merged))
+	for i, f := range merged {
+		idx[f.name] = i
+	}
+	for _, f := range user {
+		if i, ok := idx[f.name]; ok {
+			merged[i] = f
+		} else {
+			idx[f.name] = len(merged)
+			merged = append(merged, f)
+		}
+	}
+	return merged
+}
+
+// families returns the built-in list merged with the user's overrides from
+// <config>/vitals/families.json, if that file exists and parses.
 func families() []family {
-	def := []struct {
-		name, pat string
-		kind      stopKind
-		pattern   string
-	}{
-		{"Google Chrome", `(?i)google chrome|chrome helper|chromium`, stopQuitApp, ""},
-		{"VS Code", `(?i)\bcode\b|vscode|code helper`, stopQuitApp, ""},
-		{"Node / Web dev", `(?i)\bnode\b|next-server|vite|webpack|esbuild`, stopKill, ""},
-		{"Docker", `(?i)com\.docker|dockerd|docker desktop`, stopDockerAll, ""},
-		{"Safari", `(?i)safari`, stopPattern, "Safari"},
-		{"Firefox", `(?i)firefox`, stopPattern, "firefox"},
-		{"Slack", `(?i)slack`, stopQuitApp, ""},
-		{"Ollama", `(?i)ollama`, stopOllama, ""},
-		{"LM Studio", `(?i)lm studio|lmstudio|lms\b`, stopQuitApp, ""},
-		{"llama.cpp", `(?i)llama-server|llama\.cpp|llamacpp`, stopKill, ""},
-		{"Java / JetBrains", `(?i)\bjava\b|idea|goland|pycharm|webstorm|rubymine`, stopKill, ""},
-		{"Electron (generic)", `(?i)electron`, stopQuitApp, ""},
+	base, err := parseFamilies(defaultFamiliesJSON)
+	if err != nil {
+		// The embedded file is covered by a test; a failure here is a build bug.
+		panic("vitals: embedded families.json is invalid: " + err.Error())
 	}
-	out := make([]family, 0, len(def))
-	for _, d := range def {
-		out = append(out, family{d.name, regexp.MustCompile(d.pat), d.kind, d.pattern})
+	user := userFamilies()
+	if len(user) == 0 {
+		return base
 	}
-	return out
+	return mergeFamilies(base, user)
+}
+
+func userFamilies() []family {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "vitals", "families.json"))
+	if err != nil {
+		return nil
+	}
+	fams, err := parseFamilies(data)
+	if err != nil {
+		ui.Warnf("ignoring %s: %v", filepath.Join(dir, "vitals", "families.json"), err)
+		return nil
+	}
+	return fams
 }
 
 // killOne renders the single-process kill command for an OS.

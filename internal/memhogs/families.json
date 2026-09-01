@@ -1,0 +1,14 @@
+[
+  { "name": "Google Chrome",      "pattern": "(?i)google chrome|chrome helper|chromium",              "stop": "quit-app" },
+  { "name": "VS Code",             "pattern": "(?i)\\bcode\\b|vscode|code helper",                     "stop": "quit-app" },
+  { "name": "Node / Web dev",      "pattern": "(?i)\\bnode\\b|next-server|vite|webpack|esbuild",       "stop": "kill" },
+  { "name": "Docker",              "pattern": "(?i)com\\.docker|dockerd|docker desktop",               "stop": "docker-all" },
+  { "name": "Safari",              "pattern": "(?i)safari",                                            "stop": "pattern", "stop_pattern": "Safari" },
+  { "name": "Firefox",             "pattern": "(?i)firefox",                                           "stop": "pattern", "stop_pattern": "firefox" },
+  { "name": "Slack",               "pattern": "(?i)slack",                                             "stop": "quit-app" },
+  { "name": "Ollama",              "pattern": "(?i)ollama",                                            "stop": "ollama" },
+  { "name": "LM Studio",           "pattern": "(?i)lm studio|lmstudio|lms\\b",                         "stop": "quit-app" },
+  { "name": "llama.cpp",           "pattern": "(?i)llama-server|llama\\.cpp|llamacpp",                 "stop": "kill" },
+  { "name": "Java / JetBrains",    "pattern": "(?i)\\bjava\\b|idea|goland|pycharm|webstorm|rubymine",  "stop": "kill" },
+  { "name": "Electron (generic)",  "pattern": "(?i)electron",                                          "stop": "quit-app" }
+]

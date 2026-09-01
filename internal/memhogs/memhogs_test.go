@@ -55,3 +55,70 @@ func TestFamiliesCompile(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbeddedFamiliesJSONIsValid(t *testing.T) {
+	fams, err := parseFamilies(defaultFamiliesJSON)
+	if err != nil {
+		t.Fatalf("embedded families.json does not parse: %v", err)
+	}
+	names := map[string]bool{}
+	for _, f := range fams {
+		names[f.name] = true
+	}
+	for _, want := range []string{"Google Chrome", "Docker", "Ollama", "VS Code"} {
+		if !names[want] {
+			t.Errorf("embedded families missing %q", want)
+		}
+	}
+	// Chrome pattern must actually match a real Chrome helper command line.
+	var chrome family
+	for _, f := range fams {
+		if f.name == "Google Chrome" {
+			chrome = f
+		}
+	}
+	if !chrome.re.MatchString("Google Chrome Helper (Renderer)") {
+		t.Error("Chrome family regex no longer matches a Chrome helper")
+	}
+}
+
+func TestParseFamiliesErrors(t *testing.T) {
+	if _, err := parseFamilies([]byte(`[{"name":"X","pattern":"(","stop":"kill"}]`)); err == nil {
+		t.Error("expected an error for an invalid regexp")
+	}
+	if _, err := parseFamilies([]byte(`[{"name":"X","pattern":"x","stop":"nope"}]`)); err == nil {
+		t.Error("expected an error for an unknown stop kind")
+	}
+	if _, err := parseFamilies([]byte(`not json`)); err == nil {
+		t.Error("expected an error for non-JSON")
+	}
+}
+
+func TestMergeFamilies(t *testing.T) {
+	base, _ := parseFamilies([]byte(`[
+		{"name":"Chrome","pattern":"chrome","stop":"quit-app"},
+		{"name":"Docker","pattern":"docker","stop":"docker-all"}
+	]`))
+	user, _ := parseFamilies([]byte(`[
+		{"name":"Docker","pattern":"my-docker","stop":"kill"},
+		{"name":"MyApp","pattern":"myapp","stop":"kill"}
+	]`))
+
+	merged := mergeFamilies(base, user)
+	if len(merged) != 3 {
+		t.Fatalf("want 3 families after merge, got %d", len(merged))
+	}
+	byName := map[string]family{}
+	for _, f := range merged {
+		byName[f.name] = f
+	}
+	if byName["Docker"].kind != stopKill {
+		t.Error("user override of Docker did not take effect")
+	}
+	if _, ok := byName["MyApp"]; !ok {
+		t.Error("new user family MyApp was not appended")
+	}
+	if byName["Chrome"].kind != stopQuitApp {
+		t.Error("untouched base family Chrome was altered")
+	}
+}
