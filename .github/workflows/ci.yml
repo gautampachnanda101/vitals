@@ -35,6 +35,18 @@ jobs:
             go test -race -coverprofile=coverage.out ./...
           fi
 
+      - name: Coverage floor
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/{gsub(/%/,"",$3); print $3}')
+          floor=38.0
+          echo "## Coverage: ${pct}% (floor ${floor}%)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          awk -v p="$pct" -v f="$floor" 'BEGIN{ if (p+0 < f+0) { print "::error::coverage " p "% is below the " f "% floor"; exit 1 } print "coverage " p "% >= floor " f "%" }'
+
   lint:
     runs-on: ubuntu-latest
     steps:
