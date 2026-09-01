@@ -16,32 +16,82 @@ import (
 	"vitals/internal/ui"
 )
 
+// stopKind is how a process family is best stopped; stopCommand turns it into
+// an OS-appropriate command string.
+type stopKind int
+
+const (
+	stopKill      stopKind = iota // kill the pid
+	stopPattern                   // match a stable process-name pattern
+	stopQuitApp                   // GUI app: quit it, or kill the pid
+	stopDockerAll                 // stop every running container
+	stopOllama                    // ollama stop <model>, or kill the pid
+)
+
 type family struct {
-	name   string
-	re     *regexp.Regexp
-	action string
+	name    string
+	re      *regexp.Regexp
+	kind    stopKind
+	pattern string // used only by stopPattern
 }
 
 func families() []family {
-	def := []struct{ name, pat, action string }{
-		{"Google Chrome", `(?i)google chrome|chrome helper|chromium`, "pkill -f 'Chrome Helper (Renderer)'"},
-		{"VS Code", `(?i)\bcode\b|vscode|code helper`, "pkill -f 'Code Helper'"},
-		{"Node / Web dev", `(?i)\bnode\b|next-server|vite|webpack|esbuild`, "kill <pid>"},
-		{"Docker", `(?i)com\.docker|dockerd|docker desktop`, "docker stop $(docker ps -q)"},
-		{"Safari", `(?i)safari`, "pkill -f Safari"},
-		{"Firefox", `(?i)firefox`, "pkill -f firefox"},
-		{"Slack", `(?i)slack`, "quit app / kill <pid>"},
-		{"Ollama", `(?i)ollama`, "ollama stop <model> / kill <pid>"},
-		{"LM Studio", `(?i)lm studio|lmstudio|lms\b`, "quit app / kill <pid>"},
-		{"llama.cpp", `(?i)llama-server|llama\.cpp|llamacpp`, "kill <pid>"},
-		{"Java / JetBrains", `(?i)\bjava\b|idea|goland|pycharm|webstorm|rubymine`, "kill <pid>"},
-		{"Electron (generic)", `(?i)electron`, "quit app / kill <pid>"},
+	def := []struct {
+		name, pat string
+		kind      stopKind
+		pattern   string
+	}{
+		{"Google Chrome", `(?i)google chrome|chrome helper|chromium`, stopQuitApp, ""},
+		{"VS Code", `(?i)\bcode\b|vscode|code helper`, stopQuitApp, ""},
+		{"Node / Web dev", `(?i)\bnode\b|next-server|vite|webpack|esbuild`, stopKill, ""},
+		{"Docker", `(?i)com\.docker|dockerd|docker desktop`, stopDockerAll, ""},
+		{"Safari", `(?i)safari`, stopPattern, "Safari"},
+		{"Firefox", `(?i)firefox`, stopPattern, "firefox"},
+		{"Slack", `(?i)slack`, stopQuitApp, ""},
+		{"Ollama", `(?i)ollama`, stopOllama, ""},
+		{"LM Studio", `(?i)lm studio|lmstudio|lms\b`, stopQuitApp, ""},
+		{"llama.cpp", `(?i)llama-server|llama\.cpp|llamacpp`, stopKill, ""},
+		{"Java / JetBrains", `(?i)\bjava\b|idea|goland|pycharm|webstorm|rubymine`, stopKill, ""},
+		{"Electron (generic)", `(?i)electron`, stopQuitApp, ""},
 	}
 	out := make([]family, 0, len(def))
 	for _, d := range def {
-		out = append(out, family{d.name, regexp.MustCompile(d.pat), d.action})
+		out = append(out, family{d.name, regexp.MustCompile(d.pat), d.kind, d.pattern})
 	}
 	return out
+}
+
+// killOne renders the single-process kill command for an OS.
+func killOne(pid int32, goos string) string {
+	if goos == "windows" {
+		return fmt.Sprintf("Stop-Process -Id %d", pid)
+	}
+	return fmt.Sprintf("kill %d", pid)
+}
+
+// stopCommand renders an OS-appropriate remediation command for a family.
+func stopCommand(kind stopKind, pattern string, pid int32, goos string) string {
+	switch kind {
+	case stopPattern:
+		if goos == "windows" {
+			return killOne(pid, goos)
+		}
+		return fmt.Sprintf("pkill -f '%s'", pattern)
+	case stopQuitApp:
+		if goos == "windows" {
+			return "close the app, or " + killOne(pid, goos)
+		}
+		return "quit the app, or " + killOne(pid, goos)
+	case stopDockerAll:
+		if goos == "windows" {
+			return "docker ps -q | ForEach-Object { docker stop $_ }"
+		}
+		return "docker stop $(docker ps -q)"
+	case stopOllama:
+		return "ollama stop <model>, or " + killOne(pid, goos)
+	default: // stopKill
+		return killOne(pid, goos)
+	}
 }
 
 type procInfo struct {
@@ -100,7 +150,7 @@ func Run(topN int) error {
 		if count == 0 {
 			continue
 		}
-		action := strings.ReplaceAll(f.action, "<pid>", fmt.Sprint(topPID))
+		action := stopCommand(f.kind, f.pattern, topPID, runtime.GOOS)
 		fmt.Printf("%-20s %-7d %-14s %-12s %s\n",
 			f.name, count, ui.HumanBytes(int64(total)),
 			fmt.Sprintf("PID %d", topPID), ui.Actionf("%s", action))
@@ -115,12 +165,14 @@ func Run(topN int) error {
 			break
 		}
 		label := describe(pi)
-		action := ui.Actionf("kill %d", pi.pid)
+		action := ui.Actionf("%s", killOne(pi.pid, runtime.GOOS))
 		switch {
 		case strings.Contains(pi.name, "WindowServer"):
 			action = ui.Actionf("do NOT kill (display server)")
 		case strings.Contains(pi.name, "kernel_task"):
 			action = ui.Actionf("do NOT kill (kernel thermal control)")
+		case strings.Contains(pi.name, "System") && runtime.GOOS == "windows":
+			action = ui.Actionf("do NOT kill (Windows kernel)")
 		}
 		fmt.Printf("%-8d %-14s %-34s %s\n", pi.pid, ui.HumanBytes(int64(pi.rss)), label, action)
 	}
