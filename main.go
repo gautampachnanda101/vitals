@@ -129,6 +129,14 @@ func main() {
 		}))
 
 	case "llm":
+		if len(args) >= 1 && args[0] == "fit" {
+			model := ""
+			if len(args) >= 2 {
+				model = args[1]
+			}
+			must(llm.RunFit(model))
+			return
+		}
 		fs := newFlagSet("llm")
 		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
 		watch := fs.Bool("watch", false, "refresh continuously until interrupted")

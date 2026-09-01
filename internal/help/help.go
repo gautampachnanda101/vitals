@@ -133,6 +133,7 @@ var commands = []Command{
 			"vitals llm",
 			"OPENAI_API_KEY=sk-... vitals llm",
 			"vitals llm --json | jq '.models[] | {name, gpu_offload_percent}'",
+			"vitals llm fit qwen2.5:32b    # largest quant that fits your VRAM",
 		},
 	},
 	{
