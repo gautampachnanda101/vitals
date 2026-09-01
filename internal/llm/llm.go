@@ -23,12 +23,40 @@ import (
 	"vitals/internal/ui"
 )
 
+// Base URLs for the local runtimes vitals probes. Overridable via Options,
+// mainly so tests can point them at stub servers.
+const (
+	defaultOllamaURL   = "http://localhost:11434"
+	defaultLMStudioURL = "http://localhost:1234"
+	defaultLlamaCppURL = "http://localhost:8080"
+	defaultVLLMURL     = "http://localhost:8000"
+)
+
 // Options configures a diagnostic run.
 type Options struct {
-	OllamaURL string        // base URL of the Ollama server
-	Watch     bool          // repeat until interrupted
-	Interval  time.Duration // refresh period when Watch is set
-	JSON      bool          // emit a machine-readable snapshot instead of a report
+	OllamaURL   string        // base URL of the Ollama server
+	LMStudioURL string        // base URL of the LM Studio server
+	LlamaCppURL string        // base URL of the llama.cpp / OpenAI server
+	VLLMURL     string        // base URL of the vLLM server
+	Watch       bool          // repeat until interrupted
+	Interval    time.Duration // refresh period when Watch is set
+	JSON        bool          // emit a machine-readable snapshot instead of a report
+}
+
+func (o Options) withDefaults() Options {
+	if o.OllamaURL == "" {
+		o.OllamaURL = defaultOllamaURL
+	}
+	if o.LMStudioURL == "" {
+		o.LMStudioURL = defaultLMStudioURL
+	}
+	if o.LlamaCppURL == "" {
+		o.LlamaCppURL = defaultLlamaCppURL
+	}
+	if o.VLLMURL == "" {
+		o.VLLMURL = defaultVLLMURL
+	}
+	return o
 }
 
 // Report is the machine-readable form emitted with --json.
@@ -60,6 +88,7 @@ type Provider struct {
 type ModelState struct {
 	Provider   string  `json:"provider"`
 	Name       string  `json:"name"`
+	Resident   bool    `json:"resident"` // currently loaded in RAM/VRAM
 	Family     string  `json:"family"`
 	Quant      string  `json:"quantization"`
 	ParamSize  string  `json:"parameter_size"`
@@ -127,10 +156,11 @@ func Run(opts Options) error {
 }
 
 func once(opts Options) error {
+	opts = opts.withDefaults()
 	rep := Report{Timestamp: time.Now()}
 	rep.Processes = scanProcesses()
-	rep.Providers = probeProviders(opts.OllamaURL)
-	rep.Models = ollamaModels(opts.OllamaURL)
+	rep.Providers = probeProviders(opts, os.Getenv)
+	rep.Models = collectResidentModels(opts, rep.Providers)
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -239,13 +269,14 @@ var cloudRegistry = []target{
 	{name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai/models", kind: "openai", auth: "bearer", keyEnv: "GEMINI_API_KEY", location: "cloud"},
 }
 
-func localTargets(ollamaURL string) []target {
-	base := strings.TrimRight(ollamaURL, "/")
+func localTargets(opts Options) []target {
+	opts = opts.withDefaults()
+	trim := func(s string) string { return strings.TrimRight(s, "/") }
 	return []target{
-		{name: "Ollama", url: base + "/api/tags", kind: "ollama", location: "local"},
-		{name: "LM Studio", url: "http://localhost:1234/v1/models", kind: "openai", location: "local"},
-		{name: "llama.cpp / OpenAI :8080", url: "http://localhost:8080/v1/models", kind: "openai", location: "local"},
-		{name: "vLLM :8000", url: "http://localhost:8000/v1/models", kind: "openai", location: "local"},
+		{name: "Ollama", url: trim(opts.OllamaURL) + "/api/tags", kind: "ollama", location: "local"},
+		{name: "LM Studio", url: trim(opts.LMStudioURL) + "/v1/models", kind: "openai", location: "local"},
+		{name: "llama.cpp", url: trim(opts.LlamaCppURL) + "/v1/models", kind: "openai", location: "local"},
+		{name: "vLLM", url: trim(opts.VLLMURL) + "/v1/models", kind: "openai", location: "local"},
 	}
 }
 
@@ -311,12 +342,12 @@ func probeOne(client *http.Client, t target, getenv func(string) string) Provide
 	return p
 }
 
-func probeProviders(ollamaURL string) []Provider {
-	targets := append(localTargets(ollamaURL), cloudTargets(os.Getenv)...)
+func probeProviders(opts Options, getenv func(string) string) []Provider {
+	targets := append(localTargets(opts), cloudTargets(getenv)...)
 	client := &http.Client{Timeout: 4 * time.Second}
 	out := make([]Provider, 0, len(targets))
 	for _, t := range targets {
-		out = append(out, probeOne(client, t, os.Getenv))
+		out = append(out, probeOne(client, t, getenv))
 	}
 	return out
 }
@@ -355,6 +386,41 @@ func parseModels(data []byte, kind string) []string {
 // GPU-offload percentage. Exported for `vitals doctor`. Empty when Ollama is
 // not running or has nothing loaded.
 func OllamaModels(ollamaURL string) []ModelState { return ollamaModels(ollamaURL) }
+
+// collectResidentModels builds the unified list of loaded models across every
+// reachable local runtime — not just Ollama. Ollama entries carry full
+// VRAM / GPU-offload detail from /api/ps; other runtimes (LM Studio, llama.cpp,
+// vLLM) contribute the models they are serving, which are by definition loaded,
+// with whatever the open /v1/models endpoint exposes (name only). Cloud
+// providers are omitted here — their catalogue lives on the provider line.
+func collectResidentModels(opts Options, providers []Provider) []ModelState {
+	var out []ModelState
+	seen := map[string]bool{}
+	add := func(m ModelState) {
+		key := m.Provider + "\x00" + m.Name
+		if m.Name == "" || seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, m)
+	}
+
+	for _, m := range ollamaModels(opts.OllamaURL) {
+		m.Provider = "Ollama"
+		m.Resident = true
+		add(m)
+	}
+
+	for _, p := range providers {
+		if !p.Reachable || p.Location != "local" || p.Name == "Ollama" {
+			continue
+		}
+		for _, name := range p.Models {
+			add(ModelState{Provider: p.Name, Name: name, Resident: true})
+		}
+	}
+	return out
+}
 
 // ScanProcesses returns the running local LLM-runtime processes with current
 // CPU and RSS. Exported for `vitals doctor`.
@@ -446,13 +512,19 @@ func render(rep Report) {
 		}
 	}
 
-	fmt.Printf("\n%sOllama model memory allocation%s\n", ui.Bold, ui.Reset)
+	fmt.Printf("\n%sLoaded models%s\n", ui.Bold, ui.Reset)
 	if len(rep.Models) == 0 {
-		fmt.Println("  no models currently resident in RAM/VRAM")
+		fmt.Println("  no models currently resident in any local runtime")
 		return
 	}
 	for _, m := range rep.Models {
-		fmt.Printf("  ├─ %s%s%s\n", ui.Bold, m.Name, ui.Reset)
+		fmt.Printf("  ├─ %s%s%s  %s(%s)%s\n", ui.Bold, m.Name, ui.Reset, ui.Dim, m.Provider, ui.Reset)
+		if m.TotalBytes <= 0 {
+			// Runtime serves this model but exposes no memory breakdown over
+			// the open API.
+			fmt.Printf("  └─ served by this runtime; no per-model memory detail exposed\n")
+			continue
+		}
 		fmt.Printf("  │    family/quant : %s (%s, %s)\n", nz(m.Family), nz(m.Quant), nz(m.ParamSize))
 		fmt.Printf("  │    total size   : %s\n", ui.HumanBytes(m.TotalBytes))
 		fmt.Printf("  │    VRAM portion : %s\n", ui.HumanBytes(m.VRAMBytes))
