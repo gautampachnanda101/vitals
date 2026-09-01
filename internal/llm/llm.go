@@ -226,6 +226,7 @@ type target struct {
 // probed only when its API-key environment variable is present, so corporate
 // keys are picked up automatically and nothing is contacted otherwise.
 var cloudRegistry = []target{
+	{name: "Ollama Cloud", url: "https://ollama.com/api/tags", kind: "ollama", auth: "bearer", keyEnv: "OLLAMA_API_KEY", location: "cloud"},
 	{name: "OpenAI", url: "https://api.openai.com/v1/models", kind: "openai", auth: "bearer", keyEnv: "OPENAI_API_KEY", location: "cloud"},
 	{name: "Anthropic", url: "https://api.anthropic.com/v1/models", kind: "openai", auth: "x-api-key", keyEnv: "ANTHROPIC_API_KEY", extra: map[string]string{"anthropic-version": "2023-06-01"}, location: "cloud"},
 	{name: "Groq", url: "https://api.groq.com/openai/v1/models", kind: "openai", auth: "bearer", keyEnv: "GROQ_API_KEY", location: "cloud"},

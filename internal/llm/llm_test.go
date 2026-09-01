@@ -49,13 +49,17 @@ func TestCloudTargets(t *testing.T) {
 		got := cloudTargets(env(map[string]string{
 			"OPENAI_API_KEY":    "sk-a",
 			"ANTHROPIC_API_KEY": "sk-b",
+			"OLLAMA_API_KEY":    "sk-c",
 		}))
-		if len(got) != 2 {
-			t.Fatalf("want 2 targets, got %d: %+v", len(got), got)
+		if len(got) != 3 {
+			t.Fatalf("want 3 targets, got %d: %+v", len(got), got)
 		}
-		names := []string{got[0].name, got[1].name}
+		names := make([]string, len(got))
+		for i, tg := range got {
+			names[i] = tg.name
+		}
 		slices.Sort(names)
-		if !slices.Equal(names, []string{"Anthropic", "OpenAI"}) {
+		if !slices.Equal(names, []string{"Anthropic", "Ollama Cloud", "OpenAI"}) {
 			t.Errorf("unexpected providers: %v", names)
 		}
 		for _, tg := range got {

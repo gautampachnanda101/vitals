@@ -1,9 +1,35 @@
 package monitor
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"vitals/internal/ui"
 )
+
+func TestBar(t *testing.T) {
+	cases := []struct {
+		pct      float64
+		wantPct  string
+		wantFill int // number of filled cells expected
+	}{
+		{0, "0.0%", 0},
+		{50, "50.0%", 10},
+		{100, "100.0%", 20},
+		{-5, "0.0%", 0},     // clamped low
+		{150, "100.0%", 20}, // clamped high
+	}
+	for _, c := range cases {
+		got := ui.StripANSI(bar(c.pct))
+		if !strings.Contains(got, c.wantPct) {
+			t.Errorf("bar(%v) = %q, want it to contain %q", c.pct, got, c.wantPct)
+		}
+		if n := strings.Count(got, "█"); n != c.wantFill {
+			t.Errorf("bar(%v) has %d filled cells, want %d", c.pct, n, c.wantFill)
+		}
+	}
+}
 
 func TestRate(t *testing.T) {
 	cases := []struct {

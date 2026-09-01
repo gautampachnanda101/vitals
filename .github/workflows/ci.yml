@@ -24,7 +24,16 @@ jobs:
           check-latest: true
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -race -coverprofile=coverage.out ./...
+      # The race detector needs a C toolchain that isn't reliably on PATH on the
+      # hosted Windows runner; run it on Linux/macOS and a plain test on Windows.
+      - name: Test
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            go test -coverprofile=coverage.out ./...
+          else
+            go test -race -coverprofile=coverage.out ./...
+          fi
 
   lint:
     runs-on: ubuntu-latest
