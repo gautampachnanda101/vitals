@@ -46,7 +46,7 @@ jobs:
             echo '```'
             grep -E '^\s*--- (PASS|FAIL): TestCLISmoke/' smoke.log
             echo '```'
-            echo "Not covered here (destructive, network-flaky, or block-forever by design): \`clean --yes\`, \`dupes --hardlink\`, \`tools --install\`, \`advice\`, \`serve\`, \`mcp\`, \`guide --web\`."
+            echo "Not covered here (destructive, network-flaky, or block-forever by design): \`clean --yes\`, \`tools --install\`, \`advice\`, \`serve\`, \`mcp\`, \`guide --web\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Coverage floor
