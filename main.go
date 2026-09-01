@@ -34,6 +34,7 @@ import (
 	"vitals/internal/gpu"
 	"vitals/internal/help"
 	"vitals/internal/llm"
+	"vitals/internal/mcp"
 	"vitals/internal/memcheck"
 	"vitals/internal/memhogs"
 	"vitals/internal/metrics"
@@ -172,6 +173,12 @@ func main() {
 		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
 		_ = fs.Parse(args)
 		must(metrics.RunOnce(metrics.Options{OllamaURL: *url}))
+
+	case "mcp":
+		fs := newFlagSet("mcp")
+		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		_ = fs.Parse(args)
+		must(mcp.Serve(os.Stdin, os.Stdout, mcp.Options{OllamaURL: *url}))
 
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)

@@ -195,6 +195,17 @@ var commands = []Command{
 		Examples: []string{"vitals export", "vitals export > /var/lib/node_exporter/textfile/vitals.prom"},
 	},
 	{
+		Name:     "mcp",
+		Synopsis: "run as a Model Context Protocol server on stdio",
+		Long: "Speaks newline-delimited JSON-RPC 2.0 on stdin/stdout so an MCP client\n" +
+			"(Claude Code, Claude Desktop) can call vitals while it works. Tools:\n" +
+			"system_health, diagnose_bottleneck, llm_status, gpu_status.\n" +
+			"Register it with your client, e.g. in Claude Code:\n" +
+			"  claude mcp add vitals -- vitals mcp",
+		Flags:    []Flag{{"ollama-url", "URL", "base URL of the Ollama server"}},
+		Examples: []string{"vitals mcp", "claude mcp add vitals -- vitals mcp"},
+	},
+	{
 		Name:     "guide",
 		Synopsis: "print the full embedded user guide",
 		Long:     "Writes the complete user guide (bundled into the binary) to stdout.",

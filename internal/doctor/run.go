@@ -16,11 +16,17 @@ type RunOptions struct {
 	JSON      bool
 }
 
+// Assess collects a snapshot and analyses it, returning both. Shared by the
+// CLI, the metrics exporter and the MCP server.
+func Assess(opts RunOptions) (Snapshot, diag.Report) {
+	snap := Collect(Options{OllamaURL: opts.OllamaURL})
+	return snap, Analyze(snap)
+}
+
 // Run collects a snapshot, analyses it, prints the verdict, and returns the
 // process exit code (0 healthy, 1 warning, 2 critical).
 func Run(opts RunOptions) int {
-	snap := Collect(Options{OllamaURL: opts.OllamaURL})
-	report := Analyze(snap)
+	snap, report := Assess(opts)
 
 	if opts.JSON {
 		emitJSON(snap, report)
