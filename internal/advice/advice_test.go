@@ -19,6 +19,41 @@ func TestBuildPromptIncludesTheReportAndAsksForPrioritizedAdvice(t *testing.T) {
 	}
 }
 
+func TestBuildPromptForbidsFabricatedSourcesOrCitations(t *testing.T) {
+	// Small local models sometimes pattern-match onto a "Sources" section
+	// from RAG-style training data and invent a placeholder URL, even
+	// though this prompt supplies no source at all — say so explicitly.
+	prompt := BuildPrompt([]byte(`{"verdict":"ok"}`))
+	if !strings.Contains(strings.ToLower(prompt), "no external sources") && !strings.Contains(strings.ToLower(prompt), "cite") {
+		t.Errorf("prompt should tell the model not to fabricate sources/citations, got:\n%s", prompt)
+	}
+}
+
+func TestStripFabricatedSourcesRemovesATrailingHeading(t *testing.T) {
+	cases := []string{
+		"Restart the process.\n\n## Sources\n(source: https://example.com/fake)\n",
+		"Restart the process.\n\nSources:\n- https://example.com/fake\n",
+		"Restart the process.\n\n**Sources**\nhttps://example.com/fake\n",
+		"Restart the process.\n\n### Sources\n1. https://example.com/fake\n",
+	}
+	for _, in := range cases {
+		got := stripFabricatedSources(in)
+		if strings.Contains(strings.ToLower(got), "source") {
+			t.Errorf("stripFabricatedSources(%q) = %q, still contains a sources section", in, got)
+		}
+		if !strings.Contains(got, "Restart the process.") {
+			t.Errorf("stripFabricatedSources(%q) = %q, removed the real answer too", in, got)
+		}
+	}
+}
+
+func TestStripFabricatedSourcesLeavesNormalTextAlone(t *testing.T) {
+	in := "Restart the process to free swap. This resource discovers no other issues."
+	if got := stripFabricatedSources(in); got != in {
+		t.Errorf("stripFabricatedSources should not touch text with no sources section: got %q, want %q", got, in)
+	}
+}
+
 func TestBuildPromptAsksNotToInventProblemsWhenHealthy(t *testing.T) {
 	prompt := BuildPrompt([]byte(`{"verdict":"ok","findings":[]}`))
 	if !strings.Contains(strings.ToLower(prompt), "healthy") {

@@ -22,13 +22,22 @@ import (
 // unnoticed. This runs on every `go test ./...`, so it runs in CI on all
 // three OSes the same as everything else.
 //
-// Deliberately excluded: anything destructive (`clean` without --dry-run,
-// `dupes --hardlink`, `tools --install`), anything that blocks forever by
-// design (`serve`, `mcp`, `--watch`), and `advice` (needs a real LLM
-// endpoint — network-flaky, not appropriate for a fast deterministic test).
+// Deliberately excluded: anything destructive against real user state
+// (`clean` without --dry-run, `tools --install`), anything that blocks
+// forever by design (`serve`, `mcp`, `--watch`, `guide --web`), and
+// `advice` (needs a real LLM endpoint — network-flaky, not appropriate for
+// a fast deterministic test; its provider-selection logic already has
+// direct unit test coverage in internal/llm). `dupes --hardlink` IS
+// included — safely, against a directory guaranteed to be empty, so it
+// only exercises flag-wiring, never real file mutation.
 func TestCLISmoke(t *testing.T) {
 	bin := buildCLIOnce(t)
 	scratch := t.TempDir()
+	// Its own directory, never the shared scratch: by the time later cases
+	// run, scratch already holds a config/history dir the earlier commands
+	// wrote (scratch also serves as HOME/APPDATA below), and a dupes scan
+	// of that would just be noise the test has to reason around.
+	dupesRoot := t.TempDir()
 
 	cases := []struct {
 		name string
@@ -58,7 +67,11 @@ func TestCLISmoke(t *testing.T) {
 		{"memhogs", []string{"memhogs"}},
 		{"memcheck", []string{"memcheck"}},
 		{"tools", []string{"tools"}},
-		{"dupes-json", []string{"dupes", "--root", scratch, "--json"}},
+		{"dupes-json", []string{"dupes", "--root", dupesRoot, "--json"}},
+		// Safe because dupesRoot is guaranteed empty: no files exist to
+		// hardlink, so this only exercises the flag-wiring/confirmation
+		// path, never ApplyHardlinks' actual file mutation.
+		{"dupes-hardlink-empty-dir", []string{"dupes", "--root", dupesRoot, "--hardlink", "--yes"}},
 		{"clean-dry-run", []string{"clean", "--dry-run"}},
 		{"clean-history", []string{"clean", "--history"}},
 		{"export", []string{"export"}},

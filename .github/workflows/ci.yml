@@ -35,6 +35,20 @@ jobs:
             go test -race -coverprofile=coverage.out ./...
           fi
 
+      - name: CLI smoke test (every read-only command, via the real binary)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -v -run TestCLISmoke . | tee smoke.log
+          {
+            echo "## CLI smoke test — ${{ runner.os }}"
+            echo "Each line below is one \`vitals\` invocation exec'd against the actual compiled binary (not just its package's unit tests)."
+            echo '```'
+            grep -E '^\s*--- (PASS|FAIL): TestCLISmoke/' smoke.log
+            echo '```'
+            echo "Not covered here (destructive, network-flaky, or block-forever by design): \`clean --yes\`, \`dupes --hardlink\`, \`tools --install\`, \`advice\`, \`serve\`, \`mcp\`, \`guide --web\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Coverage floor
         if: runner.os == 'Linux'
         shell: bash

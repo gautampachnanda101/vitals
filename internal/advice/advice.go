@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"vitals/internal/doctor"
 	"vitals/internal/llm"
@@ -39,8 +41,32 @@ LLM runtime, plus a ranked list of findings with severities and suggested fixes.
 Give practical, prioritized advice: if there is a real problem, say what it is, why it's happening,
 and the exact command or action to fix it — a few concise sentences, not an essay. If the report is
 healthy (verdict "ok", no findings), say so briefly and do not invent problems that aren't there.
+There are no external sources for this — everything you need is in the JSON below. Do not cite,
+reference, or invent a source, URL, or "Sources" section; base the answer only on this data.
 
 %s`, reportJSON)
+}
+
+// sourcesHeadingRE matches a trailing "Sources" heading in any of the forms
+// small models tend to produce (Markdown heading, bold, or a plain
+// "Sources:" line), case-insensitively, anchored to the rest of the line so
+// it doesn't fire on the word appearing mid-sentence.
+var sourcesHeadingRE = regexp.MustCompile(`(?im)^\s*(#{1,6}\s*sources\s*|\*\*sources\*\*|sources:)\s*$`)
+
+// stripFabricatedSources removes a trailing "Sources" section from an LLM
+// reply. This prompt never supplies or asks for a source, but small local
+// models sometimes fabricate one anyway — a citation-shaped pattern picked
+// up from unrelated training data — regardless of an explicit instruction
+// not to (they're unreliable at following negative instructions). Since
+// vitals controls the whole pipeline and knows a priori there is never a
+// real source to show, stripping it deterministically here is more
+// reliable than hoping every model obeys the prompt.
+func stripFabricatedSources(reply string) string {
+	loc := sourcesHeadingRE.FindStringIndex(reply)
+	if loc == nil {
+		return reply
+	}
+	return strings.TrimRight(reply[:loc[0]], "\n ")
 }
 
 // Run gathers the current doctor report, asks a local or cloud LLM for
@@ -63,6 +89,7 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
+	reply = stripFabricatedSources(reply)
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
