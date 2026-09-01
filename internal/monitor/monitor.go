@@ -40,8 +40,8 @@ type Snapshot struct {
 	CPU       CPUInfo    `json:"cpu"`
 	Memory    MemInfo    `json:"memory"`
 	Swap      MemInfo    `json:"swap"`
-	DiskIO    []IOStat   `json:"disk_io"`
-	NetIO     []IOStat   `json:"net_io"`
+	DiskIO    []IORate   `json:"disk_io"`
+	NetIO     []IORate   `json:"net_io"`
 	Processes []ProcInfo `json:"processes"`
 }
 
@@ -67,10 +67,51 @@ type MemInfo struct {
 	UsedPct    float64 `json:"used_percent"`
 }
 
+// IOStat is one cumulative counter reading for a device or interface.
 type IOStat struct {
 	Name       string `json:"name"`
 	ReadBytes  uint64 `json:"read_bytes"`
 	WriteBytes uint64 `json:"write_bytes"`
+}
+
+// IORate is throughput for a device or interface over the sample window,
+// carrying both the current cumulative counters and the derived per-second rate.
+type IORate struct {
+	Name        string  `json:"name"`
+	ReadBytes   uint64  `json:"read_bytes"`
+	WriteBytes  uint64  `json:"write_bytes"`
+	ReadPerSec  float64 `json:"read_bytes_per_sec"`
+	WritePerSec float64 `json:"write_bytes_per_sec"`
+}
+
+// ioDelta computes per-second rates between two cumulative readings. A device
+// absent from prev is reported first-seen with a zero rate; a counter reset
+// (curr < prev) clamps to zero rather than going negative; a non-positive
+// interval yields zero rates. The result is sorted by total throughput, busiest
+// first.
+func ioDelta(prev, curr []IOStat, dt time.Duration) []IORate {
+	idx := make(map[string]IOStat, len(prev))
+	for _, p := range prev {
+		idx[p.Name] = p
+	}
+	secs := dt.Seconds()
+	out := make([]IORate, 0, len(curr))
+	for _, c := range curr {
+		r := IORate{Name: c.Name, ReadBytes: c.ReadBytes, WriteBytes: c.WriteBytes}
+		if p, ok := idx[c.Name]; ok && secs > 0 {
+			if c.ReadBytes >= p.ReadBytes {
+				r.ReadPerSec = float64(c.ReadBytes-p.ReadBytes) / secs
+			}
+			if c.WriteBytes >= p.WriteBytes {
+				r.WritePerSec = float64(c.WriteBytes-p.WriteBytes) / secs
+			}
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ReadPerSec+out[i].WritePerSec > out[j].ReadPerSec+out[j].WritePerSec
+	})
+	return out
 }
 
 type ProcInfo struct {
@@ -139,10 +180,22 @@ func sample(opts Options) (Snapshot, error) {
 		s.Host.Load1, s.Host.Load5, s.Host.Load15 = la.Load1, la.Load5, la.Load15
 	}
 
+	// Take a first reading of the cumulative I/O counters, then let the sample
+	// window elapse (CPU percent blocks for it), then read again and derive
+	// per-second rates. Cumulative counters on their own tell you nothing
+	// actionable about what the machine is doing right now.
+	win := opts.sampleWindow()
+	disk0 := readDiskCounters()
+	net0 := readNetCounters()
+	start := time.Now()
+
 	s.CPU.Cores, _ = cpu.Counts(true)
-	if pct, err := cpu.Percent(opts.sampleWindow(), false); err == nil && len(pct) > 0 {
+	if pct, err := cpu.Percent(win, false); err == nil && len(pct) > 0 {
 		s.CPU.UsedPct = pct[0]
+	} else {
+		time.Sleep(win) // still let the I/O window elapse
 	}
+	dt := time.Since(start)
 
 	if vm, err := mem.VirtualMemory(); err == nil {
 		s.Memory = MemInfo{vm.Total, vm.Used, vm.UsedPercent}
@@ -151,28 +204,41 @@ func sample(opts Options) (Snapshot, error) {
 		s.Swap = MemInfo{sw.Total, sw.Used, sw.UsedPercent}
 	}
 
-	if io, err := disk.IOCounters(); err == nil {
-		for name, c := range io {
-			s.DiskIO = append(s.DiskIO, IOStat{name, c.ReadBytes, c.WriteBytes})
-		}
-		sort.Slice(s.DiskIO, func(i, j int) bool {
-			return s.DiskIO[i].ReadBytes+s.DiskIO[i].WriteBytes > s.DiskIO[j].ReadBytes+s.DiskIO[j].WriteBytes
-		})
-	}
-	if io, err := net.IOCounters(true); err == nil {
-		for _, c := range io {
-			if c.BytesRecv == 0 && c.BytesSent == 0 {
-				continue
-			}
-			s.NetIO = append(s.NetIO, IOStat{c.Name, c.BytesRecv, c.BytesSent})
-		}
-		sort.Slice(s.NetIO, func(i, j int) bool {
-			return s.NetIO[i].ReadBytes+s.NetIO[i].WriteBytes > s.NetIO[j].ReadBytes+s.NetIO[j].WriteBytes
-		})
-	}
+	s.DiskIO = ioDelta(disk0, readDiskCounters(), dt)
+	s.NetIO = ioDelta(net0, readNetCounters(), dt)
 
 	s.Processes = topProcesses(opts)
 	return s, nil
+}
+
+// readDiskCounters returns a cumulative I/O reading per physical device.
+func readDiskCounters() []IOStat {
+	io, err := disk.IOCounters()
+	if err != nil {
+		return nil
+	}
+	out := make([]IOStat, 0, len(io))
+	for name, c := range io {
+		out = append(out, IOStat{Name: name, ReadBytes: c.ReadBytes, WriteBytes: c.WriteBytes})
+	}
+	return out
+}
+
+// readNetCounters returns a cumulative I/O reading per interface, skipping
+// interfaces that have never carried a byte.
+func readNetCounters() []IOStat {
+	io, err := net.IOCounters(true)
+	if err != nil {
+		return nil
+	}
+	out := make([]IOStat, 0, len(io))
+	for _, c := range io {
+		if c.BytesRecv == 0 && c.BytesSent == 0 {
+			continue
+		}
+		out = append(out, IOStat{Name: c.Name, ReadBytes: c.BytesRecv, WriteBytes: c.BytesSent})
+	}
+	return out
 }
 
 func (o Options) sampleWindow() time.Duration {
@@ -249,23 +315,23 @@ func emit(s Snapshot, opts Options) error {
 	}
 
 	if len(s.DiskIO) > 0 {
-		fmt.Printf("\n%sDisk I/O (cumulative)%s\n", ui.Bold, ui.Reset)
+		fmt.Printf("\n%sDisk I/O (per second)%s\n", ui.Bold, ui.Reset)
 		for i, d := range s.DiskIO {
 			if i >= 4 {
 				break
 			}
-			fmt.Printf("  %-14s read %-11s write %-11s\n", d.Name,
-				ui.HumanBytes(int64(d.ReadBytes)), ui.HumanBytes(int64(d.WriteBytes)))
+			fmt.Printf("  %-14s read %-13s write %-13s\n", d.Name,
+				rate(d.ReadPerSec), rate(d.WritePerSec))
 		}
 	}
 	if len(s.NetIO) > 0 {
-		fmt.Printf("\n%sNetwork I/O (cumulative)%s\n", ui.Bold, ui.Reset)
+		fmt.Printf("\n%sNetwork I/O (per second)%s\n", ui.Bold, ui.Reset)
 		for i, n := range s.NetIO {
 			if i >= 4 {
 				break
 			}
-			fmt.Printf("  %-14s recv %-11s sent %-11s\n", n.Name,
-				ui.HumanBytes(int64(n.ReadBytes)), ui.HumanBytes(int64(n.WriteBytes)))
+			fmt.Printf("  %-14s recv %-13s sent %-13s\n", n.Name,
+				rate(n.ReadPerSec), rate(n.WritePerSec))
 		}
 	}
 
@@ -278,6 +344,14 @@ func emit(s Snapshot, opts Options) error {
 			ui.HumanBytes(int64(p.RSSBytes)), p.Threads, ui.Truncate(p.Name, 40))
 	}
 	return nil
+}
+
+// rate formats a bytes-per-second value, e.g. "1.50 MB/s".
+func rate(bytesPerSec float64) string {
+	if bytesPerSec < 0 {
+		bytesPerSec = 0
+	}
+	return ui.HumanBytes(int64(bytesPerSec)) + "/s"
 }
 
 func bar(pct float64) string {
