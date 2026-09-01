@@ -9,6 +9,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/sensors"
 
+	"vitals/internal/gpu"
 	"vitals/internal/llm"
 )
 
@@ -63,6 +64,19 @@ func Collect(opts Options) Snapshot {
 
 	// Disks: usage per real mount, plus a device-wide busy/latency estimate.
 	s.Disks = collectDisks(io0, io1, opts.Window)
+
+	// GPUs via the vendor CLIs (nvidia-smi / rocm-smi / ioreg); empty when none.
+	for _, g := range gpu.Probe() {
+		s.GPUs = append(s.GPUs, GPU{
+			Name:         g.Name,
+			VRAMUsed:     g.MemUsedB,
+			VRAMTotal:    g.MemTotalB,
+			UtilPct:      g.UtilPct,
+			TempC:        g.TempC,
+			ClockMHz:     g.ClockMHz,
+			BaseClockMHz: g.ClockMaxMHz,
+		})
+	}
 
 	// Thermal (best effort; throttle detection is platform-specific and TODO).
 	if temps, err := sensors.SensorsTemperatures(); err == nil {

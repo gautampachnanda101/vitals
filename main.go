@@ -31,6 +31,7 @@ import (
 
 	"vitals/internal/clean"
 	"vitals/internal/doctor"
+	"vitals/internal/gpu"
 	"vitals/internal/help"
 	"vitals/internal/llm"
 	"vitals/internal/memcheck"
@@ -104,6 +105,12 @@ func main() {
 		fs := newFlagSet("memcheck")
 		_ = fs.Parse(args)
 		must(memcheck.Run())
+
+	case "gpu":
+		fs := newFlagSet("gpu")
+		asJSON := fs.Bool("json", false, "emit GPU telemetry as JSON")
+		_ = fs.Parse(args)
+		must(gpu.Run(*asJSON))
 
 	case "top", "monitor":
 		fs := newFlagSet("top")

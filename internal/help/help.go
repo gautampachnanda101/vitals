@@ -103,6 +103,16 @@ var commands = []Command{
 		Examples: []string{"vitals memcheck"},
 	},
 	{
+		Name:     "gpu",
+		Synopsis: "GPU telemetry via nvidia-smi / rocm-smi / ioreg",
+		Long: "Per-GPU VRAM, utilisation, temperature, power and clocks, plus the\n" +
+			"processes holding VRAM (NVIDIA). Reads the vendor CLI that is already\n" +
+			"installed; reports nothing gracefully when none is present. For a live\n" +
+			"per-process view, use nvtop.",
+		Flags:    []Flag{{"json", "", "emit GPU telemetry as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{"vitals gpu", "vitals gpu --json"},
+	},
+	{
 		Name:     "llm",
 		Synopsis: "inspect every local and cloud LLM endpoint",
 		Long: "Local runtimes (Ollama, LM Studio, llama.cpp, vLLM): host CPU/RAM of the\n" +
