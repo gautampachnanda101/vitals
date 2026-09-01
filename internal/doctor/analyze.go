@@ -13,82 +13,83 @@ import (
 )
 
 // Snapshot is the cross-resource state Analyze reasons over. Zero values mean
-// "not measured" and are simply skipped by the rules.
+// "not measured" and are simply skipped by the rules. The JSON shape is a
+// frozen contract — see SchemaVersion.
 type Snapshot struct {
-	CPU     CPU
-	Memory  Memory
-	Disks   []Disk
-	GPUs    []GPU
-	LLM     []LLMModel
-	Thermal Thermal
-	Net     []NetIface
-	Power   Power
+	CPU     CPU        `json:"cpu"`
+	Memory  Memory     `json:"memory"`
+	Disks   []Disk     `json:"disks"`
+	GPUs    []GPU      `json:"gpus"`
+	LLM     []LLMModel `json:"llm"`
+	Thermal Thermal    `json:"thermal"`
+	Net     []NetIface `json:"net"`
+	Power   Power      `json:"power"`
 }
 
 // NetIface is one network interface's throughput over the sample window.
 type NetIface struct {
-	Name          string
-	RxBytesPerSec float64
-	TxBytesPerSec float64
-	LinkSpeedbps  float64 // 0 if unknown
-	RetransPct    float64 // TCP retransmit rate, 0 if unknown
+	Name          string  `json:"name"`
+	RxBytesPerSec float64 `json:"rx_bytes_per_sec"`
+	TxBytesPerSec float64 `json:"tx_bytes_per_sec"`
+	LinkSpeedbps  float64 `json:"link_speed_bps"` // 0 if unknown
+	RetransPct    float64 `json:"retransmit_percent"`
 }
 
 // Power is battery / AC state.
 type Power struct {
-	OnBattery       bool
-	Percent         float64
-	MinutesLeft     int     // OS estimate, 0 if unknown
-	DesignCapacityF float64 // current full-charge / design capacity, 0 if unknown
-	ChargeRateW     float64 // negative = discharging
+	OnBattery       bool    `json:"on_battery"`
+	Percent         float64 `json:"percent"`
+	MinutesLeft     int     `json:"minutes_left"`             // OS estimate, 0 if unknown
+	DesignCapacityF float64 `json:"design_capacity_fraction"` // full-charge / design, 0 if unknown
+	ChargeRateW     float64 `json:"charge_rate_watts"`        // negative = discharging
 }
 
 type CPU struct {
-	Cores     int
-	UsedPct   float64
-	IOWaitPct float64
-	StealPct  float64
-	Load1     float64
-	FreqMHz   float64
-	BaseMHz   float64
+	Cores     int     `json:"cores"`
+	UsedPct   float64 `json:"used_percent"`
+	IOWaitPct float64 `json:"iowait_percent"`
+	StealPct  float64 `json:"steal_percent"`
+	Load1     float64 `json:"load1"`
+	FreqMHz   float64 `json:"freq_mhz"`
+	BaseMHz   float64 `json:"base_mhz"`
 }
 
 type Memory struct {
-	UsedPct       float64
-	SwapUsedPct   float64
-	SwapTotal     uint64
-	SwapInPerSec  float64
-	SwapOutPerSec float64
+	UsedPct       float64 `json:"used_percent"`
+	SwapUsedPct   float64 `json:"swap_used_percent"`
+	SwapTotal     uint64  `json:"swap_total_bytes"`
+	SwapInPerSec  float64 `json:"swap_in_bytes_per_sec"`
+	SwapOutPerSec float64 `json:"swap_out_bytes_per_sec"`
 }
 
 type Disk struct {
-	Mount             string
-	UsedPct           float64
-	FreeBytes         uint64
-	GrowthBytesPerSec float64
-	UtilPct           float64
-	AwaitMS           float64
+	Mount             string  `json:"mount"`
+	UsedPct           float64 `json:"used_percent"`
+	FreeBytes         uint64  `json:"free_bytes"`
+	GrowthBytesPerSec float64 `json:"growth_bytes_per_sec"`
+	UtilPct           float64 `json:"util_percent"`
+	AwaitMS           float64 `json:"await_ms"`
 }
 
 type GPU struct {
-	Name         string
-	VRAMUsed     uint64
-	VRAMTotal    uint64
-	UtilPct      float64
-	TempC        float64
-	ClockMHz     float64
-	BaseClockMHz float64
+	Name         string  `json:"name"`
+	VRAMUsed     uint64  `json:"vram_used_bytes"`
+	VRAMTotal    uint64  `json:"vram_total_bytes"`
+	UtilPct      float64 `json:"util_percent"`
+	TempC        float64 `json:"temp_c"`
+	ClockMHz     float64 `json:"clock_mhz"`
+	BaseClockMHz float64 `json:"base_clock_mhz"`
 }
 
 type LLMModel struct {
-	Name       string
-	OffloadPct float64 // size_vram / size * 100
-	HostCPUPct float64 // CPU% of the runtime process
+	Name       string  `json:"name"`
+	OffloadPct float64 `json:"gpu_offload_percent"`
+	HostCPUPct float64 `json:"host_cpu_percent"`
 }
 
 type Thermal struct {
-	CPUTempC   float64
-	Throttling bool
+	CPUTempC   float64 `json:"cpu_temp_c"`
+	Throttling bool    `json:"throttling"`
 }
 
 // Analyze runs every correlation rule and returns the findings, most severe

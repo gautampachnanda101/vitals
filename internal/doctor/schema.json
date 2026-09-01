@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gautampachnanda101/vitals/schema/doctor.json",
+  "title": "vitals doctor --json payload",
+  "description": "Envelope emitted by `vitals doctor --json` and the resource deep-dive commands, and carried in the MCP system_health tool result.",
+  "x-schema-version": "1.0.0",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "verdict", "exit_code", "findings", "snapshot"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "description": "Semantic version of this payload shape." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "verdict": { "type": "string", "enum": ["ok", "warning", "critical"] },
+    "exit_code": { "type": "integer", "enum": [0, 1, 2] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "title"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "type": "string", "enum": ["ok", "warning", "critical"] },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "fixes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cores": { "type": "integer" },
+            "used_percent": { "type": "number" },
+            "iowait_percent": { "type": "number" },
+            "steal_percent": { "type": "number" },
+            "load1": { "type": "number" },
+            "freq_mhz": { "type": "number" },
+            "base_mhz": { "type": "number" }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "used_percent": { "type": "number" },
+            "swap_used_percent": { "type": "number" },
+            "swap_total_bytes": { "type": "integer" },
+            "swap_in_bytes_per_sec": { "type": "number" },
+            "swap_out_bytes_per_sec": { "type": "number" }
+          }
+        },
+        "disks": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mount": { "type": "string" },
+              "used_percent": { "type": "number" },
+              "free_bytes": { "type": "integer" },
+              "growth_bytes_per_sec": { "type": "number" },
+              "util_percent": { "type": "number" },
+              "await_ms": { "type": "number" }
+            }
+          }
+        },
+        "gpus": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "vram_used_bytes": { "type": "integer" },
+              "vram_total_bytes": { "type": "integer" },
+              "util_percent": { "type": "number" },
+              "temp_c": { "type": "number" },
+              "clock_mhz": { "type": "number" },
+              "base_clock_mhz": { "type": "number" }
+            }
+          }
+        },
+        "llm": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "gpu_offload_percent": { "type": "number" },
+              "host_cpu_percent": { "type": "number" }
+            }
+          }
+        },
+        "thermal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu_temp_c": { "type": "number" },
+            "throttling": { "type": "boolean" }
+          }
+        },
+        "net": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "rx_bytes_per_sec": { "type": "number" },
+              "tx_bytes_per_sec": { "type": "number" },
+              "link_speed_bps": { "type": "number" },
+              "retransmit_percent": { "type": "number" }
+            }
+          }
+        },
+        "power": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "on_battery": { "type": "boolean" },
+            "percent": { "type": "number" },
+            "minutes_left": { "type": "integer" },
+            "design_capacity_fraction": { "type": "number" },
+            "charge_rate_watts": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}

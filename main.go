@@ -87,7 +87,12 @@ func main() {
 		fs := newFlagSet("doctor")
 		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
 		asJSON := fs.Bool("json", false, "emit the findings and snapshot as JSON")
+		schema := fs.Bool("schema", false, "print the JSON Schema for the --json payload and exit")
 		_ = fs.Parse(args)
+		if *schema {
+			os.Stdout.Write(doctor.Schema())
+			return
+		}
 		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
 
 	case "clean":

@@ -44,6 +44,11 @@ vitals doctor || echo "runner is unhealthy"
 vitals doctor --json | jq -r '.findings[] | "\(.severity)\t\(.title)"'
 ```
 
+The `--json` payload carries a `schema_version` (currently `1.0.0`); the shape
+is a frozen contract. `vitals doctor --schema` prints the full JSON Schema. The
+same envelope is returned by the MCP `system_health` tool and by
+`vitals cpu|mem|disk|net|power --json` (with an extra `resource` field).
+
 ## vitals llm
 
 One command for every LLM endpoint, local or remote, over open APIs only.

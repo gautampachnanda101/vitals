@@ -51,15 +51,10 @@ func tools() []toolDef {
 	return []toolDef{
 		{
 			name:        "system_health",
-			description: "Full machine health check: the ranked findings (what is wrong and the fix) plus the overall verdict and exit code.",
+			description: "Full machine health check: the ranked findings (what is wrong and the fix) plus the overall verdict and exit code. Same schema as `vitals doctor --json`.",
 			run: func(o Options) (string, error) {
 				snap, rep := doctor.Assess(doctor.RunOptions{OllamaURL: o.OllamaURL})
-				return jsonString(map[string]any{
-					"verdict":   rep.Worst().String(),
-					"exit_code": rep.ExitCode(),
-					"findings":  rep.SortedBySeverity(),
-					"snapshot":  snap,
-				})
+				return jsonString(doctor.JSONReport(snap, rep))
 			},
 		},
 		{

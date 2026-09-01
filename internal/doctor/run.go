@@ -69,23 +69,29 @@ func Run(opts RunOptions) int {
 	return report.ExitCode()
 }
 
-type jsonOut struct {
-	Timestamp string         `json:"timestamp"`
-	Verdict   string         `json:"verdict"`
-	ExitCode  int            `json:"exit_code"`
-	Findings  []diag.Finding `json:"findings"`
-	Snapshot  Snapshot       `json:"snapshot"`
+type JSONEnvelope struct {
+	SchemaVersion string         `json:"schema_version"`
+	Timestamp     string         `json:"timestamp"`
+	Verdict       string         `json:"verdict"`
+	ExitCode      int            `json:"exit_code"`
+	Findings      []diag.Finding `json:"findings"`
+	Snapshot      Snapshot       `json:"snapshot"`
+}
+
+// JSONReport builds the canonical `--json` envelope for a snapshot + verdict.
+func JSONReport(s Snapshot, r diag.Report) JSONEnvelope {
+	return JSONEnvelope{
+		SchemaVersion: SchemaVersion,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Verdict:       r.Worst().String(),
+		ExitCode:      r.ExitCode(),
+		Findings:      r.SortedBySeverity(),
+		Snapshot:      s,
+	}
 }
 
 func emitJSON(s Snapshot, r diag.Report) {
-	out := jsonOut{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Verdict:   r.Worst().String(),
-		ExitCode:  r.ExitCode(),
-		Findings:  r.SortedBySeverity(),
-		Snapshot:  s,
-	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(out)
+	_ = enc.Encode(JSONReport(s, r))
 }

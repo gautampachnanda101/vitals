@@ -38,13 +38,15 @@ var commands = []Command{
 			"Exit code: 0 healthy, 1 warning, 2 critical — usable in scripts and CI.",
 		Flags: []Flag{
 			{"ollama-url", "URL", "base URL of the Ollama server (default http://localhost:11434)"},
-			{"json", "", "emit the findings and the underlying snapshot as JSON"},
+			{"json", "", "emit the findings and the underlying snapshot as JSON (schema v1.0.0)"},
+			{"schema", "", "print the JSON Schema for the --json payload and exit"},
 			{"no-color", "", "disable ANSI colour (also honours NO_COLOR)"},
 		},
 		Examples: []string{
 			"vitals doctor",
 			"vitals doctor --json | jq .verdict",
 			"vitals doctor >/dev/null || echo 'machine unhealthy'",
+			"vitals doctor --schema",
 		},
 	},
 	{

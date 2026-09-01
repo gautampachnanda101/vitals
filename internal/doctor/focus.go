@@ -23,12 +23,9 @@ func RunFocus(resource string, opts RunOptions) int {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(struct {
-			Resource string         `json:"resource"`
-			Verdict  string         `json:"verdict"`
-			ExitCode int            `json:"exit_code"`
-			Findings []diag.Finding `json:"findings"`
-			Snapshot Snapshot       `json:"snapshot"`
-		}{resource, report.Worst().String(), report.ExitCode(), report.SortedBySeverity(), snap})
+			Resource string `json:"resource"`
+			JSONEnvelope
+		}{resource, JSONReport(snap, report)})
 		return report.ExitCode()
 	}
 
