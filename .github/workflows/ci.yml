@@ -58,3 +58,23 @@ jobs:
           check-latest: true
       - name: Cross-compile every target
         run: ./build.sh ci
+
+  integration:
+    # Secrets are unavailable to fork PRs; only run on pushes to the repo.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Integration test — Ollama Cloud over the open API
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_CLOUD_KEY }}
+        run: |
+          if [ -z "$OLLAMA_API_KEY" ]; then
+            echo "OLLAMA_CLOUD_KEY not configured — skipping"
+            exit 0
+          fi
+          go test -tags=integration -run TestIntegration -v ./internal/llm/
