@@ -61,10 +61,11 @@ func (o Options) withDefaults() Options {
 
 // Report is the machine-readable form emitted with --json.
 type Report struct {
-	Timestamp time.Time      `json:"timestamp"`
-	Processes []ProcSnapshot `json:"processes"`
-	Providers []Provider     `json:"providers"`
-	Models    []ModelState   `json:"models"`
+	Timestamp time.Time       `json:"timestamp"`
+	Processes []ProcSnapshot  `json:"processes"`
+	Providers []Provider      `json:"providers"`
+	Models    []ModelState    `json:"models"`
+	GPUDriver GPUDriverStatus `json:"gpu_driver,omitempty"`
 }
 
 type ProcSnapshot struct {
@@ -161,6 +162,9 @@ func once(opts Options) error {
 	rep.Processes = scanProcesses()
 	rep.Providers = probeProviders(opts, os.Getenv)
 	rep.Models = collectResidentModels(opts, rep.Providers)
+	if needsGPUPreflightCheck(rep.Models) {
+		rep.GPUDriver = checkGPUDriver()
+	}
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -540,6 +544,9 @@ func render(rep Report) {
 			ui.Warnf("PARTIAL OFFLOAD — CPU<->GPU context shifting will spike CPU and slow generation; try a smaller quant (Q8_0 -> Q4_K_M) or fewer layers")
 		default:
 			ui.Warnf("CPU-ONLY — generation is bottlenecked on system RAM bandwidth; free VRAM or pick a smaller model")
+			if msg := gpuPreflightMessage(rep.GPUDriver); msg != "" {
+				fmt.Printf("  │    gpu driver   : %s\n", msg)
+			}
 		}
 	}
 }

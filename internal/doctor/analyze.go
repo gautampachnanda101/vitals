@@ -42,24 +42,39 @@ type Power struct {
 	MinutesLeft     int     `json:"minutes_left"`             // OS estimate, 0 if unknown
 	DesignCapacityF float64 `json:"design_capacity_fraction"` // full-charge / design, 0 if unknown
 	ChargeRateW     float64 `json:"charge_rate_watts"`        // negative = discharging
+	LowPowerMode    bool    `json:"low_power_mode"`           // macOS only; always false elsewhere
 }
 
 type CPU struct {
-	Cores     int     `json:"cores"`
-	UsedPct   float64 `json:"used_percent"`
-	IOWaitPct float64 `json:"iowait_percent"`
-	StealPct  float64 `json:"steal_percent"`
-	Load1     float64 `json:"load1"`
-	FreqMHz   float64 `json:"freq_mhz"`
-	BaseMHz   float64 `json:"base_mhz"`
+	Cores      int       `json:"cores"`
+	UsedPct    float64   `json:"used_percent"`
+	IOWaitPct  float64   `json:"iowait_percent"`
+	StealPct   float64   `json:"steal_percent"`
+	Load1      float64   `json:"load1"`
+	FreqMHz    float64   `json:"freq_mhz"`
+	BaseMHz    float64   `json:"base_mhz"`
+	PerCorePct []float64 `json:"per_core_percent"`
+	TopProc    ProcRef   `json:"top_process"`
 }
 
 type Memory struct {
 	UsedPct       float64 `json:"used_percent"`
+	AvailablePct  float64 `json:"available_percent"`
 	SwapUsedPct   float64 `json:"swap_used_percent"`
 	SwapTotal     uint64  `json:"swap_total_bytes"`
 	SwapInPerSec  float64 `json:"swap_in_bytes_per_sec"`
 	SwapOutPerSec float64 `json:"swap_out_bytes_per_sec"`
+	TopProc       ProcRef `json:"top_process"`
+}
+
+// ProcRef names the process behind a resource reading — the "who" that turns
+// a percentage into something actionable. A zero value (empty Name) means no
+// process could be attributed.
+type ProcRef struct {
+	PID      int32   `json:"pid"`
+	Name     string  `json:"name"`
+	CPUPct   float64 `json:"cpu_percent"`
+	RSSBytes uint64  `json:"rss_bytes"`
 }
 
 type Disk struct {
@@ -69,6 +84,8 @@ type Disk struct {
 	GrowthBytesPerSec float64 `json:"growth_bytes_per_sec"`
 	UtilPct           float64 `json:"util_percent"`
 	AwaitMS           float64 `json:"await_ms"`
+	IOPS              float64 `json:"iops"`
+	InodesUsedPct     float64 `json:"inodes_used_percent"`
 }
 
 type GPU struct {
@@ -145,16 +162,17 @@ func AnalyzeResource(s Snapshot, resource string) diag.Report {
 func analyzeMemory(r *diag.Report, s Snapshot) {
 	m := s.Memory
 	swapPressure := m.SwapOutPerSec > 0 || m.SwapUsedPct >= 50
+	topProc := procSuffix(m.TopProc, false)
 
 	switch {
 	case m.SwapUsedPct >= 50 && m.SwapOutPerSec > 0:
 		r.Add(diag.Finding{
 			Severity: diag.Critical,
 			Title:    "Swap thrashing",
-			Detail: fmt.Sprintf("swap %.0f%% full and paging out at %s/s — the machine is stalling on disk, not working",
-				m.SwapUsedPct, ui.HumanBytes(int64(m.SwapOutPerSec))),
+			Detail: fmt.Sprintf("swap %.0f%% full and paging out at %s/s — the machine is stalling on disk, not working%s",
+				m.SwapUsedPct, ui.HumanBytes(int64(m.SwapOutPerSec)), topProc),
 			Fixes: []string{
-				"free RAM now: `vitals memhogs` then quit the top consumers",
+				quitFix(m.TopProc),
 				"macOS: `sudo purge`",
 				"reboot if swap stays pinned after freeing RAM",
 			},
@@ -165,38 +183,66 @@ func analyzeMemory(r *diag.Report, s Snapshot) {
 			Title:    "Swap heavily used",
 			Detail: fmt.Sprintf("swap %.0f%% full but not actively paging — little headroom left before it starts to stall",
 				m.SwapUsedPct),
-			Fixes: []string{"free RAM with `vitals memhogs`", "a reboot clears accumulated swap"},
+			Fixes: []string{quitFix(m.TopProc), "a reboot clears accumulated swap"},
 		})
 	}
 
+	// AvailablePct (kernel's own "could allocate this without swapping" number)
+	// is the honest read on pressure — UsedPct alone conflates committed memory
+	// with cache the kernel will drop on demand.
+	lowAvailable := m.AvailablePct > 0 && m.AvailablePct < 10
+
 	switch {
-	case m.UsedPct >= 90 && swapPressure:
+	case m.UsedPct >= thresholds.RAMHighPercent && (swapPressure || lowAvailable):
 		r.Add(diag.Finding{
 			Severity: diag.Critical,
 			Title:    "RAM exhausted",
-			Detail:   fmt.Sprintf("%.0f%% of physical RAM in use with active swap pressure", m.UsedPct),
-			Fixes:    []string{"quit the biggest apps (`vitals memhogs`)", "add RAM or swap headroom"},
+			Detail: fmt.Sprintf("%.0f%% of physical RAM in use with only %.0f%% available without swapping%s",
+				m.UsedPct, m.AvailablePct, topProc),
+			Fixes: []string{quitFix(m.TopProc), "add RAM or swap headroom"},
 		})
-	case m.UsedPct >= 90:
+	case m.UsedPct >= thresholds.RAMHighPercent:
 		r.Add(diag.Finding{
 			Severity: diag.Warn,
 			Title:    "RAM usage high (likely reclaimable)",
-			Detail: fmt.Sprintf("%.0f%% in use but no swap-out is happening — much of this is probably file cache the kernel will drop on demand",
-				m.UsedPct),
+			Detail: fmt.Sprintf("%.0f%% in use but %.0f%% is still available and no swap-out is happening — much of this is probably file cache the kernel will drop on demand",
+				m.UsedPct, m.AvailablePct),
 			Fixes: []string{"no action needed unless apps slow down", "confirm with `vitals memcheck`"},
 		})
-	case m.UsedPct >= 78:
+	case m.UsedPct >= thresholds.RAMWarnPercent:
 		r.Add(diag.Finding{
 			Severity: diag.Warn,
 			Title:    "RAM elevated",
-			Detail:   fmt.Sprintf("%.0f%% of physical RAM in use", m.UsedPct),
+			Detail:   fmt.Sprintf("%.0f%% of physical RAM in use%s", m.UsedPct, topProc),
 			Fixes:    []string{"close idle apps before it becomes pressure"},
 		})
 	}
 }
 
+// procSuffix renders " — largest consumer: name (pid N), 1.2 GB" (or the CPU
+// equivalent) for appending to a Detail line, empty when nothing was attributed.
+func procSuffix(p ProcRef, byCPU bool) string {
+	if p.Name == "" {
+		return ""
+	}
+	if byCPU {
+		return fmt.Sprintf(" — top consumer: %s (pid %d) at %.0f%% CPU", p.Name, p.PID, p.CPUPct)
+	}
+	return fmt.Sprintf(" — largest consumer: %s (pid %d), %s RSS", p.Name, p.PID, ui.HumanBytes(int64(p.RSSBytes)))
+}
+
+// quitFix names the actual top RAM consumer when known, falling back to the
+// generic pointer at `vitals memhogs` otherwise.
+func quitFix(p ProcRef) string {
+	if p.Name == "" {
+		return "free RAM with `vitals memhogs`"
+	}
+	return fmt.Sprintf("quit or restart %s (pid %d) — the largest consumer, or run `vitals memhogs` for the full list", p.Name, p.PID)
+}
+
 func analyzeCPU(r *diag.Report, s Snapshot) {
 	c := s.CPU
+	topProc := procSuffix(c.TopProc, true)
 
 	if c.UsedPct >= 80 && c.IOWaitPct >= 20 {
 		sev := diag.Warn
@@ -225,15 +271,46 @@ func analyzeCPU(r *diag.Report, s Snapshot) {
 		})
 	}
 
-	if c.Cores > 0 && c.Load1 >= float64(2*c.Cores) && c.IOWaitPct < 20 {
+	if c.Cores > 0 && c.Load1 >= thresholds.CPUOversubscribeMult*float64(c.Cores) && c.IOWaitPct < 20 {
+		fix := "reduce parallelism (lower -j / worker count)"
+		if c.TopProc.Name != "" {
+			fix = fmt.Sprintf("%s (pid %d) is the top consumer at %.0f%% CPU — reduce its parallelism or stop it", c.TopProc.Name, c.TopProc.PID, c.TopProc.CPUPct)
+		}
 		r.Add(diag.Finding{
 			Severity: diag.Warn,
 			Title:    "CPU run queue is oversubscribed",
-			Detail: fmt.Sprintf("load %.1f on %d cores — roughly %.1fx more runnable work than cores",
-				c.Load1, c.Cores, c.Load1/float64(c.Cores)),
-			Fixes: []string{"reduce parallelism (lower -j / worker count)", "`vitals cpu` for the top consumers"},
+			Detail: fmt.Sprintf("load %.1f on %d cores — roughly %.1fx more runnable work than cores%s",
+				c.Load1, c.Cores, c.Load1/float64(c.Cores), topProc),
+			Fixes: []string{fix, "`vitals top` for the full process list"},
 		})
 	}
+
+	if lo, hi, ok := coreSpread(c.PerCorePct); ok && hi >= 90 && c.UsedPct <= 60 {
+		fix := "the workload isn't parallelized — more cores won't help"
+		if c.TopProc.Name != "" {
+			fix = fmt.Sprintf("%s (pid %d) is pinning a single core — it isn't parallelized, so more cores won't help", c.TopProc.Name, c.TopProc.PID)
+		}
+		r.Add(diag.Finding{
+			Severity: diag.Warn,
+			Title:    "Single-core bottleneck",
+			Detail: fmt.Sprintf("one core is at %.0f%% while the busiest others sit near %.0f%%, yet overall CPU use is only %.0f%%%s",
+				hi, lo, c.UsedPct, topProc),
+			Fixes: []string{fix, "a faster single-thread clock helps here; adding cores does not"},
+		})
+	}
+}
+
+// coreSpread returns the second-busiest and busiest per-core percentages —
+// "second-busiest" so one runaway core doesn't get compared against itself,
+// which is what actually signals a single-thread bottleneck versus a
+// generally busy machine. ok is false with fewer than 2 cores measured.
+func coreSpread(cores []float64) (secondHi, hi float64, ok bool) {
+	if len(cores) < 2 {
+		return 0, 0, false
+	}
+	sorted := append([]float64(nil), cores...)
+	sort.Sort(sort.Reverse(sort.Float64Slice(sorted)))
+	return sorted[1], sorted[0], true
 }
 
 func analyzeThermal(r *diag.Report, s Snapshot) {
@@ -258,9 +335,9 @@ func analyzeThermal(r *diag.Report, s Snapshot) {
 
 func analyzeDisks(r *diag.Report, s Snapshot) {
 	for _, d := range s.Disks {
-		if d.UsedPct >= 90 {
+		if d.UsedPct >= thresholds.DiskWarnPercent {
 			sev := diag.Warn
-			if d.UsedPct >= 97 {
+			if d.UsedPct >= thresholds.DiskCriticalPercent {
 				sev = diag.Critical
 			}
 			detail := fmt.Sprintf("%s is %.0f%% full (%s free)", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)))
@@ -279,9 +356,22 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 			r.Add(diag.Finding{
 				Severity: diag.Warn,
 				Title:    fmt.Sprintf("Disk %s is saturated", d.Mount),
-				Detail: fmt.Sprintf("%.0f%% utilised with %.0fms average latency — I/O is queueing",
-					d.UtilPct, d.AwaitMS),
-				Fixes: []string{"identify the top reader/writer with `vitals disk`", "throttle or reschedule the heavy job"},
+				Detail: fmt.Sprintf("%.0f%% utilised with %.0fms average latency (%.0f IOPS) — I/O is queueing",
+					d.UtilPct, d.AwaitMS, d.IOPS),
+				Fixes: []string{"identify the top reader/writer with `vitals top --sort mem`", "throttle or reschedule the heavy job"},
+			})
+		}
+		if d.InodesUsedPct >= 90 {
+			sev := diag.Warn
+			if d.InodesUsedPct >= 97 {
+				sev = diag.Critical
+			}
+			r.Add(diag.Finding{
+				Severity: sev,
+				Title:    fmt.Sprintf("Disk %s is running out of inodes", d.Mount),
+				Detail: fmt.Sprintf("%.0f%% of inodes used — free space can look fine while new files still fail to create; usually huge counts of tiny files (node_modules, mail spools, cache trees)",
+					d.InodesUsedPct),
+				Fixes: []string{"find the directory with the most files, e.g. `find <dir> -xdev | wc -l` per subtree", "`vitals clean --dry-run` then apply"},
 			})
 		}
 	}

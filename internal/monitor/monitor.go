@@ -35,14 +35,27 @@ type Options struct {
 }
 
 type Snapshot struct {
-	Timestamp time.Time  `json:"timestamp"`
-	Host      HostInfo   `json:"host"`
-	CPU       CPUInfo    `json:"cpu"`
-	Memory    MemInfo    `json:"memory"`
-	Swap      MemInfo    `json:"swap"`
-	DiskIO    []IORate   `json:"disk_io"`
-	NetIO     []IORate   `json:"net_io"`
-	Processes []ProcInfo `json:"processes"`
+	Timestamp time.Time    `json:"timestamp"`
+	Host      HostInfo     `json:"host"`
+	CPU       CPUInfo      `json:"cpu"`
+	Memory    MemInfo      `json:"memory"`
+	MemDetail MemBreakdown `json:"memory_detail"`
+	Swap      MemInfo      `json:"swap"`
+	DiskIO    []IORate     `json:"disk_io"`
+	NetIO     []IORate     `json:"net_io"`
+	Processes []ProcInfo   `json:"processes"`
+}
+
+// MemBreakdown is where physical RAM actually goes beyond "used" — the sum of
+// process RSS routinely falls far short of the total because it omits kernel
+// memory, the disk cache, and (on macOS) memory compression. Zero fields are
+// simply not reported by this OS and are omitted from the text view.
+type MemBreakdown struct {
+	Wired    uint64 `json:"wired_bytes"`    // kernel + locked pages (macOS/BSD)
+	Active   uint64 `json:"active_bytes"`   // recently used, not reclaimable on demand
+	Inactive uint64 `json:"inactive_bytes"` // reclaimable without writeback
+	Buffers  uint64 `json:"buffers_bytes"`  // block-device cache (Linux)
+	Cached   uint64 `json:"cached_bytes"`   // page cache (Linux)
 }
 
 type HostInfo struct {
@@ -198,7 +211,8 @@ func sample(opts Options) (Snapshot, error) {
 	dt := time.Since(start)
 
 	if vm, err := mem.VirtualMemory(); err == nil {
-		s.Memory = MemInfo{vm.Total, vm.Used, vm.UsedPercent}
+		s.Memory = MemInfo{TotalBytes: vm.Total, UsedBytes: vm.Used, UsedPct: vm.UsedPercent}
+		s.MemDetail = MemBreakdown{Wired: vm.Wired, Active: vm.Active, Inactive: vm.Inactive, Buffers: vm.Buffers, Cached: vm.Cached}
 	}
 	if sw, err := mem.SwapMemory(); err == nil {
 		s.Swap = MemInfo{sw.Total, sw.Used, sw.UsedPercent}
@@ -309,6 +323,9 @@ func emit(s Snapshot, opts Options) error {
 		bar(s.CPU.UsedPct), s.CPU.Cores, s.Host.Load1, s.Host.Load5, s.Host.Load15, s.Host.Procs)
 	fmt.Printf("  RAM   %s  %s / %s\n",
 		bar(s.Memory.UsedPct), ui.HumanBytes(int64(s.Memory.UsedBytes)), ui.HumanBytes(int64(s.Memory.TotalBytes)))
+	if line := memBreakdownLine(s.MemDetail); line != "" {
+		fmt.Printf("        %s\n", ui.Key(line+" — the process list below won't sum to this; see `vitals memcheck`"))
+	}
 	if s.Swap.TotalBytes > 0 {
 		fmt.Printf("  SWAP  %s  %s / %s\n",
 			bar(s.Swap.UsedPct), ui.HumanBytes(int64(s.Swap.UsedBytes)), ui.HumanBytes(int64(s.Swap.TotalBytes)))
@@ -347,6 +364,27 @@ func emit(s Snapshot, opts Options) error {
 			ui.HumanBytes(int64(p.RSSBytes)), p.Threads, ui.Truncate(p.Name, 40))
 	}
 	return nil
+}
+
+// memBreakdownLine renders whichever of the OS-reported RAM categories are
+// nonzero, e.g. "wired 3.10 GB, active 6.20 GB, inactive 3.40 GB". Empty when
+// the platform reports none of them.
+func memBreakdownLine(b MemBreakdown) string {
+	var parts []string
+	add := func(label string, v uint64) {
+		if v > 0 {
+			parts = append(parts, fmt.Sprintf("%s %s", label, ui.HumanBytes(int64(v))))
+		}
+	}
+	add("wired", b.Wired)
+	add("active", b.Active)
+	add("inactive", b.Inactive)
+	add("buffers", b.Buffers)
+	add("cached", b.Cached)
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ")
 }
 
 // rate formats a bytes-per-second value, e.g. "1.50 MB/s".

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"vitals/internal/config"
 	"vitals/internal/diag"
 )
 
@@ -181,6 +182,24 @@ func TestAnalyzePowerDegradedHealth(t *testing.T) {
 	r := Analyze(Snapshot{Power: Power{Percent: 80, DesignCapacityF: 0.72}})
 	if find(r, "health").Title == "" {
 		t.Errorf("expected a battery-health finding, got %+v", r.Findings)
+	}
+}
+
+func TestConfiguredThresholdsChangeVerdicts(t *testing.T) {
+	defer SetThresholds(config.Default()) // don't leak into other tests
+
+	snap := Snapshot{
+		CPU:   CPU{Cores: 8, UsedPct: 30},
+		Disks: []Disk{{Mount: "/data", UsedPct: 93, FreeBytes: 50 << 30}},
+	}
+	if f := find(Analyze(snap), "nearly full"); f.Title == "" {
+		t.Fatalf("93%% full should trigger the default 90%% threshold, got %+v", Analyze(snap).Findings)
+	}
+
+	// A media server or NAS legitimately runs near-full; raise the bar.
+	SetThresholds(config.Config{DiskWarnPercent: 95, DiskCriticalPercent: 99})
+	if f := find(Analyze(snap), "nearly full"); f.Title != "" {
+		t.Errorf("93%% full should not fire once the configured warn threshold is 95%%, got %+v", f)
 	}
 }
 

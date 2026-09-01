@@ -2,12 +2,14 @@ package doctor
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/process"
 	"github.com/shirou/gopsutil/v4/sensors"
 
 	"vitals/internal/gpu"
@@ -28,13 +30,21 @@ func Collect(opts Options) Snapshot {
 	}
 	var s Snapshot
 
-	// CPU: two Times readings across the window for per-state percentages.
+	// CPU: two Times readings across the window for per-state percentages, plus
+	// per-core times for imbalance detection and a primed process list for
+	// top-consumer attribution — all riding the same sleep, at no extra cost.
 	t0 := firstTimes()
+	pc0 := percoreTimes()
 	sw0 := swapCounters()
 	io0 := diskCounters()
 	net0 := netCounters()
+	allProcs, _ := process.Processes()
+	for _, p := range allProcs {
+		_, _ = p.Percent(0) // prime; the real reading comes after the sleep below
+	}
 	time.Sleep(opts.Window)
 	t1 := firstTimes()
+	pc1 := percoreTimes()
 	sw1 := swapCounters()
 	io1 := diskCounters()
 	net1 := netCounters()
@@ -42,16 +52,21 @@ func Collect(opts Options) Snapshot {
 	used, iowait, steal := cpuStatePercents(t0, t1)
 	s.CPU.UsedPct, s.CPU.IOWaitPct, s.CPU.StealPct = used, iowait, steal
 	s.CPU.Cores, _ = cpu.Counts(true)
+	s.CPU.PerCorePct = perCorePercents(pc0, pc1)
 	if la, err := load.Avg(); err == nil {
 		s.CPU.Load1 = la.Load1
 	}
 	if info, err := cpu.Info(); err == nil && len(info) > 0 && info[0].Mhz >= 100 {
 		s.CPU.FreqMHz = info[0].Mhz // gopsutil reports a bogus tiny value on Apple silicon
 	}
+	s.CPU.TopProc, s.Memory.TopProc = topProcs(allProcs)
 
 	// Memory + swap rate.
 	if vm, err := mem.VirtualMemory(); err == nil {
 		s.Memory.UsedPct = vm.UsedPercent
+		if vm.Total > 0 {
+			s.Memory.AvailablePct = float64(vm.Available) / float64(vm.Total) * 100
+		}
 	}
 	if sm, err := mem.SwapMemory(); err == nil {
 		s.Memory.SwapUsedPct = sm.UsedPercent
@@ -150,6 +165,51 @@ func firstTimes() cpu.TimesStat {
 	return ts[0]
 }
 
+func percoreTimes() []cpu.TimesStat {
+	ts, err := cpu.Times(true)
+	if err != nil {
+		return nil
+	}
+	return ts
+}
+
+// perCorePercents converts two per-core Times readings into busy percentages,
+// core by core. gopsutil returns cores in a stable order within a run, so
+// pairing by index across the two calls is safe.
+func perCorePercents(a, b []cpu.TimesStat) []float64 {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]float64, n)
+	for i := 0; i < n; i++ {
+		used, _, _ := cpuStatePercents(a[i], b[i])
+		out[i] = used
+	}
+	return out
+}
+
+// topProcs scans a primed process list (Percent(0) already called once before
+// the caller's sample window elapsed) and returns the top CPU consumer and the
+// top RSS consumer in a single pass.
+func topProcs(procs []*process.Process) (topCPU, topMem ProcRef) {
+	for _, p := range procs {
+		cpuPct, err := p.Percent(0)
+		if err == nil && cpuPct > topCPU.CPUPct {
+			name, _ := p.Name()
+			topCPU = ProcRef{PID: p.Pid, Name: name, CPUPct: cpuPct}
+		}
+		if mi, err := p.MemoryInfo(); err == nil && mi != nil && mi.RSS > topMem.RSSBytes {
+			name, _ := p.Name()
+			topMem = ProcRef{PID: p.Pid, Name: name, RSSBytes: mi.RSS}
+		}
+	}
+	return
+}
+
 type swapIO struct{ in, out uint64 }
 
 func swapCounters() swapIO {
@@ -197,11 +257,64 @@ func isRealFilesystem(fstype, mountpoint string, totalBytes uint64) bool {
 	return true
 }
 
+// diskUsageTimeout bounds how long collectDisks waits on a single mount's
+// space stat. A network mount (NFS/SMB/AFP) whose server has vanished blocks
+// the underlying syscall in the kernel indefinitely and cannot be cancelled
+// from userspace — this timeout only bounds vitals' own wait, not the
+// goroutine, which can outlive it and leak. mountCooldown keeps a mount that
+// just timed out from spawning a fresh leaked goroutine on every subsequent
+// collection (relevant to `vitals serve`, which collects on every scrape).
+const diskUsageTimeout = 1500 * time.Millisecond
+const mountCooldown = 60 * time.Second
+
+var (
+	badMountsMu sync.Mutex
+	badMounts   = map[string]time.Time{}
+)
+
+// diskUsage wraps disk.Usage with the timeout/cooldown behaviour above.
+func diskUsage(mount string) (*disk.UsageStat, bool) {
+	badMountsMu.Lock()
+	last, onCooldown := badMounts[mount]
+	badMountsMu.Unlock()
+	if onCooldown && time.Since(last) < mountCooldown {
+		return nil, false
+	}
+
+	type result struct {
+		u   *disk.UsageStat
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() { u, err := disk.Usage(mount); ch <- result{u, err} }()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			markMountBad(mount)
+			return nil, false
+		}
+		return r.u, true
+	case <-time.After(diskUsageTimeout):
+		markMountBad(mount)
+		return nil, false
+	}
+}
+
+func markMountBad(mount string) {
+	badMountsMu.Lock()
+	badMounts[mount] = time.Now()
+	badMountsMu.Unlock()
+}
+
 func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration) []Disk {
-	parts, err := disk.Partitions(false)
+	// true: include network/remote filesystems (NFS, SMB, AFP) alongside local
+	// disks — isRealFilesystem below still filters out pseudo and system mounts.
+	parts, err := disk.Partitions(true)
 	if err != nil {
 		return nil
 	}
+	hist := loadDiskHistory()
+	now := time.Now()
 	seen := map[string]bool{}
 	var out []Disk
 	for _, p := range parts {
@@ -209,14 +322,15 @@ func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration)
 			continue
 		}
 		seen[p.Mountpoint] = true
-		u, err := disk.Usage(p.Mountpoint)
-		if err != nil || u.Total == 0 {
+		u, ok := diskUsage(p.Mountpoint)
+		if !ok || u.Total == 0 {
 			continue
 		}
 		if !isRealFilesystem(p.Fstype, p.Mountpoint, u.Total) {
 			continue
 		}
-		d := Disk{Mount: p.Mountpoint, UsedPct: u.UsedPercent, FreeBytes: u.Free}
+		d := Disk{Mount: p.Mountpoint, UsedPct: u.UsedPercent, FreeBytes: u.Free, InodesUsedPct: u.InodesUsedPercent}
+		d.GrowthBytesPerSec = diskGrowthRate(hist, p.Mountpoint, u.Free, now)
 		if c0, ok0 := io0[p.Device]; ok0 {
 			if c1, ok1 := io1[p.Device]; ok1 {
 				ms := float64(window.Milliseconds())
@@ -228,9 +342,13 @@ func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration)
 				if ops > 0 {
 					d.AwaitMS = float64(busy) / float64(ops)
 				}
+				if secs := window.Seconds(); secs > 0 {
+					d.IOPS = float64(ops) / secs
+				}
 			}
 		}
 		out = append(out, d)
 	}
+	saveDiskHistory(hist)
 	return out
 }

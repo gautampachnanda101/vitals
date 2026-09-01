@@ -67,9 +67,16 @@ func netDelta(prev, curr []netReading, dt time.Duration) []NetIface {
 func collectPower() Power {
 	switch runtime.GOOS {
 	case "darwin":
+		p := Power{}
 		if out, ok := runCmd("pmset", "-g", "batt"); ok {
-			return parsePmsetBatt(out)
+			p = parsePmsetBatt(out)
 		}
+		if out, ok := runCmd("pmset", "-g"); ok {
+			if on, found := parseLowPowerMode(out); found {
+				p.LowPowerMode = on
+			}
+		}
+		return p
 	case "linux":
 		return readLinuxBattery("/sys/class/power_supply")
 	}
@@ -87,6 +94,22 @@ func runCmd(name string, args ...string) (string, bool) {
 		return "", false
 	}
 	return string(b), true
+}
+
+// lowPowerModeRE matches pmset -g's "lowpowermode  0|1" line. Older macOS
+// versions and Intel Macs never print this line at all, which is why the
+// caller gets an explicit found bool rather than a guessed default.
+var lowPowerModeRE = regexp.MustCompile(`(?m)^\s*lowpowermode\s+(\d)\s*$`)
+
+// parseLowPowerMode reads whether macOS Low Power Mode is on from `pmset -g`
+// output. found is false when the line is simply absent (nothing to report,
+// not a parse failure) rather than assuming a value.
+func parseLowPowerMode(s string) (on bool, found bool) {
+	m := lowPowerModeRE.FindStringSubmatch(s)
+	if m == nil {
+		return false, false
+	}
+	return m[1] == "1", true
 }
 
 var (

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"vitals/internal/clean"
 	"vitals/internal/ui"
 )
 
@@ -17,6 +19,29 @@ var FocusResources = []string{"cpu", "mem", "disk", "net", "power"}
 func RunFocus(resource string, opts RunOptions) int {
 	snap := Collect(Options{OllamaURL: opts.OllamaURL})
 	report := AnalyzeResource(snap, resource)
+
+	var dnsLatency time.Duration
+	var dnsErr error
+	isNet := resource == "net" || resource == "network"
+	if isNet {
+		dnsLatency, dnsErr = checkDNSLatency(2 * time.Second)
+		if f := analyzeDNSLatency(dnsLatency, dnsErr); f != nil {
+			report.Add(*f)
+		}
+	}
+
+	if err := maybeWriteOutput(opts.Output, snap, report); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write --output file: %v\n", err)
+	}
+
+	if opts.Quiet {
+		return report.ExitCode()
+	}
+
+	if opts.CI {
+		fmt.Println(renderCI(report))
+		return report.ExitCode()
+	}
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -30,6 +55,13 @@ func RunFocus(resource string, opts RunOptions) int {
 
 	ui.Header(strings.ToUpper(resource))
 	focusDetail(resource, snap)
+	if isNet {
+		if dnsErr != nil {
+			fmt.Printf("  %s\n", ui.Key("DNS lookup: failed ("+dnsErr.Error()+")"))
+		} else {
+			fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("DNS lookup (%s): %s", dnsProbeHost, dnsLatency.Round(time.Millisecond))))
+		}
+	}
 
 	if len(report.Findings) == 0 {
 		fmt.Println()
@@ -63,14 +95,26 @@ func focusDetail(resource string, s Snapshot) {
 			loadTxt = ui.Grade(loadTxt, s.CPU.Load1, float64(s.CPU.Cores), float64(2*s.CPU.Cores))
 		}
 		row("load1", loadTxt)
+		if lo, hi, ok := coreSpread(s.CPU.PerCorePct); ok {
+			row("cores", fmt.Sprintf("busiest %s, next %s, of %d",
+				ui.Grade(fmt.Sprintf("%.0f%%", hi), hi, 70, 90),
+				ui.Grade(fmt.Sprintf("%.0f%%", lo), lo, 70, 90), len(s.CPU.PerCorePct)))
+		}
 		if s.CPU.FreqMHz > 0 {
 			row("clock", fmt.Sprintf("%.0f MHz", s.CPU.FreqMHz))
 		}
 		if s.Thermal.CPUTempC > 0 {
 			row("package", ui.Grade(fmt.Sprintf("%.0f°C", s.Thermal.CPUTempC), s.Thermal.CPUTempC, 80, 92)+throttleNote(s.Thermal.Throttling))
 		}
+		if s.CPU.TopProc.Name != "" {
+			row("top proc", fmt.Sprintf("%s (pid %d) — %.0f%% CPU", s.CPU.TopProc.Name, s.CPU.TopProc.PID, s.CPU.TopProc.CPUPct))
+		}
 	case "mem", "memory":
 		row("RAM used", pct(s.Memory.UsedPct, 75, 90))
+		if s.Memory.AvailablePct > 0 {
+			row("available", ui.GradeLow(fmt.Sprintf("%.0f%%", s.Memory.AvailablePct), s.Memory.AvailablePct, 20, 8)+
+				ui.Key("  (allocatable before swapping)"))
+		}
 		row("swap used", pct(s.Memory.SwapUsedPct, 50, 80))
 		row("swap in", ui.HumanBytes(int64(s.Memory.SwapInPerSec))+"/s")
 		out := ui.HumanBytes(int64(s.Memory.SwapOutPerSec)) + "/s"
@@ -78,16 +122,26 @@ func focusDetail(resource string, s Snapshot) {
 			out = ui.Grade(out, 1, 0, 0) // any active swap-out is red
 		}
 		row("swap out", out)
+		if s.Memory.TopProc.Name != "" {
+			row("top proc", fmt.Sprintf("%s (pid %d) — %s RSS", s.Memory.TopProc.Name, s.Memory.TopProc.PID, ui.HumanBytes(int64(s.Memory.TopProc.RSSBytes))))
+		}
 	case "disk":
-		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-22s %8s %12s %7s %8s", "MOUNT", "USED", "FREE", "UTIL", "AWAIT")))
+		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-22s %8s %12s %7s %8s %8s %7s", "MOUNT", "USED", "FREE", "UTIL", "AWAIT", "IOPS", "INODES")))
 		for _, d := range s.Disks {
-			fmt.Printf("  %-22s %8s %12s %7s %8s\n",
+			fmt.Printf("  %-22s %8s %12s %7s %8s %8s %7s\n",
 				ui.Truncate(d.Mount, 22),
 				ui.Grade(fmt.Sprintf("%.0f%%", d.UsedPct), d.UsedPct, 85, 95),
 				ui.HumanBytes(int64(d.FreeBytes)),
 				ui.Grade(fmt.Sprintf("%.0f%%", d.UtilPct), d.UtilPct, 80, 95),
-				ui.Grade(fmt.Sprintf("%.0fms", d.AwaitMS), d.AwaitMS, 20, 50))
+				ui.Grade(fmt.Sprintf("%.0fms", d.AwaitMS), d.AwaitMS, 20, 50),
+				fmt.Sprintf("%.0f", d.IOPS),
+				ui.Grade(fmt.Sprintf("%.0f%%", d.InodesUsedPct), d.InodesUsedPct, 85, 95))
+			if d.GrowthBytesPerSec > 0 {
+				secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
+				fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("  filling at %s/hr — %s", ui.HumanBytes(int64(d.GrowthBytesPerSec*3600)), timeToFull(secs))))
+			}
 		}
+		printReclaimable()
 	case "net", "network":
 		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-12s %12s %12s", "IFACE", "RX/s", "TX/s")))
 		shown := 0
@@ -101,6 +155,13 @@ func focusDetail(resource string, s Snapshot) {
 		}
 		if shown == 0 {
 			fmt.Println(ui.Key("  (no interface is currently transferring data)"))
+		}
+		if peers := topRemotePeers(5); len(peers) > 0 {
+			fmt.Println()
+			fmt.Printf("  %s\n", ui.Key("top remote peers (established TCP):"))
+			for _, p := range peers {
+				fmt.Printf("    %-30s %d connection(s)\n", p.Host, p.Count)
+			}
 		}
 	case "power", "battery":
 		p := s.Power
@@ -118,6 +179,9 @@ func focusDetail(resource string, s Snapshot) {
 		if p.DesignCapacityF > 0 {
 			row("health", ui.GradeLow(fmt.Sprintf("%.0f%% of design", p.DesignCapacityF*100), p.DesignCapacityF*100, 80, 60))
 		}
+		if p.LowPowerMode {
+			row("low power", ui.Key("ON")+"  (CPU/GPU clocks capped — this, not a problem, explains reduced performance)")
+		}
 		if p.Percent == 0 && !p.OnBattery {
 			fmt.Println(ui.Key("  (no battery detected)"))
 		}
@@ -129,4 +193,34 @@ func throttleNote(throttling bool) string {
 		return ui.Actionf("  ← throttling")
 	}
 	return ""
+}
+
+// printReclaimable measures the same cache/log/trash directories `vitals
+// clean` targets and prints what's actually reclaimable — the concrete answer
+// to "what can I delete", not just a free-space percentage. Bounded to a short
+// budget so a huge cache can't stall an interactive command.
+func printReclaimable() {
+	entries, complete := clean.ReclaimableSummary(1500 * time.Millisecond)
+	var total int64
+	for _, e := range entries {
+		total += e.Bytes
+	}
+	if total == 0 {
+		return
+	}
+	fmt.Println()
+	suffix := ""
+	if !complete {
+		suffix = ui.Key(" (partial scan — actual total is at least this much)")
+	}
+	fmt.Printf("  %s %s%s\n", ui.Key("reclaimable (caches/logs/trash):"), ui.Actionf("%s", ui.HumanBytes(total)), suffix)
+	shown := 0
+	for _, e := range entries {
+		if shown >= 5 {
+			break
+		}
+		fmt.Printf("    %8s  %s\n", ui.HumanBytes(e.Bytes), e.Path)
+		shown++
+	}
+	fmt.Printf("  %s `vitals clean --dry-run` to see the full plan, then apply\n", ui.Actionf("→"))
 }

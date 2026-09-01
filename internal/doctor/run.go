@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"vitals/internal/diag"
@@ -14,19 +15,81 @@ import (
 type RunOptions struct {
 	OllamaURL string
 	JSON      bool
+	Output    string // if set, also write the JSON envelope here regardless of JSON/human stdout mode
+	CI        bool   // print one grep-friendly line ("CRITICAL: <finding>") instead of the full report
+	Quiet     bool   // print nothing at all; only the exit code carries the verdict
+	Webhook   string // if set, POST the JSON envelope here when the verdict needs attention
 }
 
 // Assess collects a snapshot and analyses it, returning both. Shared by the
-// CLI, the metrics exporter and the MCP server.
+// CLI and the MCP server (the metrics exporter calls Collect/Analyze
+// directly on every scrape, deliberately bypassing the history write below).
 func Assess(opts RunOptions) (Snapshot, diag.Report) {
 	snap := Collect(Options{OllamaURL: opts.OllamaURL})
-	return snap, Analyze(snap)
+	return finishAssess(snap)
+}
+
+// finishAssess is the non-live remainder of Assess, split out so it can be
+// exercised against a fixture Snapshot in tests without a real Collect()
+// call. It records the snapshot into the trend history (best effort) and
+// returns the analyzed report, augmented with a memory-growth finding when
+// the trend history shows one — a signal Analyze can never see on its own
+// since it only ever looks at a single Snapshot.
+func finishAssess(snap Snapshot) (Snapshot, diag.Report) {
+	recordHistory(snap)
+	report := Analyze(snap)
+	addLeakFinding(&report, LoadHistory())
+	return snap, report
+}
+
+const (
+	leakMinSamples     = 5
+	leakMinGrowthBytes = 200 << 20 // 200 MB
+)
+
+// addLeakFinding appends a warning when history shows a sustained RSS climb,
+// dropping Analyze's lone "No bottleneck detected" placeholder first so a
+// real finding never sits next to a stale "all healthy" one.
+func addLeakFinding(report *diag.Report, history []HistoryPoint) {
+	proc, growth, ok := DetectMemoryGrowth(history, leakMinSamples, leakMinGrowthBytes)
+	if !ok {
+		return
+	}
+	if len(report.Findings) == 1 && report.Findings[0].Severity == diag.OK {
+		report.Findings = nil
+	}
+	report.Add(diag.Finding{
+		Severity: diag.Warn,
+		Title:    fmt.Sprintf("%s is steadily climbing in memory", proc.Name),
+		Detail: fmt.Sprintf("pid %d grew by %s over the recorded history with no drop back down — a likely memory leak, not normal usage",
+			proc.PID, ui.HumanBytes(int64(growth))),
+		Fixes: []string{
+			fmt.Sprintf("restart it: `kill %d` (or quit the app normally)", proc.PID),
+			"if it recurs, file it as a leak with the app's maintainer",
+		},
+	})
 }
 
 // Run collects a snapshot, analyses it, prints the verdict, and returns the
 // process exit code (0 healthy, 1 warning, 2 critical).
 func Run(opts RunOptions) int {
 	snap, report := Assess(opts)
+
+	if err := maybeWriteOutput(opts.Output, snap, report); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write --output file: %v\n", err)
+	}
+	if err := maybeNotify(opts.Webhook, snap, report); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: webhook notification failed: %v\n", err)
+	}
+
+	if opts.Quiet {
+		return report.ExitCode()
+	}
+
+	if opts.CI {
+		fmt.Println(renderCI(report))
+		return report.ExitCode()
+	}
 
 	if opts.JSON {
 		emitJSON(snap, report)
@@ -35,6 +98,7 @@ func Run(opts RunOptions) int {
 
 	ui.Header("DOCTOR")
 	fmt.Printf("  %s\n\n", ui.Key(time.Now().Format("2006-01-02 15:04:05")))
+	fmt.Printf("  %s\n\n", summaryLine(snap))
 
 	printFindings(report.SortedBySeverity(), true)
 
@@ -73,6 +137,38 @@ func printFindings(findings []diag.Finding, spaced bool) {
 			fmt.Printf("     %s %s\n", ui.Actionf("→"), fix)
 		}
 	}
+}
+
+// summaryLine renders the at-a-glance numbers behind the verdict — cpu/mem/
+// disk/power — so "healthy" is independently checkable instead of a bare
+// assertion, and a warning has real numbers to compare against instantly.
+func summaryLine(s Snapshot) string {
+	parts := []string{
+		fmt.Sprintf("cpu %s", pct(s.CPU.UsedPct, 70, 90)),
+		fmt.Sprintf("mem %s", pct(s.Memory.UsedPct, thresholds.RAMWarnPercent, thresholds.RAMHighPercent)),
+	}
+	if d, ok := fullestDisk(s.Disks); ok {
+		parts = append(parts, fmt.Sprintf("disk %s (%s)",
+			pct(d.UsedPct, thresholds.DiskWarnPercent, thresholds.DiskCriticalPercent), d.Mount))
+	}
+	if s.Power.OnBattery && s.Power.Percent > 0 {
+		parts = append(parts, fmt.Sprintf("battery %s", ui.GradeLow(fmt.Sprintf("%.0f%%", s.Power.Percent), s.Power.Percent, 20, 8)))
+	}
+	return strings.Join(parts, "   ")
+}
+
+// fullestDisk returns the real mount with the highest space usage — the one
+// number from the disk list worth showing at a glance, since capacity (not
+// I/O busy-ness) is what "how's my disk doing" usually means.
+func fullestDisk(ds []Disk) (Disk, bool) {
+	var best Disk
+	found := false
+	for _, d := range ds {
+		if !found || d.UsedPct > best.UsedPct {
+			best, found = d, true
+		}
+	}
+	return best, found
 }
 
 type JSONEnvelope struct {

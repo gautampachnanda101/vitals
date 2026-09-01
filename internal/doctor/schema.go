@@ -13,7 +13,7 @@ import (
 // snapshot{}. Bump the MINOR for an additive field, the MAJOR for a rename or
 // removal, and update testdata/schema_fields.golden in the same commit — the
 // contract test fails otherwise.
-const SchemaVersion = "1.0.0"
+const SchemaVersion = "1.1.0"
 
 //go:embed schema.json
 var schemaJSON []byte

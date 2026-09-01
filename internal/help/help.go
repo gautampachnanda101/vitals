@@ -35,6 +35,33 @@ type Command struct {
 
 var commands = []Command{
 	{
+		Name:     "advice",
+		Synopsis: "ask a local or cloud LLM for advice on the current doctor report",
+		Long: "Gathers the full `vitals doctor` snapshot (CPU, memory, disk, network, power, GPU,\n" +
+			"LLM runtimes, ranked findings) and hands it to an LLM for plain-English, prioritized\n" +
+			"advice — the same data `doctor` already prints, interpreted for you instead of by you.\n" +
+			"Prefers a local Ollama server when one is reachable (free, private, nothing leaves\n" +
+			"the machine); otherwise falls back to the first cloud provider with a configured API\n" +
+			"key (OPENAI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, ...), reusing the same provider\n" +
+			"detection as `vitals llm`. --provider forces a specific one instead of auto-detecting.",
+		Flags: []Flag{
+			{"ollama-url", "URL", "base URL of the Ollama server"},
+			{"lmstudio-url", "URL", "base URL of the LM Studio server"},
+			{"llamacpp-url", "URL", "base URL of the llama.cpp / OpenAI-compatible server"},
+			{"vllm-url", "URL", "base URL of the vLLM server"},
+			{"provider", "NAME", "force a provider (ollama, lmstudio, llamacpp, vllm, openai, anthropic, groq, ...)"},
+			{"model", "NAME", "override the provider's default model"},
+			{"json", "", "emit {\"advice\": \"...\"} as JSON instead of plain text"},
+			{"no-color", "", "disable ANSI colour"},
+		},
+		Examples: []string{
+			"vitals advice",
+			"OPENAI_API_KEY=sk-... vitals advice --provider openai",
+			"vitals advice --provider ollama --model llama3.1:8b",
+			"vitals advice --provider lmstudio --lmstudio-url http://localhost:1234",
+		},
+	},
+	{
 		Name:     "doctor",
 		Synopsis: "correlate every resource into one ranked verdict + fix",
 		Long: "Samples CPU, memory, swap, disk, thermal and any local LLM runtime, then\n" +
@@ -44,7 +71,12 @@ var commands = []Command{
 			"Exit code: 0 healthy, 1 warning, 2 critical — usable in scripts and CI.",
 		Flags: []Flag{
 			{"ollama-url", "URL", "base URL of the Ollama server (default http://localhost:11434)"},
-			{"json", "", "emit the findings and the underlying snapshot as JSON (schema v1.0.0)"},
+			{"json", "", "emit the findings and the underlying snapshot as JSON (schema v1.1.0)"},
+			{"output", "FILE", "also write the JSON envelope to this file, regardless of --json"},
+			{"ci", "", "print one grep-friendly line instead of the full report"},
+			{"quiet", "", "print nothing; only the exit code carries the verdict (-q)"},
+			{"webhook", "URL", "POST the JSON envelope here when the verdict needs attention"},
+			{"compare", "", "compare two --output-saved reports: --compare old.json new.json"},
 			{"schema", "", "print the JSON Schema for the --json payload and exit"},
 			{"no-color", "", "disable ANSI colour (also honours NO_COLOR)"},
 		},
@@ -53,6 +85,8 @@ var commands = []Command{
 			"vitals doctor --json | jq .verdict",
 			"vitals doctor >/dev/null || echo 'machine unhealthy'",
 			"vitals doctor --schema",
+			"vitals doctor --webhook https://hooks.slack.com/services/...",
+			"vitals doctor --compare before.json after.json",
 		},
 	},
 	{
@@ -83,12 +117,72 @@ var commands = []Command{
 		Flags: []Flag{
 			{"dry-run", "", "report what would be removed without deleting anything"},
 			{"yes", "", "skip the confirmation prompt"},
+			{"history", "", "print past clean runs (date, freed) instead of cleaning"},
 			{"no-color", "", "disable ANSI colour"},
 		},
 		Examples: []string{
 			"vitals clean --dry-run",
 			"vitals clean --yes",
+			"vitals clean --history",
 		},
+	},
+	{
+		Name:     "dupes",
+		Synopsis: "find byte-identical duplicate files (report only)",
+		Long: "Walks a directory tree (default: your home directory), groups files by size\n" +
+			"then by content hash, and reports every set of byte-identical files with the\n" +
+			"space keeping only one copy would reclaim. By default this never deletes anything\n" +
+			"— duplicate photos, videos and documents are your own data, not a regenerable\n" +
+			"cache. --hardlink is the one opt-in action: it destroys no data even if it's\n" +
+			"wrong, since every path keeps working and keeps reading the same bytes, just\n" +
+			"sharing one inode instead of two.",
+		Flags: []Flag{
+			{"root", "PATH", "directory to scan (default: home directory)"},
+			{"min-size-mb", "N", "ignore files smaller than this many MB (default 1)"},
+			{"top", "N", "number of duplicate groups to print (default 20)"},
+			{"json", "", "emit the full result as JSON"},
+			{"output", "FILE", "also write the full JSON result to this file"},
+			{"hardlink", "", "replace duplicates with hardlinks to reclaim space (destroys no data)"},
+			{"yes", "", "skip the confirmation prompt before applying --hardlink"},
+			{"no-color", "", "disable ANSI colour"},
+		},
+		Examples: []string{
+			"vitals dupes",
+			"vitals dupes --root ~/Pictures --min-size-mb 5",
+			"vitals dupes --json | jq '.groups[0]'",
+			"vitals dupes --output dupes.json",
+			"vitals dupes --root ~/Downloads --hardlink",
+		},
+	},
+	{
+		Name:     "tools",
+		Synopsis: "list/install the companion tools vitals defers to",
+		Long: "vitals complements established tools rather than reimplementing them: ncdu/gdu/dust\n" +
+			"for interactive disk exploration, btop/htop for live monitoring, nvtop for\n" +
+			"per-process GPU, jdupes for fast large-scale dedup, smartctl for disk health.\n" +
+			"With no flags, lists each one and whether it's on PATH. --install drives your\n" +
+			"platform's own package manager (brew/apt/dnf/pacman/winget/scoop) — vitals never\n" +
+			"ships its own installer, and always confirms before running one unless --yes.",
+		Flags: []Flag{
+			{"install", "NAME", "install this tool via the system package manager"},
+			{"yes", "", "skip the confirmation prompt before installing"},
+			{"no-color", "", "disable ANSI colour"},
+		},
+		Examples: []string{"vitals tools", "vitals tools --install btop", "vitals tools --install ncdu --yes"},
+	},
+	{
+		Name:     "explore",
+		Synopsis: "launch the best installed interactive disk explorer",
+		Long: "Hands off to gdu, then ncdu, then dust — whichever is installed first — on the\n" +
+			"given path (default: current directory). vitals' own `disk`/`clean` commands\n" +
+			"diagnose and estimate; this is the real drill-down-and-delete tool for it.",
+		Examples: []string{"vitals explore", "vitals explore ~/Downloads"},
+	},
+	{
+		Name:     "live",
+		Synopsis: "launch the best installed live system monitor",
+		Long:     "Hands off to btop, then htop — whichever is installed first — for a live,\ninteractive view. `vitals top` is the no-install fallback; this is the real thing.",
+		Examples: []string{"vitals live"},
 	},
 	{
 		Name:     "memhogs",
@@ -98,9 +192,11 @@ var commands = []Command{
 			"memory, and prints an OS-correct stop command for each.",
 		Flags: []Flag{
 			{"top", "N", "number of individual processes to list (default 15)"},
+			{"watch", "", "refresh continuously until interrupted"},
+			{"interval", "DUR", "refresh interval when --watch is set (default 2s)"},
 			{"no-color", "", "disable ANSI colour"},
 		},
-		Examples: []string{"vitals memhogs", "vitals memhogs --top 30"},
+		Examples: []string{"vitals memhogs", "vitals memhogs --top 30", "vitals memhogs --watch"},
 	},
 	{
 		Name:     "memcheck",
@@ -116,35 +212,35 @@ var commands = []Command{
 		Long: "Shows the user/sys vs I/O-wait vs steal split, load against core count,\n" +
 			"clock and package temperature, then only the CPU-related findings from the\n" +
 			"correlation engine. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals cpu", "vitals cpu --json"},
 	},
 	{
 		Name:     "mem",
 		Synopsis: "memory deep dive: RAM, swap and swap-rate detail + findings",
 		Long:     "RAM and swap usage with the current swap-in / swap-out rates, then only the\nmemory-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals mem"},
 	},
 	{
 		Name:     "disk",
 		Synopsis: "disk deep dive: per-mount usage, device util/await + findings",
 		Long:     "Per-mount space and inode headroom plus a device busy / latency estimate,\nthen only the disk-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals disk"},
 	},
 	{
 		Name:     "net",
 		Synopsis: "network deep dive: per-interface throughput + findings",
 		Long:     "Per-second rx/tx per active interface, then only the network-related\nfindings (saturation, packet loss). Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals net"},
 	},
 	{
 		Name:     "power",
 		Synopsis: "power deep dive: battery state, health, charge rate + findings",
 		Long:     "Battery charge, OS runtime estimate, health vs design capacity and charge\ndirection, then only the power-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals power"},
 	},
 	{
@@ -215,9 +311,18 @@ var commands = []Command{
 	},
 	{
 		Name:     "guide",
-		Synopsis: "print the full embedded user guide",
-		Long:     "Writes the complete user guide (bundled into the binary) to stdout.",
-		Examples: []string{"vitals guide", "vitals guide | less"},
+		Synopsis: "read the full embedded user guide, in your terminal or a browser",
+		Long: "Prints the complete user guide (bundled into the binary, no network needed) with\n" +
+			"ANSI styling for headers, bold and code — automatically plain text when piped or\n" +
+			"when --no-color/NO_COLOR is set, same as every other command. --web instead\n" +
+			"renders it to real HTML (no Markdown viewer extension required) and serves it on\n" +
+			"a loopback-only local port, opening your default browser to it.",
+		Flags: []Flag{
+			{"web", "", "serve the guide as HTML in your browser instead of printing it"},
+			{"raw", "", "print the literal Markdown source instead of the pretty-printed version"},
+			{"no-color", "", "disable ANSI colour"},
+		},
+		Examples: []string{"vitals guide", "vitals guide --web", "vitals guide --raw | pandoc -o guide.pdf"},
 	},
 	{
 		Name:     "completion",

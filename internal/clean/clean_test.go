@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // mktree builds a fixed 3-file / 600-byte directory tree and returns its root.
@@ -97,5 +98,30 @@ func TestPurgeContentsMissingDirIsNoop(t *testing.T) {
 	r.purgeContents("")
 	if r.freedByRM.Load() != 0 {
 		t.Errorf("accounted %d bytes for nonexistent dirs", r.freedByRM.Load())
+	}
+}
+
+func TestMeasureDirsRanksLargestFirstAndSkipsMissing(t *testing.T) {
+	big := mktree(t)                           // 600 bytes
+	small := t.TempDir()                       // exists, empty -> 0 bytes, excluded
+	missing := filepath.Join(t.TempDir(), "x") // never created
+
+	entries, complete := measureDirs([]string{small, missing, big}, time.Second)
+	if !complete {
+		t.Fatalf("expected a generous budget to finish the scan")
+	}
+	if len(entries) != 1 || entries[0].Path != big || entries[0].Bytes != 600 {
+		t.Fatalf("entries = %+v, want exactly {%s, 600}", entries, big)
+	}
+}
+
+func TestMeasureDirsRespectsBudget(t *testing.T) {
+	dirs := make([]string, 5)
+	for i := range dirs {
+		dirs[i] = mktree(t)
+	}
+	_, complete := measureDirs(dirs, 0)
+	if complete {
+		t.Errorf("a zero budget should not be able to reach every directory")
 	}
 }

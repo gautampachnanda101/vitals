@@ -15,7 +15,12 @@
 //
 // Commands:
 //
+//	advice     Ask a local or cloud LLM for advice on the current doctor report
 //	clean      Cross-platform disk cleanup (caches, logs, temp, trash)
+//	dupes      Find byte-identical duplicate files (report only, never deletes)
+//	tools      List/install the companion tools vitals defers to (ncdu, btop, ...)
+//	explore    Launch the best installed disk explorer (gdu/ncdu/dust)
+//	live       Launch the best installed live monitor (btop/htop)
 //	memhogs    Rank application families & processes by memory use, with actions
 //	memcheck   Advanced memory / swap / pressure overview and verdict
 //	llm        Deep insight for local LLM runtimes (Ollama VRAM offload, etc.)
@@ -29,9 +34,13 @@ import (
 	"os"
 	"time"
 
+	"vitals/internal/advice"
 	"vitals/internal/clean"
+	"vitals/internal/config"
 	"vitals/internal/doctor"
+	"vitals/internal/dupes"
 	"vitals/internal/gpu"
+	"vitals/internal/guide"
 	"vitals/internal/help"
 	"vitals/internal/llm"
 	"vitals/internal/mcp"
@@ -39,8 +48,23 @@ import (
 	"vitals/internal/memhogs"
 	"vitals/internal/metrics"
 	"vitals/internal/monitor"
+	"vitals/internal/tools"
 	"vitals/internal/ui"
 )
+
+// cfg is the resolved config-file overrides (thresholds, default
+// --ollama-url), loaded once at startup. A missing or unreadable config file
+// leaves every field at config.Default(), so this is always safe to read.
+var cfg = config.Load()
+
+// defaultOllamaURL is the --ollama-url flag default: the config file's value
+// when set, else the well-known local Ollama port.
+func defaultOllamaURL() string {
+	if cfg.OllamaURL != "" {
+		return cfg.OllamaURL
+	}
+	return "http://localhost:11434"
+}
 
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
@@ -73,6 +97,7 @@ func applyGlobalFlags(in []string) []string {
 }
 
 func main() {
+	doctor.SetThresholds(cfg)
 	argv := applyGlobalFlags(os.Args[1:])
 	if len(argv) < 1 {
 		help.RenderList(os.Stderr, version)
@@ -85,28 +110,90 @@ func main() {
 	switch cmd {
 	case "doctor":
 		fs := newFlagSet("doctor")
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		asJSON := fs.Bool("json", false, "emit the findings and snapshot as JSON")
+		output := fs.String("output", "", "also write the JSON envelope to this file")
+		ci := fs.Bool("ci", false, "print one grep-friendly line instead of the full report")
+		quiet := fs.Bool("quiet", false, "print nothing; only the exit code carries the verdict")
+		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
+		webhook := fs.String("webhook", "", "POST the JSON envelope here when the verdict needs attention")
+		compare := fs.Bool("compare", false, "compare two --output-saved reports: vitals doctor --compare old.json new.json")
 		schema := fs.Bool("schema", false, "print the JSON Schema for the --json payload and exit")
 		_ = fs.Parse(args)
 		if *schema {
 			os.Stdout.Write(doctor.Schema())
 			return
 		}
-		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
+		if *compare {
+			if fs.NArg() != 2 {
+				fmt.Fprintln(os.Stderr, "usage: vitals doctor --compare <old.json> <new.json>")
+				os.Exit(2)
+			}
+			oldEnv, err := doctor.LoadJSONEnvelope(fs.Arg(0))
+			must(err)
+			newEnv, err := doctor.LoadJSONEnvelope(fs.Arg(1))
+			must(err)
+			fmt.Print(doctor.RenderCompare(oldEnv, newEnv))
+			return
+		}
+		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Webhook: *webhook}))
 
 	case "clean":
 		fs := newFlagSet("clean")
 		dry := fs.Bool("dry-run", false, "report what would be removed without deleting anything")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt")
+		history := fs.Bool("history", false, "print past clean runs (date, freed) instead of cleaning")
 		_ = fs.Parse(args)
-		must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes}))
+		must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
+
+	case "dupes":
+		fs := newFlagSet("dupes")
+		root := fs.String("root", "", "directory to scan (default: home directory)")
+		minMB := fs.Int64("min-size-mb", 1, "ignore files smaller than this many MB")
+		top := fs.Int("top", 20, "number of duplicate groups to print")
+		asJSON := fs.Bool("json", false, "emit the full result as JSON")
+		output := fs.String("output", "", "also write the full JSON result to this file")
+		hardlink := fs.Bool("hardlink", false, "replace duplicates with hardlinks to reclaim space (destroys no data)")
+		yes := fs.Bool("yes", false, "skip the confirmation prompt before applying --hardlink")
+		_ = fs.Parse(args)
+		must(dupes.Run(dupes.Options{
+			Root:     *root,
+			MinSize:  *minMB << 20,
+			Top:      *top,
+			JSON:     *asJSON,
+			Output:   *output,
+			Hardlink: *hardlink,
+			Yes:      *yes,
+		}))
+
+	case "tools":
+		fs := newFlagSet("tools")
+		install := fs.String("install", "", "install this companion tool via the system package manager")
+		yes := fs.Bool("yes", false, "skip the confirmation prompt")
+		_ = fs.Parse(args)
+		must(tools.Run(tools.Options{Install: *install, Yes: *yes}))
+
+	case "explore":
+		fs := newFlagSet("explore")
+		_ = fs.Parse(args)
+		path := "."
+		if fs.NArg() > 0 {
+			path = fs.Arg(0)
+		}
+		must(tools.Launch("disk explorer", []string{path}))
+
+	case "live":
+		fs := newFlagSet("live")
+		_ = fs.Parse(args)
+		must(tools.Launch("live monitor", nil))
 
 	case "memhogs":
 		fs := newFlagSet("memhogs")
 		top := fs.Int("top", 15, "number of individual processes to list")
+		watch := fs.Bool("watch", false, "refresh continuously until interrupted")
+		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
 		_ = fs.Parse(args)
-		must(memhogs.Run(*top))
+		must(memhogs.Run(memhogs.Options{Top: *top, Watch: *watch, Interval: *interval}))
 
 	case "memcheck":
 		fs := newFlagSet("memcheck")
@@ -121,10 +208,14 @@ func main() {
 
 	case "cpu", "mem", "memory", "disk", "net", "network", "power", "battery":
 		fs := newFlagSet(cmd)
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		asJSON := fs.Bool("json", false, "emit the resource detail and findings as JSON")
+		output := fs.String("output", "", "also write the JSON envelope to this file")
+		ci := fs.Bool("ci", false, "print one grep-friendly line instead of the full report")
+		quiet := fs.Bool("quiet", false, "print nothing; only the exit code carries the verdict")
+		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
 		_ = fs.Parse(args)
-		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
+		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet}))
 
 	case "top", "monitor":
 		fs := newFlagSet("top")
@@ -142,6 +233,26 @@ func main() {
 			JSON:     *asJSON,
 		}))
 
+	case "advice":
+		fs := newFlagSet("advice")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
+		lmstudioURL := fs.String("lmstudio-url", "", "base URL of the LM Studio server")
+		llamacppURL := fs.String("llamacpp-url", "", "base URL of the llama.cpp / OpenAI-compatible server")
+		vllmURL := fs.String("vllm-url", "", "base URL of the vLLM server")
+		provider := fs.String("provider", "", "force a provider (ollama, lmstudio, llamacpp, vllm, openai, anthropic, groq, ...); default: auto-detect")
+		model := fs.String("model", "", "override the provider's default model")
+		asJSON := fs.Bool("json", false, "emit {\"advice\": \"...\"} as JSON instead of plain text")
+		_ = fs.Parse(args)
+		must(advice.Run(advice.Options{
+			OllamaURL:   *url,
+			LMStudioURL: *lmstudioURL,
+			LlamaCppURL: *llamacppURL,
+			VLLMURL:     *vllmURL,
+			Provider:    *provider,
+			Model:       *model,
+			JSON:        *asJSON,
+		}))
+
 	case "llm":
 		if len(args) >= 1 && args[0] == "fit" {
 			model := ""
@@ -152,7 +263,7 @@ func main() {
 			return
 		}
 		fs := newFlagSet("llm")
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		watch := fs.Bool("watch", false, "refresh continuously until interrupted")
 		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
 		asJSON := fs.Bool("json", false, "emit a machine-readable snapshot instead of a report")
@@ -168,20 +279,20 @@ func main() {
 		fs := newFlagSet("serve")
 		fs.Bool("prometheus", true, "expose Prometheus metrics (the only format today)")
 		addr := fs.String("addr", ":9100", "listen address for /metrics")
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
 		must(metrics.Serve(metrics.Options{OllamaURL: *url, Addr: *addr}))
 
 	case "export":
 		fs := newFlagSet("export")
 		fs.Bool("prometheus", true, "Prometheus text-exposition format (the only format today)")
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
 		must(metrics.RunOnce(metrics.Options{OllamaURL: *url}))
 
 	case "mcp":
 		fs := newFlagSet("mcp")
-		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
 		must(mcp.Serve(os.Stdin, os.Stdout, mcp.Options{OllamaURL: *url}))
 
@@ -189,7 +300,18 @@ func main() {
 		fmt.Printf("vitals %s\n", version)
 
 	case "guide":
-		fmt.Print(userGuide)
+		fs := newFlagSet("guide")
+		web := fs.Bool("web", false, "serve the guide as HTML in your browser instead of printing it")
+		raw := fs.Bool("raw", false, "print the literal Markdown source instead of the pretty-printed terminal version")
+		_ = fs.Parse(args)
+		switch {
+		case *web:
+			must(guide.Serve(userGuide, "vitals user guide"))
+		case *raw:
+			fmt.Print(userGuide)
+		default:
+			fmt.Print(guide.RenderTerminal(userGuide))
+		}
 
 	case "completion":
 		if len(args) < 1 {

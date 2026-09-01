@@ -12,21 +12,31 @@
 package memhogs
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/process"
 
 	"vitals/internal/ui"
 )
+
+// Options configures a memhogs run.
+type Options struct {
+	Top      int           // individual processes to list
+	Watch    bool          // refresh continuously until interrupted
+	Interval time.Duration // refresh period when Watch is set
+}
 
 // stopKind is how a process family is best stopped; stopCommand turns it into
 // an OS-appropriate command string.
@@ -254,8 +264,39 @@ func bucketFamilies(all []procInfo, goos string, fams []family) []familyAgg {
 	return out
 }
 
-// Run prints the three report sections.
-func Run(topN int) error {
+// Run prints the three report sections, once or (with Watch) continuously
+// until interrupted.
+func Run(opts Options) error {
+	if opts.Top <= 0 {
+		opts.Top = 15
+	}
+	if opts.Interval <= 0 {
+		opts.Interval = 2 * time.Second
+	}
+	if !opts.Watch {
+		return once(opts.Top)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ticker := time.NewTicker(opts.Interval)
+	defer ticker.Stop()
+	for {
+		fmt.Print("\033[H\033[2J") // clear screen
+		if err := once(opts.Top); err != nil {
+			ui.Errf("%v", err)
+		}
+		select {
+		case <-ctx.Done():
+			fmt.Println()
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+// once prints the three report sections a single time.
+func once(topN int) error {
 	if topN <= 0 {
 		topN = 15
 	}

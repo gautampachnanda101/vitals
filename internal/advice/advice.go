@@ -1,0 +1,78 @@
+// Package advice turns a full `vitals doctor` snapshot into a prompt for a
+// local or cloud LLM and prints the reply — "gather everything vitals
+// already knows about this machine, hand it to a model, get plain-English
+// advice back" instead of the user copy-pasting `vitals doctor --json`
+// output into a chat window by hand.
+package advice
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"vitals/internal/doctor"
+	"vitals/internal/llm"
+	"vitals/internal/ui"
+)
+
+// Options configures an advice request. Every local-runtime URL defaults
+// the same way `vitals llm` does — none of Ollama, LM Studio, llama.cpp or
+// vLLM is ever assumed to be installed or running; each is only used once
+// it actually answers.
+type Options struct {
+	OllamaURL   string
+	LMStudioURL string
+	LlamaCppURL string
+	VLLMURL     string
+	Provider    string // force a provider ("ollama", "lmstudio", "openai", "anthropic", ...); empty = auto-detect
+	Model       string // override the provider's default model
+	JSON        bool   // emit {"advice": "..."} instead of plain text
+}
+
+// BuildPrompt turns a `vitals doctor --json` envelope into an LLM prompt
+// asking for practical, prioritized advice on it.
+func BuildPrompt(reportJSON []byte) string {
+	return fmt.Sprintf(`You are a systems diagnostics assistant. Below is the JSON output of `+"`vitals doctor`"+`,
+a cross-platform system-health tool covering CPU, memory, disk, network, power, GPU and any local
+LLM runtime, plus a ranked list of findings with severities and suggested fixes.
+
+Give practical, prioritized advice: if there is a real problem, say what it is, why it's happening,
+and the exact command or action to fix it — a few concise sentences, not an essay. If the report is
+healthy (verdict "ok", no findings), say so briefly and do not invent problems that aren't there.
+
+%s`, reportJSON)
+}
+
+// Run gathers the current doctor report, asks a local or cloud LLM for
+// advice on it, and prints the reply.
+func Run(opts Options) error {
+	snap, report := doctor.Assess(doctor.RunOptions{OllamaURL: opts.OllamaURL})
+	reportJSON, err := json.Marshal(doctor.JSONReport(snap, report))
+	if err != nil {
+		return fmt.Errorf("build report: %w", err)
+	}
+
+	reply, err := llm.Complete(BuildPrompt(reportJSON), llm.CompleteOptions{
+		OllamaURL:   opts.OllamaURL,
+		LMStudioURL: opts.LMStudioURL,
+		LlamaCppURL: opts.LlamaCppURL,
+		VLLMURL:     opts.VLLMURL,
+		Provider:    opts.Provider,
+		Model:       opts.Model,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.JSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Advice string `json:"advice"`
+		}{reply})
+	}
+
+	ui.Header("LLM ADVICE")
+	fmt.Println(reply)
+	return nil
+}

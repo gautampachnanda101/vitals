@@ -3,7 +3,7 @@
   "$id": "https://github.com/gautampachnanda101/vitals/schema/doctor.json",
   "title": "vitals doctor --json payload",
   "description": "Envelope emitted by `vitals doctor --json` and the resource deep-dive commands, and carried in the MCP system_health tool result.",
-  "x-schema-version": "1.0.0",
+  "x-schema-version": "1.1.0",
   "type": "object",
   "required": ["schema_version", "timestamp", "verdict", "exit_code", "findings", "snapshot"],
   "additionalProperties": false,
@@ -40,7 +40,9 @@
             "steal_percent": { "type": "number" },
             "load1": { "type": "number" },
             "freq_mhz": { "type": "number" },
-            "base_mhz": { "type": "number" }
+            "base_mhz": { "type": "number" },
+            "per_core_percent": { "type": ["array", "null"], "items": { "type": "number" } },
+            "top_process": { "$ref": "#/$defs/proc_ref" }
           }
         },
         "memory": {
@@ -48,10 +50,12 @@
           "additionalProperties": false,
           "properties": {
             "used_percent": { "type": "number" },
+            "available_percent": { "type": "number" },
             "swap_used_percent": { "type": "number" },
             "swap_total_bytes": { "type": "integer" },
             "swap_in_bytes_per_sec": { "type": "number" },
-            "swap_out_bytes_per_sec": { "type": "number" }
+            "swap_out_bytes_per_sec": { "type": "number" },
+            "top_process": { "$ref": "#/$defs/proc_ref" }
           }
         },
         "disks": {
@@ -65,7 +69,9 @@
               "free_bytes": { "type": "integer" },
               "growth_bytes_per_sec": { "type": "number" },
               "util_percent": { "type": "number" },
-              "await_ms": { "type": "number" }
+              "await_ms": { "type": "number" },
+              "iops": { "type": "number" },
+              "inodes_used_percent": { "type": "number" }
             }
           }
         },
@@ -127,9 +133,23 @@
             "percent": { "type": "number" },
             "minutes_left": { "type": "integer" },
             "design_capacity_fraction": { "type": "number" },
-            "charge_rate_watts": { "type": "number" }
+            "charge_rate_watts": { "type": "number" },
+            "low_power_mode": { "type": "boolean" }
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "proc_ref": {
+      "type": "object",
+      "description": "The process attributed as the top consumer for this resource, empty when none could be identified.",
+      "additionalProperties": false,
+      "properties": {
+        "pid": { "type": "integer" },
+        "name": { "type": "string" },
+        "cpu_percent": { "type": "number" },
+        "rss_bytes": { "type": "integer" }
       }
     }
   }

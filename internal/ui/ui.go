@@ -51,11 +51,12 @@ func code(c string) string {
 }
 
 // Header prints a boxed section title.
+// Header prints a section title: bold and colored, with a thin rule sized to
+// the title's own width rather than a fixed banner width — it can never wrap
+// a narrow terminal, because there is nothing in it wider than the title.
 func Header(title string) {
-	line := strings.Repeat("=", 80)
-	fmt.Printf("\n%s%s%s\n", Bold+Cyan, line, Reset)
-	fmt.Printf("%s  %s%s\n", Bold+Cyan, title, Reset)
-	fmt.Printf("%s%s%s\n\n", Bold+Cyan, line, Reset)
+	rule := strings.Repeat("─", len([]rune(title)))
+	fmt.Printf("\n%s%s%s\n%s%s%s\n\n", Bold+Cyan, title, Reset, Cyan, rule, Reset)
 }
 
 // Rule prints a thin divider.

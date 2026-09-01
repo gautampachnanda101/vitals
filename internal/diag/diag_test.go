@@ -2,6 +2,7 @@ package diag
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -12,6 +13,41 @@ func TestSeverityMarshalJSON(t *testing.T) {
 	}
 	if got := string(b); got != `{"severity":"critical","title":"x"}` {
 		t.Errorf("marshalled to %s", got)
+	}
+}
+
+func TestSeverityUnmarshalJSON(t *testing.T) {
+	cases := map[string]Severity{`"ok"`: OK, `"warning"`: Warn, `"critical"`: Critical}
+	for raw, want := range cases {
+		var s Severity
+		if err := json.Unmarshal([]byte(raw), &s); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", raw, err)
+		}
+		if s != want {
+			t.Errorf("Unmarshal(%s) = %v, want %v", raw, s, want)
+		}
+	}
+}
+
+func TestSeverityUnmarshalJSONRejectsUnknownWord(t *testing.T) {
+	var s Severity
+	if err := json.Unmarshal([]byte(`"catastrophic"`), &s); err == nil {
+		t.Error("an unrecognised severity word should error, not silently become OK")
+	}
+}
+
+func TestSeverityRoundTripsThroughJSON(t *testing.T) {
+	want := Finding{Severity: Critical, Title: "disk full", Detail: "x", Fixes: []string{"y"}}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Finding
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("round-trip unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round-tripped = %+v, want %+v", got, want)
 	}
 }
 

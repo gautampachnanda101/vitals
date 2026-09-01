@@ -3,6 +3,7 @@ package doctor
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 )
@@ -27,11 +28,31 @@ func TestIsRealFilesystem(t *testing.T) {
 		{"overlay", "/var/lib/docker/overlay2/x", 100 * gb, false},
 		{"apfs", "/System/Volumes/VM", 500 * gb, false},
 		{"apfs", "/System/Volumes/Data", 500 * gb, true},
+		{"nfs4", "/mnt/nas", 4 * gb, true},
+		{"smbfs", "/Volumes/NAS", 4 * gb, true},
+		{"cifs", "/mnt/share", 4 * gb, true},
 	}
 	for _, c := range cases {
 		if got := isRealFilesystem(c.fstype, c.mount, c.total); got != c.want {
 			t.Errorf("isRealFilesystem(%q, %q, %d) = %v, want %v", c.fstype, c.mount, c.total, got, c.want)
 		}
+	}
+}
+
+func TestDiskUsageUnknownMountFailsFastAndCoolsDown(t *testing.T) {
+	mount := t.TempDir() + "/does-not-exist"
+	start := time.Now()
+	if _, ok := diskUsage(mount); ok {
+		t.Fatalf("expected diskUsage(%q) to fail for a nonexistent mount", mount)
+	}
+	if elapsed := time.Since(start); elapsed >= diskUsageTimeout {
+		t.Errorf("a plain stat error should fail immediately, not wait out the timeout (took %v)", elapsed)
+	}
+	badMountsMu.Lock()
+	_, onCooldown := badMounts[mount]
+	badMountsMu.Unlock()
+	if !onCooldown {
+		t.Errorf("a failed mount should be recorded so repeated collections don't retry it immediately")
 	}
 }
 

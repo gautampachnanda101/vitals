@@ -4,7 +4,11 @@
 // and, later, `vitals doctor` produce diag.Report values.
 package diag
 
-import "sort"
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+)
 
 // Severity is how much a finding should worry the reader.
 type Severity int
@@ -45,6 +49,28 @@ func (s Severity) ExitCode() int {
 // MarshalJSON renders the severity as its lowercase word.
 func (s Severity) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + s.String() + `"`), nil
+}
+
+// UnmarshalJSON parses one of "ok", "warning", "critical" — the exact words
+// MarshalJSON produces — back into a Severity. Anything else is an error
+// rather than a silent fallback to OK, since a saved report with a garbled
+// severity should be rejected, not misread as healthy.
+func (s *Severity) UnmarshalJSON(data []byte) error {
+	var word string
+	if err := json.Unmarshal(data, &word); err != nil {
+		return err
+	}
+	switch word {
+	case "ok":
+		*s = OK
+	case "warning":
+		*s = Warn
+	case "critical":
+		*s = Critical
+	default:
+		return fmt.Errorf("diag: unknown severity %q", word)
+	}
+	return nil
 }
 
 // Finding is one observation: what is wrong, the evidence, and concrete fixes.

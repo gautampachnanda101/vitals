@@ -44,6 +44,45 @@ func TestParsePmsetBatt(t *testing.T) {
 	}
 }
 
+func TestParseLowPowerModeOn(t *testing.T) {
+	out := `System-wide power settings:
+Currently in use:
+ standby              1
+ hibernatemode        3
+ lowpowermode         1
+ womp                 0
+`
+	on, ok := parseLowPowerMode(out)
+	if !ok || !on {
+		t.Errorf("parseLowPowerMode(lowpowermode 1) = (%v, %v), want (true, true)", on, ok)
+	}
+}
+
+func TestParseLowPowerModeOff(t *testing.T) {
+	out := `System-wide power settings:
+Currently in use:
+ standby              1
+ lowpowermode         0
+ womp                 0
+`
+	on, ok := parseLowPowerMode(out)
+	if !ok || on {
+		t.Errorf("parseLowPowerMode(lowpowermode 0) = (%v, %v), want (false, true)", on, ok)
+	}
+}
+
+func TestParseLowPowerModeAbsentLine(t *testing.T) {
+	// Intel Macs / older macOS versions never print this line at all.
+	out := `System-wide power settings:
+Currently in use:
+ standby              1
+ womp                 0
+`
+	if _, ok := parseLowPowerMode(out); ok {
+		t.Error("no lowpowermode line present should report ok=false, not a guessed value")
+	}
+}
+
 func TestParseLinuxBattery(t *testing.T) {
 	p := parseLinuxBattery(map[string]string{
 		"capacity":           "42",
