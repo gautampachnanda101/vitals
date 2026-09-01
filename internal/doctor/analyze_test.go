@@ -140,6 +140,50 @@ func TestAnalyzeDiskTimeToFull(t *testing.T) {
 	}
 }
 
+func TestAnalyzeNetSaturation(t *testing.T) {
+	r := Analyze(Snapshot{
+		Net: []NetIface{{
+			Name: "en0", RxBytesPerSec: 110e6, TxBytesPerSec: 5e6, LinkSpeedbps: 1e9,
+		}},
+	})
+	f := find(r, "en0")
+	if f.Title == "" || f.Severity != diag.Warn {
+		t.Fatalf("expected a saturation warning, got %+v", r.Findings)
+	}
+}
+
+func TestAnalyzeNetLoss(t *testing.T) {
+	r := Analyze(Snapshot{Net: []NetIface{{Name: "wlan0", RetransPct: 9}}})
+	if find(r, "losing packets").Title == "" {
+		t.Errorf("expected a packet-loss finding, got %+v", r.Findings)
+	}
+}
+
+func TestAnalyzePowerLowBattery(t *testing.T) {
+	warn := Analyze(Snapshot{Power: Power{OnBattery: true, Percent: 15, MinutesLeft: 22}})
+	if warn.Worst() != diag.Warn {
+		t.Errorf("15%% battery should warn, got %v", warn.Worst())
+	}
+	crit := Analyze(Snapshot{Power: Power{OnBattery: true, Percent: 5}})
+	if crit.Worst() != diag.Critical {
+		t.Errorf("5%% battery should be critical, got %v", crit.Worst())
+	}
+}
+
+func TestAnalyzePowerDrainingOnAC(t *testing.T) {
+	r := Analyze(Snapshot{Power: Power{OnBattery: false, Percent: 60, ChargeRateW: -12}})
+	if find(r, "plugged in").Title == "" {
+		t.Errorf("expected an underpowered-charger finding, got %+v", r.Findings)
+	}
+}
+
+func TestAnalyzePowerDegradedHealth(t *testing.T) {
+	r := Analyze(Snapshot{Power: Power{Percent: 80, DesignCapacityF: 0.72}})
+	if find(r, "health").Title == "" {
+		t.Errorf("expected a battery-health finding, got %+v", r.Findings)
+	}
+}
+
 func TestAnalyzeSortsCriticalFirst(t *testing.T) {
 	r := Analyze(Snapshot{
 		CPU:    CPU{Cores: 8, UsedPct: 78}, // warn-ish

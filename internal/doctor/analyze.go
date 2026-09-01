@@ -21,6 +21,26 @@ type Snapshot struct {
 	GPUs    []GPU
 	LLM     []LLMModel
 	Thermal Thermal
+	Net     []NetIface
+	Power   Power
+}
+
+// NetIface is one network interface's throughput over the sample window.
+type NetIface struct {
+	Name          string
+	RxBytesPerSec float64
+	TxBytesPerSec float64
+	LinkSpeedbps  float64 // 0 if unknown
+	RetransPct    float64 // TCP retransmit rate, 0 if unknown
+}
+
+// Power is battery / AC state.
+type Power struct {
+	OnBattery       bool
+	Percent         float64
+	MinutesLeft     int     // OS estimate, 0 if unknown
+	DesignCapacityF float64 // current full-charge / design capacity, 0 if unknown
+	ChargeRateW     float64 // negative = discharging
 }
 
 type CPU struct {
@@ -82,12 +102,39 @@ func Analyze(s Snapshot) diag.Report {
 	analyzeDisks(&r, s)
 	analyzeGPUs(&r, s)
 	analyzeLLM(&r, s)
+	analyzeNet(&r, s)
+	analyzePower(&r, s)
 
 	if len(r.Findings) == 0 {
 		r.Add(diag.Finding{Severity: diag.OK, Title: "No bottleneck detected",
 			Detail: "CPU, memory, disk and any LLM runtimes are all within healthy limits"})
 	}
 
+	sort.SliceStable(r.Findings, func(i, j int) bool {
+		return r.Findings[i].Severity > r.Findings[j].Severity
+	})
+	return r
+}
+
+// AnalyzeResource runs only the rules for one resource ("cpu", "mem", "disk",
+// "gpu", "net", "power"), most-severe first. Used by the deep-dive commands.
+func AnalyzeResource(s Snapshot, resource string) diag.Report {
+	var r diag.Report
+	switch resource {
+	case "cpu":
+		analyzeCPU(&r, s)
+		analyzeThermal(&r, s)
+	case "mem", "memory":
+		analyzeMemory(&r, s)
+	case "disk":
+		analyzeDisks(&r, s)
+	case "gpu":
+		analyzeGPUs(&r, s)
+	case "net", "network":
+		analyzeNet(&r, s)
+	case "power", "battery":
+		analyzePower(&r, s)
+	}
 	sort.SliceStable(r.Findings, func(i, j int) bool {
 		return r.Findings[i].Severity > r.Findings[j].Severity
 	})
@@ -294,6 +341,65 @@ func analyzeLLM(r *diag.Report, s Snapshot) {
 				},
 			})
 		}
+	}
+}
+
+func analyzeNet(r *diag.Report, s Snapshot) {
+	for _, n := range s.Net {
+		if n.LinkSpeedbps > 0 {
+			usedbps := (n.RxBytesPerSec + n.TxBytesPerSec) * 8
+			if pct := usedbps / n.LinkSpeedbps * 100; pct >= 85 {
+				r.Add(diag.Finding{
+					Severity: diag.Warn,
+					Title:    fmt.Sprintf("%s near link capacity", n.Name),
+					Detail: fmt.Sprintf("%.0f%% of the %.0f Mbps link in use (%s/s rx, %s/s tx)",
+						pct, n.LinkSpeedbps/1e6, ui.HumanBytes(int64(n.RxBytesPerSec)), ui.HumanBytes(int64(n.TxBytesPerSec))),
+					Fixes: []string{"find the talker with `vitals net`", "throttle the large transfer"},
+				})
+			}
+		}
+		if n.RetransPct >= 5 {
+			r.Add(diag.Finding{
+				Severity: diag.Warn,
+				Title:    fmt.Sprintf("%s is losing packets", n.Name),
+				Detail:   fmt.Sprintf("TCP retransmit rate %.1f%% — a lossy or congested link, not a bandwidth ceiling", n.RetransPct),
+				Fixes:    []string{"check cabling / Wi-Fi signal", "test against another host to isolate it"},
+			})
+		}
+	}
+}
+
+func analyzePower(r *diag.Report, s Snapshot) {
+	p := s.Power
+	if p.OnBattery && p.Percent > 0 && p.Percent <= 20 {
+		sev := diag.Warn
+		if p.Percent <= 8 {
+			sev = diag.Critical
+		}
+		detail := fmt.Sprintf("battery at %.0f%% on battery power", p.Percent)
+		if p.MinutesLeft > 0 {
+			detail += fmt.Sprintf(", ~%d min left at the current draw", p.MinutesLeft)
+		}
+		r.Add(diag.Finding{
+			Severity: sev, Title: "Battery low", Detail: detail,
+			Fixes: []string{"connect a charger", "quit high-energy apps (`vitals power`)"},
+		})
+	}
+	if !p.OnBattery && p.ChargeRateW < 0 {
+		r.Add(diag.Finding{
+			Severity: diag.Warn,
+			Title:    "Draining while plugged in",
+			Detail:   "the charger cannot keep up with the current load — battery is discharging on AC power",
+			Fixes:    []string{"use a higher-wattage charger", "reduce sustained CPU/GPU load"},
+		})
+	}
+	if p.DesignCapacityF > 0 && p.DesignCapacityF < 0.8 {
+		r.Add(diag.Finding{
+			Severity: diag.Warn,
+			Title:    "Battery health degraded",
+			Detail:   fmt.Sprintf("full charge holds %.0f%% of design capacity — runtime estimates will be optimistic", p.DesignCapacityF*100),
+			Fixes:    []string{"plan for a battery replacement", "keep a charger handy for long sessions"},
+		})
 	}
 }
 

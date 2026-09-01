@@ -112,6 +112,13 @@ func main() {
 		_ = fs.Parse(args)
 		must(gpu.Run(*asJSON))
 
+	case "cpu", "mem", "memory", "disk", "net", "network", "power", "battery":
+		fs := newFlagSet(cmd)
+		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
+		asJSON := fs.Bool("json", false, "emit the resource detail and findings as JSON")
+		_ = fs.Parse(args)
+		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
+
 	case "top", "monitor":
 		fs := newFlagSet("top")
 		top := fs.Int("top", 15, "number of processes to list")

@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -31,10 +32,12 @@ func Collect(opts Options) Snapshot {
 	t0 := firstTimes()
 	sw0 := swapCounters()
 	io0 := diskCounters()
+	net0 := netCounters()
 	time.Sleep(opts.Window)
 	t1 := firstTimes()
 	sw1 := swapCounters()
 	io1 := diskCounters()
+	net1 := netCounters()
 
 	used, iowait, steal := cpuStatePercents(t0, t1)
 	s.CPU.UsedPct, s.CPU.IOWaitPct, s.CPU.StealPct = used, iowait, steal
@@ -42,8 +45,8 @@ func Collect(opts Options) Snapshot {
 	if la, err := load.Avg(); err == nil {
 		s.CPU.Load1 = la.Load1
 	}
-	if info, err := cpu.Info(); err == nil && len(info) > 0 {
-		s.CPU.FreqMHz = info[0].Mhz
+	if info, err := cpu.Info(); err == nil && len(info) > 0 && info[0].Mhz >= 100 {
+		s.CPU.FreqMHz = info[0].Mhz // gopsutil reports a bogus tiny value on Apple silicon
 	}
 
 	// Memory + swap rate.
@@ -64,6 +67,12 @@ func Collect(opts Options) Snapshot {
 
 	// Disks: usage per real mount, plus a device-wide busy/latency estimate.
 	s.Disks = collectDisks(io0, io1, opts.Window)
+
+	// Network: per-interface throughput over the window.
+	s.Net = netDelta(net0, net1, opts.Window)
+
+	// Power / battery, best effort via the OS tools.
+	s.Power = collectPower()
 
 	// GPUs via the vendor CLIs (nvidia-smi / rocm-smi / ioreg); empty when none.
 	for _, g := range gpu.Probe() {
@@ -178,8 +187,11 @@ func isRealFilesystem(fstype, mountpoint string, totalBytes uint64) bool {
 	}
 	switch {
 	case mountpoint == "/dev", mountpoint == "/run",
-		len(mountpoint) >= 5 && mountpoint[:5] == "/proc",
-		len(mountpoint) >= 4 && mountpoint[:4] == "/sys":
+		strings.HasPrefix(mountpoint, "/proc"),
+		strings.HasPrefix(mountpoint, "/sys"),
+		// macOS APFS system volumes share their container's stats with "/";
+		// keep the root and the user data volume, drop the rest.
+		strings.HasPrefix(mountpoint, "/System/Volumes/") && mountpoint != "/System/Volumes/Data":
 		return false
 	}
 	return true

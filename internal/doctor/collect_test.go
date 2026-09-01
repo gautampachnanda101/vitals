@@ -25,6 +25,8 @@ func TestIsRealFilesystem(t *testing.T) {
 		{"ext4", "/proc/sys", 100 * gb, false},
 		{"apfs", "/", 512 * 1024 * 1024, false}, // under 1 GiB -> pseudo
 		{"overlay", "/var/lib/docker/overlay2/x", 100 * gb, false},
+		{"apfs", "/System/Volumes/VM", 500 * gb, false},
+		{"apfs", "/System/Volumes/Data", 500 * gb, true},
 	}
 	for _, c := range cases {
 		if got := isRealFilesystem(c.fstype, c.mount, c.total); got != c.want {
