@@ -10,6 +10,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 
+	"vitals/internal/diag"
 	"vitals/internal/ui"
 )
 
@@ -72,24 +73,79 @@ func printIf(label string, v uint64) {
 	fmt.Printf("  %-28s %12s\n", label+":", ui.HumanBytes(int64(v)))
 }
 
-func verdict(vm *mem.VirtualMemoryStat, sw *mem.SwapMemoryStat) {
+// memVerdict turns a RAM + swap reading into ranked findings. Pure: it takes
+// only the stat structs, so it is exercised entirely from fixtures.
+func memVerdict(vm *mem.VirtualMemoryStat, sw *mem.SwapMemoryStat) diag.Report {
+	var r diag.Report
+
 	switch {
 	case vm.UsedPercent >= 90:
-		ui.Errf("CRITICAL: %.1f%% RAM in use — active set exceeds comfortable capacity", vm.UsedPercent)
+		r.Add(diag.Finding{
+			Severity: diag.Critical,
+			Title:    "RAM near capacity",
+			Detail:   fmt.Sprintf("%.1f%% of physical RAM in use — the active set exceeds comfortable capacity", vm.UsedPercent),
+			Fixes:    []string{"close idle apps", "run `vitals memhogs` to see the biggest consumers"},
+		})
 	case vm.UsedPercent >= 75:
-		ui.Warnf("ELEVATED: %.1f%% RAM in use — close idle apps or add swap headroom", vm.UsedPercent)
+		r.Add(diag.Finding{
+			Severity: diag.Warn,
+			Title:    "RAM elevated",
+			Detail:   fmt.Sprintf("%.1f%% of physical RAM in use", vm.UsedPercent),
+			Fixes:    []string{"close idle apps", "add swap headroom"},
+		})
 	default:
-		ui.Okf("HEALTHY: %.1f%% RAM in use", vm.UsedPercent)
+		r.Add(diag.Finding{
+			Severity: diag.OK,
+			Title:    "RAM healthy",
+			Detail:   fmt.Sprintf("%.1f%% of physical RAM in use", vm.UsedPercent),
+		})
 	}
 
 	if sw != nil && sw.Total > 0 {
 		switch {
 		case sw.UsedPercent >= 50:
-			ui.Errf("CRITICAL: swap %.1f%% full — expect paging stalls and latency spikes", sw.UsedPercent)
+			r.Add(diag.Finding{
+				Severity: diag.Critical,
+				Title:    "Swap nearly exhausted",
+				Detail:   fmt.Sprintf("swap %.1f%% full — expect paging stalls and latency spikes", sw.UsedPercent),
+				Fixes:    []string{"free RAM (quit apps, `vitals memhogs`)", "on macOS: `sudo purge`", "reboot if it stays pinned"},
+			})
 		case sw.UsedPercent >= 15:
-			ui.Warnf("WARNING: swap %.1f%% full — memory pressure is spilling to disk", sw.UsedPercent)
+			r.Add(diag.Finding{
+				Severity: diag.Warn,
+				Title:    "Swap in use",
+				Detail:   fmt.Sprintf("swap %.1f%% full — memory pressure is spilling to disk", sw.UsedPercent),
+				Fixes:    []string{"close memory-heavy apps before it worsens"},
+			})
 		default:
-			ui.Okf("swap allocation is healthy (%.1f%%)", sw.UsedPercent)
+			r.Add(diag.Finding{
+				Severity: diag.OK,
+				Title:    "Swap healthy",
+				Detail:   fmt.Sprintf("swap %.1f%% full", sw.UsedPercent),
+			})
+		}
+	}
+
+	return r
+}
+
+func verdict(vm *mem.VirtualMemoryStat, sw *mem.SwapMemoryStat) {
+	rep := memVerdict(vm, sw)
+	for _, f := range rep.SortedBySeverity() {
+		line := f.Title
+		if f.Detail != "" {
+			line += " — " + f.Detail
+		}
+		switch f.Severity {
+		case diag.Critical:
+			ui.Errf("%s", line)
+		case diag.Warn:
+			ui.Warnf("%s", line)
+		default:
+			ui.Okf("%s", line)
+		}
+		for _, fix := range f.Fixes {
+			fmt.Printf("      %s %s\n", ui.Actionf("→"), fix)
 		}
 	}
 
