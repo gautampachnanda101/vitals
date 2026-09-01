@@ -97,6 +97,16 @@ func Grade(text string, v, warn, crit float64) string {
 	return colorFor(v, warn, crit) + text + Reset
 }
 
+// GradeWidth is Grade for a fixed-width table column: it right-pads text to
+// width *before* wrapping it in color, then colors it. Doing it the other
+// way — coloring first, padding via an outer %Ns — counts the invisible
+// ANSI escape bytes toward the width, so the field never gets padded at
+// all once its own color codes already exceed the declared width. Text
+// longer than width is never truncated, only left as-is.
+func GradeWidth(width int, text string, v, warn, crit float64) string {
+	return Grade(fmt.Sprintf("%*s", width, text), v, warn, crit)
+}
+
 // GradeLow is Grade for values where lower means worse (free space, battery %,
 // headroom): green above warn, yellow at/below warn, red at/below crit.
 func GradeLow(text string, v, warn, crit float64) string {

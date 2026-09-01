@@ -214,8 +214,10 @@ func main() {
 		ci := fs.Bool("ci", false, "print one grep-friendly line instead of the full report")
 		quiet := fs.Bool("quiet", false, "print nothing; only the exit code carries the verdict")
 		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
+		verbose := fs.Bool("verbose", false, "show more than the default view has room for (every core, the full reclaimable list, more net peers)")
+		fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 		_ = fs.Parse(args)
-		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet}))
+		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose}))
 
 	case "top", "monitor":
 		fs := newFlagSet("top")

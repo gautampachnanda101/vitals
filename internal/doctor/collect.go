@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -239,22 +240,32 @@ var pseudoFS = map[string]bool{
 // isRealFilesystem decides whether a mount is worth a disk-pressure check:
 // a known non-pseudo fstype backing at least a gigabyte.
 func isRealFilesystem(fstype, mountpoint string, totalBytes uint64) bool {
+	return filesystemFilterReason(fstype, mountpoint, totalBytes) == ""
+}
+
+// filesystemFilterReason is isRealFilesystem's actual source of truth: it
+// names *why* a mount is excluded, empty meaning "kept". The reason powers
+// `disk --verbose`'s "filtered out" section — the default view drops these
+// silently, but --verbose should be able to say why, not just show more of
+// what was already visible.
+func filesystemFilterReason(fstype, mountpoint string, totalBytes uint64) string {
 	if pseudoFS[fstype] {
-		return false
+		return fmt.Sprintf("pseudo filesystem (%s)", fstype)
 	}
 	if totalBytes < 1<<30 {
-		return false
+		return "smaller than 1 GiB"
 	}
 	switch {
 	case mountpoint == "/dev", mountpoint == "/run",
 		strings.HasPrefix(mountpoint, "/proc"),
-		strings.HasPrefix(mountpoint, "/sys"),
-		// macOS APFS system volumes share their container's stats with "/";
-		// keep the root and the user data volume, drop the rest.
-		strings.HasPrefix(mountpoint, "/System/Volumes/") && mountpoint != "/System/Volumes/Data":
-		return false
+		strings.HasPrefix(mountpoint, "/sys"):
+		return "kernel/device pseudo-mount"
+	// macOS APFS system volumes share their container's stats with "/";
+	// keep the root and the user data volume, drop the rest.
+	case strings.HasPrefix(mountpoint, "/System/Volumes/") && mountpoint != "/System/Volumes/Data":
+		return "macOS system volume (shares space with /)"
 	}
-	return true
+	return ""
 }
 
 // diskUsageTimeout bounds how long collectDisks waits on a single mount's

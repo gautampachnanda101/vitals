@@ -121,6 +121,24 @@ func TestGradeLow(t *testing.T) {
 	}
 }
 
+func TestGradeWidthPadsBeforeColoring(t *testing.T) {
+	// The bug this guards against: Grade(fmt.Sprintf("%8s", ...)) would be
+	// wrong the other way around — coloring first, then padding via an
+	// outer %8s, counts the invisible ANSI bytes toward the width and adds
+	// no visible padding at all. GradeWidth must pad the plain text first.
+	got := GradeWidth(8, "59%", 59, 85, 95)
+	if visible := StripANSI(got); visible != "     59%" {
+		t.Errorf("GradeWidth(8, %q, ...) visible text = %q, want %q", "59%", visible, "     59%")
+	}
+}
+
+func TestGradeWidthNeverTruncates(t *testing.T) {
+	got := GradeWidth(3, "12345%", 12345, 85, 95)
+	if visible := StripANSI(got); visible != "12345%" {
+		t.Errorf("GradeWidth should never cut text short even under its target width, got %q", visible)
+	}
+}
+
 func TestStripANSI(t *testing.T) {
 	cases := []struct {
 		in   string

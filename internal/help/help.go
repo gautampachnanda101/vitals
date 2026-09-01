@@ -212,35 +212,35 @@ var commands = []Command{
 		Long: "Shows the user/sys vs I/O-wait vs steal split, load against core count,\n" +
 			"clock and package temperature, then only the CPU-related findings from the\n" +
 			"correlation engine. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals cpu", "vitals cpu --json"},
 	},
 	{
 		Name:     "mem",
 		Synopsis: "memory deep dive: RAM, swap and swap-rate detail + findings",
 		Long:     "RAM and swap usage with the current swap-in / swap-out rates, then only the\nmemory-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals mem"},
 	},
 	{
 		Name:     "disk",
 		Synopsis: "disk deep dive: per-mount usage, device util/await + findings",
 		Long:     "Per-mount space and inode headroom plus a device busy / latency estimate,\nthen only the disk-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals disk"},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{"vitals disk", "vitals disk --verbose  # every reclaimable cache dir, not just the top 5"},
 	},
 	{
 		Name:     "net",
 		Synopsis: "network deep dive: per-interface throughput + findings",
 		Long:     "Per-second rx/tx per active interface, then only the network-related\nfindings (saturation, packet loss). Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals net"},
 	},
 	{
 		Name:     "power",
 		Synopsis: "power deep dive: battery state, health, charge rate + findings",
 		Long:     "Battery charge, OS runtime estimate, health vs design capacity and charge\ndirection, then only the power-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals power"},
 	},
 	{

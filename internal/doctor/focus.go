@@ -54,7 +54,7 @@ func RunFocus(resource string, opts RunOptions) int {
 	}
 
 	ui.Header(strings.ToUpper(resource))
-	focusDetail(resource, snap)
+	focusDetail(resource, snap, opts.Verbose)
 	if isNet {
 		if dnsErr != nil {
 			fmt.Printf("  %s\n", ui.Key("DNS lookup: failed ("+dnsErr.Error()+")"))
@@ -82,7 +82,7 @@ func row(label, value string) {
 	fmt.Printf("  %s %s\n", ui.Key(fmt.Sprintf("%-10s", label)), value)
 }
 
-func focusDetail(resource string, s Snapshot) {
+func focusDetail(resource string, s Snapshot, verbose bool) {
 	switch resource {
 	case "cpu":
 		row("usage", pct(s.CPU.UsedPct, 70, 90)+ui.Key("  (user+sys)"))
@@ -95,8 +95,10 @@ func focusDetail(resource string, s Snapshot) {
 			loadTxt = ui.Grade(loadTxt, s.CPU.Load1, float64(s.CPU.Cores), float64(2*s.CPU.Cores))
 		}
 		row("load1", loadTxt)
-		if lo, hi, ok := coreSpread(s.CPU.PerCorePct); ok {
-			row("cores", fmt.Sprintf("busiest %s, next %s, of %d",
+		if verbose && len(s.CPU.PerCorePct) > 0 {
+			row("cores", allCoresLine(s.CPU.PerCorePct))
+		} else if lo, hi, ok := coreSpread(s.CPU.PerCorePct); ok {
+			row("cores", fmt.Sprintf("busiest %s, next %s, of %d (--verbose for all)",
 				ui.Grade(fmt.Sprintf("%.0f%%", hi), hi, 70, 90),
 				ui.Grade(fmt.Sprintf("%.0f%%", lo), lo, 70, 90), len(s.CPU.PerCorePct)))
 		}
@@ -128,20 +130,26 @@ func focusDetail(resource string, s Snapshot) {
 	case "disk":
 		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-22s %8s %12s %7s %8s %8s %7s", "MOUNT", "USED", "FREE", "UTIL", "AWAIT", "IOPS", "INODES")))
 		for _, d := range s.Disks {
-			fmt.Printf("  %-22s %8s %12s %7s %8s %8s %7s\n",
+			// Pad each cell to its column width *before* GradeWidth colors
+			// it — an outer %Ns applied after coloring would count the
+			// invisible ANSI bytes toward the width and add no padding.
+			fmt.Printf("  %-22s %s %12s %s %s %8.0f %s\n",
 				ui.Truncate(d.Mount, 22),
-				ui.Grade(fmt.Sprintf("%.0f%%", d.UsedPct), d.UsedPct, 85, 95),
+				ui.GradeWidth(8, fmt.Sprintf("%.0f%%", d.UsedPct), d.UsedPct, 85, 95),
 				ui.HumanBytes(int64(d.FreeBytes)),
-				ui.Grade(fmt.Sprintf("%.0f%%", d.UtilPct), d.UtilPct, 80, 95),
-				ui.Grade(fmt.Sprintf("%.0fms", d.AwaitMS), d.AwaitMS, 20, 50),
-				fmt.Sprintf("%.0f", d.IOPS),
-				ui.Grade(fmt.Sprintf("%.0f%%", d.InodesUsedPct), d.InodesUsedPct, 85, 95))
+				ui.GradeWidth(7, fmt.Sprintf("%.0f%%", d.UtilPct), d.UtilPct, 80, 95),
+				ui.GradeWidth(8, fmt.Sprintf("%.0fms", d.AwaitMS), d.AwaitMS, 20, 50),
+				d.IOPS,
+				ui.GradeWidth(7, fmt.Sprintf("%.0f%%", d.InodesUsedPct), d.InodesUsedPct, 85, 95))
 			if d.GrowthBytesPerSec > 0 {
 				secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
 				fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("  filling at %s/hr — %s", ui.HumanBytes(int64(d.GrowthBytesPerSec*3600)), timeToFull(secs))))
 			}
 		}
-		printReclaimable()
+		printReclaimable(verbose)
+		if verbose {
+			printExcludedMounts()
+		}
 	case "net", "network":
 		fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("%-12s %12s %12s", "IFACE", "RX/s", "TX/s")))
 		shown := 0
@@ -156,7 +164,11 @@ func focusDetail(resource string, s Snapshot) {
 		if shown == 0 {
 			fmt.Println(ui.Key("  (no interface is currently transferring data)"))
 		}
-		if peers := topRemotePeers(5); len(peers) > 0 {
+		peerLimit := 5
+		if verbose {
+			peerLimit = 25
+		}
+		if peers := topRemotePeers(peerLimit); len(peers) > 0 {
 			fmt.Println()
 			fmt.Printf("  %s\n", ui.Key("top remote peers (established TCP):"))
 			for _, p := range peers {
@@ -199,8 +211,14 @@ func throttleNote(throttling bool) string {
 // clean` targets and prints what's actually reclaimable — the concrete answer
 // to "what can I delete", not just a free-space percentage. Bounded to a short
 // budget so a huge cache can't stall an interactive command.
-func printReclaimable() {
-	entries, complete := clean.ReclaimableSummary(1500 * time.Millisecond)
+func printReclaimable(verbose bool) {
+	budget := 1500 * time.Millisecond
+	limit := 5
+	if verbose {
+		budget = 5 * time.Second // willing to wait longer for a fuller answer
+		limit = 0                // unlimited
+	}
+	entries, complete := clean.ReclaimableSummary(budget)
 	var total int64
 	for _, e := range entries {
 		total += e.Bytes
@@ -214,13 +232,12 @@ func printReclaimable() {
 		suffix = ui.Key(" (partial scan — actual total is at least this much)")
 	}
 	fmt.Printf("  %s %s%s\n", ui.Key("reclaimable (caches/logs/trash):"), ui.Actionf("%s", ui.HumanBytes(total)), suffix)
-	shown := 0
-	for _, e := range entries {
-		if shown >= 5 {
-			break
-		}
-		fmt.Printf("    %8s  %s\n", ui.HumanBytes(e.Bytes), e.Path)
-		shown++
+	lines, _, remaining := reclaimableLines(entries, limit)
+	for _, l := range lines {
+		fmt.Println(l)
+	}
+	if remaining > 0 {
+		fmt.Println(ui.Key(fmt.Sprintf("    ...and %d more — --verbose to see them all", remaining)))
 	}
 	fmt.Printf("  %s `vitals clean --dry-run` to see the full plan, then apply\n", ui.Actionf("→"))
 }

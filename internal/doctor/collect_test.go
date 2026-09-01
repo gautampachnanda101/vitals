@@ -56,6 +56,30 @@ func TestDiskUsageUnknownMountFailsFastAndCoolsDown(t *testing.T) {
 	}
 }
 
+func TestFilesystemFilterReasonExplainsEachExclusion(t *testing.T) {
+	const gb = uint64(1) << 30
+	cases := []struct {
+		fstype, mount string
+		total         uint64
+		wantEmpty     bool // true means "kept", i.e. isRealFilesystem would be true
+	}{
+		{"apfs", "/", 500 * gb, true},
+		{"devfs", "/dev", 200 * gb, false},
+		{"apfs", "/", 512 * 1024 * 1024, false},
+		{"apfs", "/System/Volumes/VM", 500 * gb, false},
+	}
+	for _, c := range cases {
+		reason := filesystemFilterReason(c.fstype, c.mount, c.total)
+		if (reason == "") != c.wantEmpty {
+			t.Errorf("filesystemFilterReason(%q, %q, %d) = %q, wantEmpty=%v", c.fstype, c.mount, c.total, reason, c.wantEmpty)
+		}
+		// isRealFilesystem must stay in lockstep with this — it's defined in terms of it.
+		if got := isRealFilesystem(c.fstype, c.mount, c.total); got != c.wantEmpty {
+			t.Errorf("isRealFilesystem disagrees with filesystemFilterReason for (%q, %q, %d)", c.fstype, c.mount, c.total)
+		}
+	}
+}
+
 func TestCPUStatePercents(t *testing.T) {
 	t.Run("splits busy / iowait / steal over the interval", func(t *testing.T) {
 		a := cpu.TimesStat{User: 100, System: 20, Idle: 800, Iowait: 50, Steal: 5}

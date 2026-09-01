@@ -19,6 +19,7 @@ type RunOptions struct {
 	CI        bool   // print one grep-friendly line ("CRITICAL: <finding>") instead of the full report
 	Quiet     bool   // print nothing at all; only the exit code carries the verdict
 	Webhook   string // if set, POST the JSON envelope here when the verdict needs attention
+	Verbose   bool   // show more than the default view has room for (every core, the full reclaimable list, ...)
 }
 
 // Assess collects a snapshot and analyses it, returning both. Shared by the
