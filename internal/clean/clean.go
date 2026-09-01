@@ -53,7 +53,7 @@ func Run(opts Options) error {
 		return nil
 	}
 
-	beforeFree := freeSpace()
+	freeBefore := freeSpace()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -73,20 +73,25 @@ func Run(opts Options) error {
 	}()
 	wg.Wait()
 
-	afterFree := freeSpace()
+	freeAfter := freeSpace()
 
 	ui.Header("SUMMARY")
-	fmt.Printf("  Accounted for by removed files : %s\n", ui.HumanBytes(r.freedByRM.Load()))
-	if beforeFree > 0 && afterFree > 0 {
-		delta := afterFree - beforeFree
-		if delta < 0 {
-			delta = 0
-		}
-		fmt.Printf("  Filesystem free space (root)   : %s -> %s  (reclaimed ~%s)\n",
-			ui.HumanBytes(beforeFree), ui.HumanBytes(afterFree), ui.HumanBytes(delta))
+	measured := ui.HumanBytes(r.freedByRM.Load())
+	if opts.DryRun {
+		fmt.Printf("  Would remove (measured)      : %s\n", measured)
+	} else {
+		fmt.Printf("  Removed (measured)           : %s\n", measured)
+	}
+	// Filesystem free space is shown as context only, never as a "reclaimed"
+	// figure: other processes write to the disk concurrently, so the delta is
+	// not attributable to this run. The measured byte count above is the
+	// honest number.
+	if !opts.DryRun && freeBefore > 0 && freeAfter > 0 {
+		fmt.Printf("  Root filesystem free space   : %s -> %s\n",
+			ui.HumanBytes(freeBefore), ui.HumanBytes(freeAfter))
 	}
 	if opts.DryRun {
-		ui.Okf("dry-run complete")
+		ui.Okf("dry-run complete — re-run without --dry-run to apply")
 	} else {
 		ui.Okf("cleanup complete")
 	}
@@ -191,13 +196,13 @@ func (r *runner) purgeContents(dir string) {
 	var removed int
 	for _, e := range entries {
 		full := filepath.Join(dir, e.Name())
-		sz := pathSize(full)
+		sz, _ := removeTree(full, r.opts.DryRun)
 		if r.opts.DryRun {
 			size += sz
 			removed++
 			continue
 		}
-		if err := os.RemoveAll(full); err == nil {
+		if _, statErr := os.Lstat(full); os.IsNotExist(statErr) {
 			size += sz
 			removed++
 		}
@@ -212,6 +217,52 @@ func (r *runner) purgeContents(dir string) {
 	}
 }
 
+// treeStat walks path once and returns the count and total size of the regular
+// files under it.
+func treeStat(path string) (files int, bytes int64) {
+	filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, e := d.Info(); e == nil && info.Mode().IsRegular() {
+			files++
+			bytes += info.Size()
+		}
+		return nil
+	})
+	return
+}
+
+// removeTree deletes path and everything under it in a single post-order pass,
+// returning the total size of the regular files it accounted for. With dryRun
+// it measures but deletes nothing. Unreadable entries are skipped, not fatal.
+func removeTree(path string, dryRun bool) (int64, error) {
+	var total int64
+	var dirs []string
+	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			dirs = append(dirs, p)
+			return nil
+		}
+		if info, e := d.Info(); e == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		if !dryRun {
+			_ = os.Remove(p)
+		}
+		return nil
+	})
+	if !dryRun {
+		for i := len(dirs) - 1; i >= 0; i-- { // deepest first
+			_ = os.Remove(dirs[i])
+		}
+	}
+	return total, err
+}
+
 func (r *runner) optional(name string, args ...string) {
 	if _, err := exec.LookPath(name); err != nil {
 		return
@@ -222,18 +273,4 @@ func (r *runner) optional(name string, args ...string) {
 	}
 	fmt.Printf("    run: %s %s\n", name, strings.Join(args, " "))
 	_ = exec.Command(name, args...).Run()
-}
-
-func pathSize(p string) int64 {
-	var total int64
-	filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info, e := d.Info(); e == nil && !d.IsDir() {
-			total += info.Size()
-		}
-		return nil
-	})
-	return total
 }
