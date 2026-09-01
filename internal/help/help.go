@@ -9,7 +9,13 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"vitals/internal/ui"
 )
+
+// section renders a section heading (USAGE, COMMANDS, FLAGS, EXAMPLES) in the
+// same bold-cyan used by ui.Header elsewhere in the CLI.
+func section(s string) string { return ui.Bold + ui.Cyan + s + ui.Reset }
 
 // Flag documents one command flag.
 type Flag struct {
@@ -256,27 +262,27 @@ func RenderCommand(w io.Writer, name string) error {
 	if !ok {
 		return fmt.Errorf("unknown command %q", name)
 	}
-	fmt.Fprintf(w, "vitals %s — %s\n\n", c.Name, c.Synopsis)
+	fmt.Fprintf(w, "%svitals %s%s — %s\n\n", ui.Bold, c.Name, ui.Reset, c.Synopsis)
 	if c.Long != "" {
 		fmt.Fprintf(w, "%s\n\n", c.Long)
 	}
-	fmt.Fprintf(w, "USAGE\n  vitals %s", c.Name)
+	fmt.Fprintf(w, "%s\n  vitals %s", section("USAGE"), c.Name)
 	if len(c.Flags) > 0 {
 		fmt.Fprint(w, " [flags]")
 	}
 	fmt.Fprint(w, "\n")
 	if len(c.Flags) > 0 {
-		fmt.Fprint(w, "\nFLAGS\n")
+		fmt.Fprintf(w, "\n%s\n", section("FLAGS"))
 		for _, f := range c.Flags {
 			left := "--" + f.Name
 			if f.Arg != "" {
 				left += " " + f.Arg
 			}
-			fmt.Fprintf(w, "  %-22s %s\n", left, f.Help)
+			fmt.Fprintf(w, "  %s %s\n", ui.Bold+fmt.Sprintf("%-22s", left)+ui.Reset, f.Help)
 		}
 	}
 	if len(c.Examples) > 0 {
-		fmt.Fprint(w, "\nEXAMPLES\n")
+		fmt.Fprintf(w, "\n%s\n", section("EXAMPLES"))
 		for _, e := range c.Examples {
 			fmt.Fprintf(w, "  %s\n", e)
 		}
@@ -286,14 +292,14 @@ func RenderCommand(w io.Writer, name string) error {
 
 // RenderList writes the top-level command listing.
 func RenderList(w io.Writer, version string) {
-	fmt.Fprintf(w, "vitals — cross-platform system diagnostics (%s)\n\n", version)
-	fmt.Fprint(w, "USAGE\n  vitals [--no-color] <command> [flags]\n\n")
-	fmt.Fprint(w, "COMMANDS\n")
+	fmt.Fprintf(w, "%svitals%s — cross-platform system diagnostics (%s)\n\n", ui.Bold, ui.Reset, version)
+	fmt.Fprintf(w, "%s\n  vitals [--no-color] <command> [flags]\n\n", section("USAGE"))
+	fmt.Fprintf(w, "%s\n", section("COMMANDS"))
 	for _, c := range commands {
-		fmt.Fprintf(w, "  %-11s %s\n", c.Name, c.Synopsis)
+		fmt.Fprintf(w, "  %s %s\n", ui.Bold+fmt.Sprintf("%-11s", c.Name)+ui.Reset, c.Synopsis)
 	}
 	fmt.Fprint(w, "\nRun 'vitals help <command>' for details on a command.\n")
-	fmt.Fprint(w, "This binary complements htop/btop, ncdu, nvtop, glances; it does not replace them.\n")
+	fmt.Fprint(w, ui.Key("This binary complements htop/btop, ncdu, nvtop, glances; it does not replace them.\n"))
 }
 
 // CompletionScript returns a completion script for bash, zsh or fish.
