@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,7 +50,9 @@ type ProcSnapshot struct {
 type Provider struct {
 	Name      string   `json:"name"`
 	Endpoint  string   `json:"endpoint"`
+	Location  string   `json:"location,omitempty"` // local | cloud
 	Reachable bool     `json:"reachable"`
+	LatencyMS int64    `json:"latency_ms,omitempty"`
 	Models    []string `json:"models,omitempty"`
 	Err       string   `json:"error,omitempty"`
 }
@@ -168,7 +171,15 @@ func scanProcesses() []ProcSnapshot {
 	if err != nil {
 		return nil
 	}
-	var out []ProcSnapshot
+	// Prime CPU counters on the matching processes, let a short window elapse,
+	// then read — otherwise gopsutil reports each process's lifetime-average
+	// CPU, not what it is doing right now.
+	type cand struct {
+		p    *process.Process
+		name string
+		tag  string
+	}
+	var cands []cand
 	for _, p := range ps {
 		name, _ := p.Name()
 		cmd, _ := p.Cmdline()
@@ -176,13 +187,20 @@ func scanProcesses() []ProcSnapshot {
 		if tag == "" {
 			continue
 		}
-		cpu, _ := p.CPUPercent()
+		_, _ = p.Percent(0)
+		cands = append(cands, cand{p, name, tag})
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	var out []ProcSnapshot
+	for _, c := range cands {
+		cpuPct, _ := c.p.Percent(0)
 		var rss uint64
-		if mi, err := p.MemoryInfo(); err == nil && mi != nil {
+		if mi, err := c.p.MemoryInfo(); err == nil && mi != nil {
 			rss = mi.RSS
 		}
 		out = append(out, ProcSnapshot{
-			PID: p.Pid, Name: name, CPUPct: cpu, RSSBytes: rss, Runtime: tag,
+			PID: c.p.Pid, Name: c.name, CPUPct: cpuPct, RSSBytes: rss, Runtime: c.tag,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].RSSBytes > out[j].RSSBytes })
@@ -191,38 +209,119 @@ func scanProcesses() []ProcSnapshot {
 
 // --- provider probing ----------------------------------------------------------
 
-func probeProviders(ollamaURL string) []Provider {
-	targets := []struct{ name, url, kind string }{
-		{"Ollama", strings.TrimRight(ollamaURL, "/") + "/api/tags", "ollama"},
-		{"LM Studio", "http://localhost:1234/v1/models", "openai"},
-		{"llama.cpp / OpenAI :8080", "http://localhost:8080/v1/models", "openai"},
-		{"vLLM :8000", "http://localhost:8000/v1/models", "openai"},
+// target is one endpoint to probe: a local runtime or a cloud provider, always
+// reached over an open API (OpenAI-compatible /v1/models, or Ollama's /api/tags).
+type target struct {
+	name     string
+	url      string
+	kind     string // "ollama" | "openai"
+	auth     string // "" | "bearer" | "x-api-key"
+	keyEnv   string
+	extra    map[string]string // static extra headers (e.g. anthropic-version)
+	location string            // "local" | "cloud"
+}
+
+// cloudRegistry lists well-known providers reachable over the open
+// OpenAI-compatible API (Anthropic via its documented /v1/models). Each is
+// probed only when its API-key environment variable is present, so corporate
+// keys are picked up automatically and nothing is contacted otherwise.
+var cloudRegistry = []target{
+	{name: "OpenAI", url: "https://api.openai.com/v1/models", kind: "openai", auth: "bearer", keyEnv: "OPENAI_API_KEY", location: "cloud"},
+	{name: "Anthropic", url: "https://api.anthropic.com/v1/models", kind: "openai", auth: "x-api-key", keyEnv: "ANTHROPIC_API_KEY", extra: map[string]string{"anthropic-version": "2023-06-01"}, location: "cloud"},
+	{name: "Groq", url: "https://api.groq.com/openai/v1/models", kind: "openai", auth: "bearer", keyEnv: "GROQ_API_KEY", location: "cloud"},
+	{name: "Mistral", url: "https://api.mistral.ai/v1/models", kind: "openai", auth: "bearer", keyEnv: "MISTRAL_API_KEY", location: "cloud"},
+	{name: "Together", url: "https://api.together.xyz/v1/models", kind: "openai", auth: "bearer", keyEnv: "TOGETHER_API_KEY", location: "cloud"},
+	{name: "OpenRouter", url: "https://openrouter.ai/api/v1/models", kind: "openai", auth: "bearer", keyEnv: "OPENROUTER_API_KEY", location: "cloud"},
+	{name: "DeepSeek", url: "https://api.deepseek.com/v1/models", kind: "openai", auth: "bearer", keyEnv: "DEEPSEEK_API_KEY", location: "cloud"},
+	{name: "xAI", url: "https://api.x.ai/v1/models", kind: "openai", auth: "bearer", keyEnv: "XAI_API_KEY", location: "cloud"},
+	{name: "Fireworks", url: "https://api.fireworks.ai/inference/v1/models", kind: "openai", auth: "bearer", keyEnv: "FIREWORKS_API_KEY", location: "cloud"},
+	{name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai/models", kind: "openai", auth: "bearer", keyEnv: "GEMINI_API_KEY", location: "cloud"},
+}
+
+func localTargets(ollamaURL string) []target {
+	base := strings.TrimRight(ollamaURL, "/")
+	return []target{
+		{name: "Ollama", url: base + "/api/tags", kind: "ollama", location: "local"},
+		{name: "LM Studio", url: "http://localhost:1234/v1/models", kind: "openai", location: "local"},
+		{name: "llama.cpp / OpenAI :8080", url: "http://localhost:8080/v1/models", kind: "openai", location: "local"},
+		{name: "vLLM :8000", url: "http://localhost:8000/v1/models", kind: "openai", location: "local"},
 	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	var out []Provider
-	for _, t := range targets {
-		p := Provider{Name: t.name, Endpoint: t.url}
-		resp, err := client.Get(t.url)
-		if err != nil {
-			p.Err = "unreachable"
-			out = append(out, p)
-			continue
+}
+
+// cloudTargets returns the cloud providers whose API key is set in the given
+// environment.
+func cloudTargets(getenv func(string) string) []target {
+	var out []target
+	for _, t := range cloudRegistry {
+		if strings.TrimSpace(getenv(t.keyEnv)) != "" {
+			out = append(out, t)
 		}
-		func() {
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				p.Err = resp.Status
-				return
-			}
-			p.Reachable = true
-			p.Models = parseModelNames(resp, t.kind)
-		}()
-		out = append(out, p)
 	}
 	return out
 }
 
-func parseModelNames(resp *http.Response, kind string) []string {
+// authHeaders renders the request headers for a target: any static extras, plus
+// the credential in the provider's expected form when the key env var is set.
+func authHeaders(t target, getenv func(string) string) map[string]string {
+	h := make(map[string]string, len(t.extra)+1)
+	for k, v := range t.extra {
+		h[k] = v
+	}
+	key := strings.TrimSpace(getenv(t.keyEnv))
+	if key == "" {
+		return h
+	}
+	switch t.auth {
+	case "bearer":
+		h["Authorization"] = "Bearer " + key
+	case "x-api-key":
+		h["x-api-key"] = key
+	}
+	return h
+}
+
+// probeOne issues a single GET against a target and reports what came back. An
+// auth failure or non-200 is recorded, never fatal.
+func probeOne(client *http.Client, t target, getenv func(string) string) Provider {
+	p := Provider{Name: t.name, Endpoint: t.url, Location: t.location}
+	req, err := http.NewRequest(http.MethodGet, t.url, nil)
+	if err != nil {
+		p.Err = "bad endpoint"
+		return p
+	}
+	for k, v := range authHeaders(t, getenv) {
+		req.Header.Set(k, v)
+	}
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		p.Err = "unreachable"
+		return p
+	}
+	defer resp.Body.Close()
+	p.LatencyMS = time.Since(start).Milliseconds()
+	if resp.StatusCode != http.StatusOK {
+		p.Err = resp.Status
+		return p
+	}
+	p.Reachable = true
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	p.Models = parseModels(body, t.kind)
+	return p
+}
+
+func probeProviders(ollamaURL string) []Provider {
+	targets := append(localTargets(ollamaURL), cloudTargets(os.Getenv)...)
+	client := &http.Client{Timeout: 4 * time.Second}
+	out := make([]Provider, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, probeOne(client, t, os.Getenv))
+	}
+	return out
+}
+
+// parseModels extracts model names from an open-API listing response body.
+func parseModels(data []byte, kind string) []string {
 	switch kind {
 	case "ollama":
 		var body struct {
@@ -230,7 +329,7 @@ func parseModelNames(resp *http.Response, kind string) []string {
 				Name string `json:"name"`
 			} `json:"models"`
 		}
-		if json.NewDecoder(resp.Body).Decode(&body) != nil {
+		if json.Unmarshal(data, &body) != nil {
 			return nil
 		}
 		names := make([]string, 0, len(body.Models))
@@ -238,9 +337,9 @@ func parseModelNames(resp *http.Response, kind string) []string {
 			names = append(names, m.Name)
 		}
 		return names
-	default: // openai
+	default: // openai-compatible
 		var body openAIModels
-		if json.NewDecoder(resp.Body).Decode(&body) != nil {
+		if json.Unmarshal(data, &body) != nil {
 			return nil
 		}
 		names := make([]string, 0, len(body.Data))
@@ -293,7 +392,7 @@ func ollamaModels(ollamaURL string) []ModelState {
 // --- rendering ---------------------------------------------------------------
 
 func render(rep Report) {
-	ui.Header("LOCAL LLM DEEP INSIGHT")
+	ui.Header("LLM DEEP INSIGHT")
 	fmt.Printf("  %s\n", rep.Timestamp.Format("2006-01-02 15:04:05"))
 
 	fmt.Printf("\n%sHost processes%s\n", ui.Bold, ui.Reset)
@@ -309,12 +408,31 @@ func render(rep Report) {
 		}
 	}
 
-	fmt.Printf("\n%sProvider endpoints%s\n", ui.Bold, ui.Reset)
-	for _, pr := range rep.Providers {
-		if pr.Reachable {
-			ui.Okf("%-26s %s  (%d model%s)", pr.Name, pr.Endpoint, len(pr.Models), plural(len(pr.Models)))
-		} else {
-			fmt.Printf("  %s%-26s%s %s  (%s)\n", ui.Dim, pr.Name, ui.Reset, pr.Endpoint, pr.Err)
+	for _, group := range []string{"local", "cloud"} {
+		var rows []Provider
+		for _, pr := range rep.Providers {
+			loc := pr.Location
+			if loc == "" {
+				loc = "local"
+			}
+			if loc == group {
+				rows = append(rows, pr)
+			}
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		fmt.Printf("\n%s%s LLM endpoints%s\n", ui.Bold, capitalize(group), ui.Reset)
+		for _, pr := range rows {
+			if pr.Reachable {
+				lat := ""
+				if pr.LatencyMS > 0 {
+					lat = fmt.Sprintf("  %dms", pr.LatencyMS)
+				}
+				ui.Okf("%-26s %s  (%d model%s)%s", pr.Name, pr.Endpoint, len(pr.Models), plural(len(pr.Models)), lat)
+			} else {
+				fmt.Printf("  %s%-26s%s %s  (%s)\n", ui.Dim, pr.Name, ui.Reset, pr.Endpoint, pr.Err)
+			}
 		}
 	}
 
@@ -342,6 +460,13 @@ func render(rep Report) {
 			ui.Warnf("CPU-ONLY — generation is bottlenecked on system RAM bandwidth; free VRAM or pick a smaller model")
 		}
 	}
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func plural(n int) string {
