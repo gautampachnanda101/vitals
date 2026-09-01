@@ -22,11 +22,11 @@ go build -o vitals .          # current platform
 
 | Command    | What it does |
 |------------|--------------|
-| `top`      | Activity-Monitor-style snapshot — system CPU / RAM / load, disk & network I/O, and the top processes by CPU or memory. `--watch` turns it into a live dashboard. |
+| `top`      | Activity-Monitor-style snapshot — system CPU / RAM / load, per-second disk & network I/O rates, and the top processes by CPU or memory. `--watch` turns it into a live dashboard. |
 | `clean`    | Cross-platform disk cleanup: developer caches (`~/.cache`, npm, yarn, pip, gradle…), OS caches/logs/trash, temp dirs, plus optional `brew` / `docker` / `apt` prune when those tools are present. `--dry-run` first. |
 | `memhogs`  | Ranks application *families* (Chrome, VS Code, Docker, Ollama, JetBrains…) and individual processes by memory, with a concrete kill/prune action for each. |
 | `memcheck` | Advanced RAM / swap / pressure overview with a health verdict. |
-| `llm`      | Deep diagnostics for local LLM runtimes: host CPU/RAM of the server process, which provider endpoints are up (Ollama, LM Studio, llama.cpp, vLLM), and Ollama's per-model VRAM footprint with the exact **percentage offloaded to GPU**. |
+| `llm`      | Deep diagnostics for local **and cloud** LLM endpoints: host CPU/RAM of any local runtime (Ollama, LM Studio, llama.cpp, vLLM), Ollama's per-model VRAM footprint with the exact **percentage offloaded to GPU**, and reachability/latency of cloud providers (OpenAI, Anthropic, Groq, Mistral, …) whose API key is set in the environment — all over open OpenAI-compatible APIs. |
 | `version`  | Print version. |
 
 ### Examples
@@ -66,5 +66,4 @@ internal/clean       `clean`
 internal/memhogs     `memhogs`
 internal/memcheck    `memcheck`
 internal/llm         `llm`
-legacy/              the original shell scripts, kept for reference
 ```

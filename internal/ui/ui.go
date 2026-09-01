@@ -22,6 +22,16 @@ var (
 	Reset  = code("\033[0m")
 )
 
+// ColorEnabled reports whether styled output is currently active.
+func ColorEnabled() bool { return enabled }
+
+// DisableColor forces all styling off regardless of TTY detection or the
+// NO_COLOR environment variable. Call it once at startup, before any output.
+func DisableColor() {
+	enabled = false
+	Red, Green, Yellow, Cyan, Bold, Dim, Reset = "", "", "", "", "", "", ""
+}
+
 func colorEnabled() bool {
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
 		return false

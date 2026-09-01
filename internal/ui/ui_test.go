@@ -56,6 +56,38 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+func TestDisableColor(t *testing.T) {
+	// Save and restore package styling state around the test.
+	saved := []*string{&Red, &Green, &Yellow, &Cyan, &Bold, &Dim, &Reset}
+	orig := make([]string, len(saved))
+	for i, p := range saved {
+		orig[i] = *p
+	}
+	origEnabled := enabled
+	t.Cleanup(func() {
+		for i, p := range saved {
+			*p = orig[i]
+		}
+		enabled = origEnabled
+	})
+
+	Red = "\033[1;31m"
+	enabled = true
+	DisableColor()
+
+	if enabled {
+		t.Error("enabled should be false after DisableColor")
+	}
+	for _, p := range saved {
+		if *p != "" {
+			t.Errorf("style code %q not cleared", *p)
+		}
+	}
+	if got := Actionf("x"); got != "x" {
+		t.Errorf("Actionf still wraps in color: %q", got)
+	}
+}
+
 func TestStripANSI(t *testing.T) {
 	cases := []struct {
 		in   string

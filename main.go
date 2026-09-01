@@ -33,19 +33,36 @@ import (
 	"vitals/internal/memcheck"
 	"vitals/internal/memhogs"
 	"vitals/internal/monitor"
+	"vitals/internal/ui"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+// applyGlobalFlags consumes options that are valid before any subcommand
+// (currently just --no-color) and returns the remaining arguments untouched.
+func applyGlobalFlags(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, a := range in {
+		switch a {
+		case "--no-color", "-no-color":
+			ui.DisableColor()
+		default:
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func main() {
-	if len(os.Args) < 2 {
+	argv := applyGlobalFlags(os.Args[1:])
+	if len(argv) < 1 {
 		usage()
 		os.Exit(2)
 	}
 
-	cmd := os.Args[1]
-	args := os.Args[2:]
+	cmd := argv[0]
+	args := argv[1:]
 
 	switch cmd {
 	case "clean":
@@ -120,21 +137,25 @@ func usage() {
 	fmt.Fprint(os.Stderr, `vitals — cross-platform system helper (`+version+`)
 
 USAGE
-  vitals <command> [flags]
+  vitals [--no-color] <command> [flags]
+
+GLOBAL FLAGS
+  --no-color   disable ANSI colour (also honours the NO_COLOR env var)
 
 COMMANDS
-  top        Activity-Monitor-style snapshot: system CPU / RAM / load, disk and
-             network I/O, and the top processes by CPU or memory.
+  top        Activity-Monitor-style snapshot: system CPU / RAM / load, per-second
+             disk and network I/O, and the top processes by CPU or memory.
              Flags: --top N  --sort cpu|mem  --watch  --interval DUR  --json
   clean      Cross-platform disk cleanup: dev/OS caches, logs, temp, trash.
              Flags: --dry-run  --yes
   memhogs    Rank application families and processes by memory footprint and
-             print a suggested action (kill / prune) for each.
+             print an OS-correct suggested action (kill / prune) for each.
              Flags: --top N
   memcheck   Advanced RAM / swap / pressure overview with a health verdict.
-  llm        Deep diagnostics for local LLM runtimes: host CPU/RAM of the
-             server process plus Ollama's per-model VRAM footprint and the
-             exact percentage of each model offloaded to the GPU.
+  llm        Deep diagnostics for local and cloud LLM endpoints: host CPU/RAM of
+             any local runtime, Ollama's per-model VRAM footprint and GPU offload
+             percentage, plus reachability/latency of cloud providers whose API
+             key is set in the environment.
              Flags: --ollama-url URL  --watch  --interval DUR  --json
   version    Print version information.
 
