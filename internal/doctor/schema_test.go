@@ -31,11 +31,12 @@ func TestSchemaFieldsContract(t *testing.T) {
 		return
 	}
 
-	want, err := os.ReadFile(goldenPath)
+	raw, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("%v — run with -update to create it", err)
 	}
-	if got != string(want) {
+	want := strings.ReplaceAll(string(raw), "\r\n", "\n") // tolerate a CRLF checkout
+	if got != want {
 		t.Errorf("the --json payload shape changed.\n\n"+
 			"If this is intentional: update SchemaVersion in schema.go, then\n"+
 			"  go test ./internal/doctor -run TestSchemaFieldsContract -update\n\n"+

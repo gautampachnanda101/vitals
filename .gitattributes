@@ -1,0 +1,7 @@
+# Keep LF endings on files that are read byte-for-byte or run as scripts,
+# so a Windows checkout doesn't rewrite them to CRLF.
+* text=auto eol=lf
+*.golden text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.go text eol=lf
