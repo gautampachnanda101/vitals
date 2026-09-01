@@ -1,0 +1,9 @@
+{
+  "name": "vitals",
+  "version": "0.1.0",
+  "description": "System diagnostics for Claude Code: a skill that answers \"why is my machine slow\", /vitals-* slash commands, and an optional session pre-flight — all backed by the vitals binary.",
+  "author": { "name": "Gautam Pachnanda" },
+  "homepage": "https://github.com/gautampachnanda101/vitals",
+  "license": "MIT",
+  "keywords": ["diagnostics", "performance", "gpu", "llm", "monitoring"]
+}

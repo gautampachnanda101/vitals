@@ -56,7 +56,7 @@ every platform into `./dist/`.
 | `llm fit <model>` | The largest quant of a model that fully fits your VRAM, with the spill % for the ones that don't. |
 | `clean` | Cross-platform disk cleanup (dev/OS caches, logs, temp, trash) + `brew`/`docker`/`npm`/`pip` prune when present. `--dry-run` first. |
 | `serve` / `export` | Prometheus `/metrics` (OpenTelemetry semantic-convention names) — as a server or a one-shot dump. |
-| `mcp` | Run as a Model Context Protocol server on stdio (`claude mcp add vitals -- vitals mcp`). |
+| `mcp` | Run as a Model Context Protocol server on stdio (`claude mcp add vitals -- vitals mcp`). A Claude Code plugin (skill + `/vitals-*` commands + optional pre-flight hook) is in [`plugin/`](plugin/). |
 | `guide` / `help [<cmd>]` / `completion <shell>` | Embedded user guide, contextual help, and bash/zsh/fish completion. |
 
 `--json` on `doctor`, the resource commands, `top` and `llm`. `--no-color`
