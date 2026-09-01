@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"vitals/internal/ui"
@@ -34,4 +35,15 @@ func TestApplyGlobalFlags(t *testing.T) {
 			t.Errorf("got %v", got)
 		}
 	})
+}
+
+func TestUserGuideEmbedded(t *testing.T) {
+	if len(userGuide) < 500 {
+		t.Fatalf("USERGUIDE.md not embedded (got %d bytes)", len(userGuide))
+	}
+	for _, want := range []string{"vitals doctor", "vitals llm", "Shell completion"} {
+		if !strings.Contains(userGuide, want) {
+			t.Errorf("embedded guide missing %q", want)
+		}
+	}
 }

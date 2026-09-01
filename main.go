@@ -23,6 +23,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
@@ -30,6 +31,7 @@ import (
 
 	"vitals/internal/clean"
 	"vitals/internal/doctor"
+	"vitals/internal/help"
 	"vitals/internal/llm"
 	"vitals/internal/memcheck"
 	"vitals/internal/memhogs"
@@ -39,6 +41,18 @@ import (
 
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
+
+//go:embed USERGUIDE.md
+var userGuide string
+
+// newFlagSet builds a subcommand flag set whose -h / -help output is the
+// contextual help from the help package, so `vitals X -h` and
+// `vitals help X` always agree.
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	fs.Usage = func() { _ = help.RenderCommand(os.Stderr, name) }
+	return fs
+}
 
 // applyGlobalFlags consumes options that are valid before any subcommand
 // (currently just --no-color) and returns the remaining arguments untouched.
@@ -58,7 +72,7 @@ func applyGlobalFlags(in []string) []string {
 func main() {
 	argv := applyGlobalFlags(os.Args[1:])
 	if len(argv) < 1 {
-		usage()
+		help.RenderList(os.Stderr, version)
 		os.Exit(2)
 	}
 
@@ -67,32 +81,32 @@ func main() {
 
 	switch cmd {
 	case "doctor":
-		fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+		fs := newFlagSet("doctor")
 		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
 		asJSON := fs.Bool("json", false, "emit the findings and snapshot as JSON")
 		_ = fs.Parse(args)
 		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON}))
 
 	case "clean":
-		fs := flag.NewFlagSet("clean", flag.ExitOnError)
+		fs := newFlagSet("clean")
 		dry := fs.Bool("dry-run", false, "report what would be removed without deleting anything")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt")
 		_ = fs.Parse(args)
 		must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes}))
 
 	case "memhogs":
-		fs := flag.NewFlagSet("memhogs", flag.ExitOnError)
+		fs := newFlagSet("memhogs")
 		top := fs.Int("top", 15, "number of individual processes to list")
 		_ = fs.Parse(args)
 		must(memhogs.Run(*top))
 
 	case "memcheck":
-		fs := flag.NewFlagSet("memcheck", flag.ExitOnError)
+		fs := newFlagSet("memcheck")
 		_ = fs.Parse(args)
 		must(memcheck.Run())
 
 	case "top", "monitor":
-		fs := flag.NewFlagSet("top", flag.ExitOnError)
+		fs := newFlagSet("top")
 		top := fs.Int("top", 15, "number of processes to list")
 		sortBy := fs.String("sort", "cpu", "sort processes by \"cpu\" or \"mem\"")
 		watch := fs.Bool("watch", false, "refresh continuously until interrupted")
@@ -108,7 +122,7 @@ func main() {
 		}))
 
 	case "llm":
-		fs := flag.NewFlagSet("llm", flag.ExitOnError)
+		fs := newFlagSet("llm")
 		url := fs.String("ollama-url", "http://localhost:11434", "base URL of the Ollama server")
 		watch := fs.Bool("watch", false, "refresh continuously until interrupted")
 		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
@@ -124,12 +138,35 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
 
+	case "guide":
+		fmt.Print(userGuide)
+
+	case "completion":
+		if len(args) < 1 {
+			fmt.Fprintln(os.Stderr, "usage: vitals completion bash|zsh|fish")
+			os.Exit(2)
+		}
+		script, err := help.CompletionScript(args[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Print(script)
+
 	case "help", "-h", "--help":
-		usage()
+		if len(args) >= 1 {
+			if err := help.RenderCommand(os.Stdout, args[0]); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n\n", err)
+				help.RenderList(os.Stderr, version)
+				os.Exit(2)
+			}
+			return
+		}
+		help.RenderList(os.Stdout, version)
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
-		usage()
+		help.RenderList(os.Stderr, version)
 		os.Exit(2)
 	}
 }
@@ -139,47 +176,4 @@ func must(err error) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func usage() {
-	fmt.Fprint(os.Stderr, `vitals — cross-platform system helper (`+version+`)
-
-USAGE
-  vitals [--no-color] <command> [flags]
-
-GLOBAL FLAGS
-  --no-color   disable ANSI colour (also honours the NO_COLOR env var)
-
-COMMANDS
-  doctor     Correlate CPU / memory / disk / thermal / LLM signals into a ranked
-             verdict — what is constraining the machine right now and the exact
-             fix. Exit code: 0 healthy, 1 warning, 2 critical.
-             Flags: --ollama-url URL  --json
-  top        Activity-Monitor-style snapshot: system CPU / RAM / load, per-second
-             disk and network I/O, and the top processes by CPU or memory.
-             Flags: --top N  --sort cpu|mem  --watch  --interval DUR  --json
-  clean      Cross-platform disk cleanup: dev/OS caches, logs, temp, trash.
-             Flags: --dry-run  --yes
-  memhogs    Rank application families and processes by memory footprint and
-             print an OS-correct suggested action (kill / prune) for each.
-             Flags: --top N
-  memcheck   Advanced RAM / swap / pressure overview with a health verdict.
-  llm        Deep diagnostics for local and cloud LLM endpoints: host CPU/RAM of
-             any local runtime, Ollama's per-model VRAM footprint and GPU offload
-             percentage, plus reachability/latency of cloud providers whose API
-             key is set in the environment.
-             Flags: --ollama-url URL  --watch  --interval DUR  --json
-  version    Print version information.
-
-EXAMPLES
-  vitals top --sort mem --watch
-  vitals clean --dry-run
-  vitals memhogs --top 20
-  vitals memcheck
-  vitals llm --watch --interval 1s
-  vitals llm --json | jq '.models[] | {name, gpu_offload_percent}'
-
-This binary complements standard tools (htop/btop, ncdu, nvtop, glances,
-docker, brew); it does not replace them.
-`)
 }
