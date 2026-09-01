@@ -36,9 +36,12 @@ func TestParseIgnoresGarbage(t *testing.T) {
 }
 
 func TestLoadWithNoFileReturnsDefaults(t *testing.T) {
-	// os.UserConfigDir() derives from $HOME on both macOS and Linux; pointing
-	// it at an empty temp dir guarantees no config.toml is present to load.
-	t.Setenv("HOME", t.TempDir())
+	// os.UserConfigDir() derives from $HOME on macOS/Linux and %AppData% on
+	// Windows; pointing both at an empty temp dir guarantees no config.toml
+	// is present to load, on any OS the test might run on.
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	if got := Load(); got != Default() {
 		t.Errorf("Load() with no file = %+v, want Default() %+v", got, Default())

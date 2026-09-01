@@ -25,9 +25,20 @@ func TestFinishAssessReturnsTheAnalyzedReport(t *testing.T) {
 	}
 }
 
-func TestFinishAssessAddsALeakFindingWhenHistoryShowsASteadyClimber(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+// isolateConfigDir points os.UserConfigDir() at a fresh, empty temp
+// directory on every OS a test might run on — HOME for macOS/Linux,
+// APPDATA for Windows — so history/config file state never leaks between
+// tests or into a shared CI runner's real config directory.
+func isolateConfigDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
 	t.Setenv("XDG_CONFIG_HOME", "")
+}
+
+func TestFinishAssessAddsALeakFindingWhenHistoryShowsASteadyClimber(t *testing.T) {
+	isolateConfigDir(t)
 
 	base := time.Now().Add(-time.Hour)
 	for i, rssMB := range []uint64{100, 250, 400, 600, 900} {
@@ -58,8 +69,7 @@ func TestFinishAssessAddsALeakFindingWhenHistoryShowsASteadyClimber(t *testing.T
 }
 
 func TestFinishAssessLeavesHealthyReportAloneWithNoClimbInHistory(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", "")
+	isolateConfigDir(t)
 
 	_, report := finishAssess(Snapshot{CPU: CPU{Cores: 8, UsedPct: 10}, Memory: Memory{UsedPct: 20}})
 	if report.Worst() != diag.OK {
@@ -68,8 +78,7 @@ func TestFinishAssessLeavesHealthyReportAloneWithNoClimbInHistory(t *testing.T) 
 }
 
 func TestFinishAssessRecordsHistory(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", "")
+	isolateConfigDir(t)
 
 	if before := LoadHistory(); len(before) != 0 {
 		t.Fatalf("expected no history before recording, got %+v", before)
