@@ -21,20 +21,35 @@ import (
 // has nothing sensitive in it, but a local-only doc server has no business
 // being reachable from anywhere else either.
 func Serve(md, title string) error {
-	page := RenderHTML(md, title)
+	return ServeHTML(RenderHTML(md, title))
+}
 
+// ServeHTML serves an already-rendered, single HTML page the same way Serve
+// does — loopback-only, browser opened automatically, blocks until
+// interrupted.
+func ServeHTML(page string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(page))
+	})
+	return ServeLocal(mux, "the guide")
+}
+
+// ServeLocal runs handler on a random loopback port (127.0.0.1 — never on
+// the network), opens the user's default browser to it, and blocks until
+// interrupted. This is the shared plumbing behind every local web view
+// vitals offers — the guide, `vitals dashboard` — so each one only has to
+// define its own routes; the safe-bind/auto-open/graceful-shutdown behavior
+// is written once and can't drift between them.
+func ServeLocal(handler http.Handler, label string) error {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
 	url := "http://" + ln.Addr().String() + "/"
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(page))
-	})
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: handler}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -52,7 +67,7 @@ func Serve(md, title string) error {
 		}
 	}()
 
-	ui.Okf("serving the guide at %s — press Ctrl+C to stop", url)
+	ui.Okf("serving %s at %s — press Ctrl+C to stop", label, url)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

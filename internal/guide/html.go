@@ -20,6 +20,15 @@ func RenderHTML(md, title string) string {
 	return "<!doctype html>\n" + fmt.Sprintf(pageTemplate, html.EscapeString(title), body)
 }
 
+// RenderFragment converts md into an HTML fragment — no <html>/<head>/<body>
+// wrapper — for embedding inside a page that already has its own shell
+// (e.g. `vitals dashboard`'s advice page rendering an LLM reply). Headings
+// still get real anchor IDs; nothing else about the shared Markdown subset
+// this package renders changes.
+func RenderFragment(md string) string {
+	return renderBodyHTML(md, extractHeadings(md))
+}
+
 // heading is one H1/H2/H3 line, in document order.
 type heading struct {
 	Level int
