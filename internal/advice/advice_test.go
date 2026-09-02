@@ -54,6 +54,21 @@ func TestStripFabricatedSourcesLeavesNormalTextAlone(t *testing.T) {
 	}
 }
 
+func TestBuildPromptAsksToSynthesizeNotJustRestateFindings(t *testing.T) {
+	// A prompt that only asks for "prioritized advice" on a report the user
+	// already has in front of them (each finding already carries its own
+	// detail and fix) gives a capable model nothing to add beyond
+	// paraphrasing — the exact "why would anyone use this" complaint. Push
+	// it to find what a per-finding list can't show: shared root causes.
+	prompt := BuildPrompt([]byte(`{"verdict":"warning","findings":[]}`))
+	lower := strings.ToLower(prompt)
+	for _, want := range []string{"restate", "root cause", "same process"} {
+		if !strings.Contains(lower, want) {
+			t.Errorf("prompt should push the model to add value beyond restating findings, missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestBuildPromptAsksNotToInventProblemsWhenHealthy(t *testing.T) {
 	prompt := BuildPrompt([]byte(`{"verdict":"ok","findings":[]}`))
 	if !strings.Contains(strings.ToLower(prompt), "healthy") {

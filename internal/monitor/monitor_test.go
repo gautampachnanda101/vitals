@@ -1,12 +1,36 @@
 package monitor
 
 import (
+	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"vitals/internal/ui"
 )
+
+// captureStdout swaps both os.Stdout and os.Stderr for the duration of f and
+// returns everything written to either — emit() and Run() print directly
+// rather than building a string first (the same convention doctor.Run's
+// verdict-printing switch uses), and some of vitals' own print helpers
+// (ui.Errf) write to stderr specifically, so capturing stdout alone would
+// silently miss output a user would still see in their terminal.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	oldOut, oldErr := os.Stdout, os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = w, w
+	f()
+	w.Close()
+	os.Stdout, os.Stderr = oldOut, oldErr
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
 
 func TestBar(t *testing.T) {
 	cases := []struct {
@@ -46,6 +70,91 @@ func TestRate(t *testing.T) {
 		if got := rate(c.in); got != c.want {
 			t.Errorf("rate(%v) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestMemBreakdownLine(t *testing.T) {
+	cases := []struct {
+		name string
+		in   MemBreakdown
+		want []string // substrings that must all appear
+		none bool     // true means the result must be empty
+	}{
+		{"macOS-style", MemBreakdown{Wired: 1 << 30, Active: 2 << 30, Inactive: 3 << 30}, []string{"wired", "active", "inactive"}, false},
+		{"linux-style", MemBreakdown{Buffers: 1 << 20, Cached: 5 << 20}, []string{"buffers", "cached"}, false},
+		{"all zero — platform reports none of it", MemBreakdown{}, nil, true},
+	}
+	for _, c := range cases {
+		got := memBreakdownLine(c.in)
+		if c.none {
+			if got != "" {
+				t.Errorf("%s: memBreakdownLine = %q, want empty", c.name, got)
+			}
+			continue
+		}
+		for _, want := range c.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: memBreakdownLine = %q, missing %q", c.name, got, want)
+			}
+		}
+		// A field that's zero on this platform must never appear, or the
+		// line implies pressure in a category the OS never actually reported.
+		if c.in.Cached == 0 && strings.Contains(got, "cached") {
+			t.Errorf("%s: zero field leaked into output: %q", c.name, got)
+		}
+	}
+}
+
+func TestSampleWindow(t *testing.T) {
+	if got := (Options{Interval: 5 * time.Second}).sampleWindow(); got != 500*time.Millisecond {
+		t.Errorf("sampleWindow with a long interval = %v, want the fixed 500ms CPU-sample window", got)
+	}
+	if got := (Options{Interval: 200 * time.Millisecond}).sampleWindow(); got != 200*time.Millisecond {
+		t.Errorf("sampleWindow with a sub-second interval = %v, want the interval itself so --watch stays responsive", got)
+	}
+}
+
+func TestEmitJSONEncodesTheSnapshot(t *testing.T) {
+	snap := Snapshot{
+		Host:   HostInfo{Hostname: "test-host"},
+		Memory: MemInfo{TotalBytes: 100, UsedBytes: 50, UsedPct: 50},
+	}
+	out := captureStdout(t, func() {
+		if err := emit(snap, Options{JSON: true}); err != nil {
+			t.Fatalf("emit: %v", err)
+		}
+	})
+	var got Snapshot
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("emit --json output is not valid JSON: %v\n%s", err, out)
+	}
+	if got.Host.Hostname != "test-host" || got.Memory.UsedBytes != 50 {
+		t.Errorf("round-tripped snapshot = %+v, want the fields emit was given", got)
+	}
+}
+
+func TestEmitHumanReadableListsEveryProcessOnce(t *testing.T) {
+	snap := Snapshot{
+		Host:   HostInfo{Hostname: "test-host", OS: "testos 1.0"},
+		Memory: MemInfo{TotalBytes: 100, UsedBytes: 50, UsedPct: 50},
+		Processes: []ProcInfo{
+			{PID: 1, Name: "alpha", CPUPct: 90, MemPct: 5},
+			{PID: 2, Name: "beta", CPUPct: 10, MemPct: 30},
+		},
+	}
+	out := captureStdout(t, func() {
+		if err := emit(snap, Options{SortBy: "cpu"}); err != nil {
+			t.Fatalf("emit: %v", err)
+		}
+	})
+	plain := ui.StripANSI(out)
+	for _, want := range []string{"test-host", "alpha", "beta"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("human output missing %q:\n%s", want, plain)
+		}
+	}
+	if n := strings.Count(plain, "\n"); n < 3 {
+		t.Errorf("suspiciously short output (%d lines):\n%s", n, plain)
 	}
 }
 

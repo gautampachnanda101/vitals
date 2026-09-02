@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"vitals/internal/doctor"
+	"vitals/internal/guide"
 	"vitals/internal/llm"
 	"vitals/internal/ui"
 )
@@ -38,11 +39,15 @@ func BuildPrompt(reportJSON []byte) string {
 a cross-platform system-health tool covering CPU, memory, disk, network, power, GPU and any local
 LLM runtime, plus a ranked list of findings with severities and suggested fixes.
 
-Give practical, prioritized advice: if there is a real problem, say what it is, why it's happening,
-and the exact command or action to fix it — a few concise sentences, not an essay. If the report is
-healthy (verdict "ok", no findings), say so briefly and do not invent problems that aren't there.
-There are no external sources for this — everything you need is in the JSON below. Do not cite,
-reference, or invent a source, URL, or "Sources" section; base the answer only on this data.
+The user has already seen each finding's own detail and fix — do not just restate them one by one.
+Give prioritized advice that adds what a per-finding list cannot: if two or more findings trace back
+to the same process or root cause, say so and give the one fix that addresses both; rank what matters
+most when there is more than one issue. If a finding truly has nothing more to add beyond its own fix,
+say so in one line instead of padding it out. A few concise sentences, not an essay.
+
+If the report is healthy (verdict "ok", no findings), say so briefly and do not invent problems that
+aren't there. There are no external sources for this — everything you need is in the JSON below. Do
+not cite, reference, or invent a source, URL, or "Sources" section; base the answer only on this data.
 
 %s`, reportJSON)
 }
@@ -100,6 +105,6 @@ func Run(opts Options) error {
 	}
 
 	ui.Header("LLM ADVICE")
-	fmt.Println(reply)
+	fmt.Println(guide.RenderTerminal(reply))
 	return nil
 }

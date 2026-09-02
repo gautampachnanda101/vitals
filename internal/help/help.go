@@ -75,7 +75,8 @@ var commands = []Command{
 			{"output", "FILE", "also write the JSON envelope to this file, regardless of --json"},
 			{"ci", "", "print one grep-friendly line instead of the full report"},
 			{"quiet", "", "print nothing; only the exit code carries the verdict (-q)"},
-			{"webhook", "URL", "POST the JSON envelope here when the verdict needs attention"},
+			{"webhook", "URL", "POST the JSON envelope here when the verdict needs attention (https only, no loopback/private targets, unless --webhook-allow-insecure)"},
+			{"webhook-allow-insecure", "", "allow plain http and loopback/private/link-local --webhook targets"},
 			{"compare", "", "compare two --output-saved reports: --compare old.json new.json"},
 			{"schema", "", "print the JSON Schema for the --json payload and exit"},
 			{"no-color", "", "disable ANSI colour (also honours NO_COLOR)"},
@@ -284,12 +285,15 @@ var commands = []Command{
 			"http://localhost:9100/metrics, re-collected on each scrape. Metric names\n" +
 			"follow OpenTelemetry semantic conventions (system_cpu_utilization, ...);\n" +
 			"the value-add signals use a vitals_ prefix (vitals_llm_gpu_offload_ratio,\n" +
-			"vitals_verdict). Grafana Agent / Alloy and Prometheus scrape this directly.",
+			"vitals_verdict). Grafana Agent / Alloy and Prometheus scrape this directly.\n" +
+			"Binds 127.0.0.1 by default — pass --addr with a bare \":PORT\" (no host)\n" +
+			"to bind every interface, the way node_exporter does, once you actually\n" +
+			"want it reachable from other machines.",
 		Flags: []Flag{
-			{"addr", "ADDR", "listen address (default :9100)"},
+			{"addr", "ADDR", "listen address (default 127.0.0.1:9100; \":PORT\" binds every interface)"},
 			{"ollama-url", "URL", "base URL of the Ollama server"},
 		},
-		Examples: []string{"vitals serve", "vitals serve --addr :9600"},
+		Examples: []string{"vitals serve", "vitals serve --addr :9600   # reachable from other machines"},
 	},
 	{
 		Name:     "export",

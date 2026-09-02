@@ -101,6 +101,48 @@ func TestPurgeContentsMissingDirIsNoop(t *testing.T) {
 	}
 }
 
+func TestPurgeContentsRefusesASymlinkedDir(t *testing.T) {
+	// If one of the fixed cache paths (~/.cache, say) has been replaced with
+	// a symlink to somewhere else — by malware, or a careless script that
+	// already has write access to $HOME — purgeContents must not walk into
+	// the link target and delete it. Only a real directory at `dir` is
+	// eligible for purging.
+	real := mktree(t)
+	link := filepath.Join(t.TempDir(), "cache-symlink")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	r := &runner{opts: Options{}}
+	r.purgeContents(link)
+
+	if files, bytes := treeStat(real); files != 3 || bytes != 600 {
+		t.Errorf("purgeContents followed the symlink and modified its target: now (%d files, %d bytes)", files, bytes)
+	}
+	if r.freedByRM.Load() != 0 {
+		t.Errorf("accounted %d bytes for a symlinked dir, want 0 — it should have been refused, not walked", r.freedByRM.Load())
+	}
+}
+
+func TestPurgeContentsRefusesAFile(t *testing.T) {
+	// dir is always expected to be a directory (one of the fixed cache
+	// paths); if it's ever a plain file instead, ReadDir would already fail
+	// gracefully, but this pins that a non-directory is never treated as
+	// purgeable.
+	f := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	r := &runner{opts: Options{}}
+	r.purgeContents(f)
+	if r.freedByRM.Load() != 0 {
+		t.Errorf("accounted %d bytes for a plain file, want 0", r.freedByRM.Load())
+	}
+	if _, err := os.Stat(f); err != nil {
+		t.Errorf("the file itself should have been left alone: %v", err)
+	}
+}
+
 func TestMeasureDirsRanksLargestFirstAndSkipsMissing(t *testing.T) {
 	big := mktree(t)                           // 600 bytes
 	small := t.TempDir()                       // exists, empty -> 0 bytes, excluded

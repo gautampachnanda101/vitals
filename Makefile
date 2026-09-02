@@ -2,7 +2,7 @@ BINARY  := vitals
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all test race lint vet staticcheck ci run clean install
+.PHONY: build build-all test race lint vet staticcheck ci run clean install coverage
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
@@ -24,6 +24,10 @@ staticcheck:
 	staticcheck ./...
 
 lint: vet staticcheck
+
+coverage:
+	go test -coverprofile=coverage.out ./...
+	python3 check_coverage.py coverage.out
 
 ci: lint race build-all
 

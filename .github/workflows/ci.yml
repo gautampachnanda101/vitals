@@ -49,17 +49,20 @@ jobs:
             echo "Not covered here (destructive, network-flaky, or block-forever by design): \`clean --yes\`, \`tools --install\`, \`advice\`, \`serve\`, \`mcp\`, \`guide --web\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Coverage floor
+      - name: Coverage floor (per package)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          pct=$(go tool cover -func=coverage.out | awk '/^total:/{gsub(/%/,"",$3); print $3}')
-          floor=38.0
-          echo "## Coverage: ${pct}% (floor ${floor}%)" >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/{print $3}')
+          {
+            echo "## Coverage: ${pct} blended (see per-package floor below)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python3 check_coverage.py coverage.out | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$?
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          awk -v p="$pct" -v f="$floor" 'BEGIN{ if (p+0 < f+0) { print "::error::coverage " p "% is below the " f "% floor"; exit 1 } print "coverage " p "% >= floor " f "%" }'
+          exit $status
 
   lint:
     runs-on: ubuntu-latest

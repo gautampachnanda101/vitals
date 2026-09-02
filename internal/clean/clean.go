@@ -296,9 +296,18 @@ func measureDirs(dirs []string, budget time.Duration) (entries []CacheEntry, com
 
 // --- helpers ------------------------------------------------------------------
 
-// purgeContents removes every entry inside dir (but keeps dir itself).
+// purgeContents removes every entry inside dir (but keeps dir itself). dir
+// is always one of a fixed set of cache/log/trash paths this package
+// hardcodes — never a config- or user-supplied path — but that path could
+// still have been replaced with a symlink before this ran (by malware, or
+// by anything else that already has write access to $HOME). os.Lstat here,
+// checked before ReadDir, refuses to purge through a symlink: only a real
+// directory found sitting at dir is ever eligible.
 func (r *runner) purgeContents(dir string) {
 	if dir == "" {
+		return
+	}
+	if fi, err := os.Lstat(dir); err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
 		return
 	}
 	entries, err := os.ReadDir(dir)

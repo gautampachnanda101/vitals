@@ -31,12 +31,22 @@ func RunOnce(opts Options) error {
 	return nil
 }
 
+// resolveAddr fills in the default listen address. The default is
+// loopback-only (127.0.0.1), not a bare ":PORT" — vitals ships as a
+// single binary anyone can run with no setup, and "just run vitals serve"
+// shouldn't silently open a port reachable from the network. An operator
+// who wants the wider, node_exporter-style all-interfaces bind still gets
+// it by passing --addr explicitly (":9100" or "0.0.0.0:9100").
+func resolveAddr(addr string) string {
+	if addr == "" {
+		return "127.0.0.1:9100"
+	}
+	return addr
+}
+
 // Serve runs an HTTP server exposing /metrics until interrupted.
 func Serve(opts Options) error {
-	addr := opts.Addr
-	if addr == "" {
-		addr = ":9100"
-	}
+	addr := resolveAddr(opts.Addr)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

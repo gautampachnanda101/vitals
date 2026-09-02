@@ -70,7 +70,8 @@ vitals doctor || echo "machine unhealthy"          # use the exit code in CI
 vitals top --sort mem --watch
 vitals llm fit qwen2.5:32b
 OPENAI_API_KEY=sk-... vitals llm
-vitals serve --addr :9600                          # scrape from Grafana / Prometheus
+vitals serve                                       # loopback only: 127.0.0.1:9100
+vitals serve --addr :9600                          # bind every interface — Grafana/Prometheus on another host
 ```
 
 ## Why the LLM insight matters

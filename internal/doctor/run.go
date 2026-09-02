@@ -13,13 +13,14 @@ import (
 
 // RunOptions configures the CLI entry point.
 type RunOptions struct {
-	OllamaURL string
-	JSON      bool
-	Output    string // if set, also write the JSON envelope here regardless of JSON/human stdout mode
-	CI        bool   // print one grep-friendly line ("CRITICAL: <finding>") instead of the full report
-	Quiet     bool   // print nothing at all; only the exit code carries the verdict
-	Webhook   string // if set, POST the JSON envelope here when the verdict needs attention
-	Verbose   bool   // show more than the default view has room for (every core, the full reclaimable list, ...)
+	OllamaURL            string
+	JSON                 bool
+	Output               string // if set, also write the JSON envelope here regardless of JSON/human stdout mode
+	CI                   bool   // print one grep-friendly line ("CRITICAL: <finding>") instead of the full report
+	Quiet                bool   // print nothing at all; only the exit code carries the verdict
+	Webhook              string // if set, POST the JSON envelope here when the verdict needs attention
+	WebhookAllowInsecure bool   // allow plain http and loopback/private/link-local --webhook targets (refused by default)
+	Verbose              bool   // show more than the default view has room for (every core, the full reclaimable list, ...)
 }
 
 // Assess collects a snapshot and analyses it, returning both. Shared by the
@@ -79,7 +80,7 @@ func Run(opts RunOptions) int {
 	if err := maybeWriteOutput(opts.Output, snap, report); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write --output file: %v\n", err)
 	}
-	if err := maybeNotify(opts.Webhook, snap, report); err != nil {
+	if err := maybeNotify(opts.Webhook, snap, report, opts.WebhookAllowInsecure); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: webhook notification failed: %v\n", err)
 	}
 
