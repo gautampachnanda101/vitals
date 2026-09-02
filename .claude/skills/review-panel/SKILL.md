@@ -3,10 +3,11 @@ name: review-panel
 description: >-
   Full multi-persona design review before committing to phased
   implementation — 3 independent technical architects, 1 security
-  architect, 1 product manager, 1 QA lead, run in parallel against the
-  same design doc, then synthesized into one must-fix list and verdict.
-  Use this before starting a new roadmap item, or whenever asked for a
-  "full review" / "review panel" / "6-agent review" of a design.
+  architect, 1 product manager, 1 QA lead, 1 performance engineer, run in
+  parallel against the same design doc, then synthesized into one
+  must-fix list and verdict. Use this before starting a new roadmap item,
+  or whenever asked for a "full review" / "review panel" / "7-agent
+  review" of a design.
 ---
 
 # Full review panel
@@ -27,7 +28,7 @@ material.
    only been discussed in conversation, write it down first (see the
    "Roadmap discipline" section of `AGENTS.md` on spec-before-code).
 
-2. **Spawn six independent agents in parallel**, in one batch of Agent
+2. **Spawn seven independent agents in parallel**, in one batch of Agent
    tool calls (not sequential), each `general-purpose`, each told to read
    the target document plus whatever code/context it references. For each
    agent's prompt, use the corresponding skill file's content in this
@@ -40,16 +41,17 @@ material.
    - One agent using `review-security`'s checklist.
    - One agent using `review-pm`'s checklist.
    - One agent using `review-qa`'s checklist.
+   - One agent using `review-performance`'s checklist.
 
    Each prompt must be self-contained (the agent has no memory of this
    conversation) — include exact file paths to read, enough background
    for the agent to make judgment calls, and the same "end with a clear
    verdict + top 3" instruction from the skill file.
 
-3. **Wait for all six** — do not synthesize or report partial results as
+3. **Wait for all seven** — do not synthesize or report partial results as
    if they were final. Per-agent completions arrive as separate
    notifications; a brief one-line acknowledgment as each lands is fine,
-   but the actual synthesis waits for all six.
+   but the actual synthesis waits for all seven.
 
 4. **Synthesize**, don't just concatenate:
    - Lead with what's **unanimous or convergent** (the same finding
@@ -59,7 +61,7 @@ material.
    - Then unique findings each reviewer caught that the others didn't.
    - An overall verdict: if any reviewer said no-go, treat that as a
      blocker requiring explicit discussion, not a vote to average out.
-     Six independent go-with-changes with a convergent must-fix list is
+     Seven independent go-with-changes with a convergent must-fix list is
      the expected healthy outcome, not a rubber stamp.
    - Turn the fixes into a concrete task list (this is what an item's
      `implementation-plan.md` should absorb — see "Roadmap discipline" in
