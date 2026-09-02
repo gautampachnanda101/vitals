@@ -63,7 +63,8 @@ internal/gpu          nvidia-smi / rocm-smi / ioreg telemetry
 internal/clean        cross-platform cache/log/trash cleanup + audit history
 internal/dupes        duplicate-file finder (report-only, optional --hardlink)
 internal/tools        detect/install/launch companion tools (ncdu, btop, nvtop, ...)
-internal/guide        Markdown -> ANSI / -> HTML renderers for `vitals guide`
+internal/guide        Markdown -> ANSI / -> HTML renderers, shared local-server plumbing
+internal/dashboard    `vitals dashboard` — plugin/module registry, capability-gated pages
 internal/monitor      `top`
 internal/memhogs      `memhogs` (OS-native app-family resolution + families.json)
 internal/memcheck     `memcheck`
@@ -72,6 +73,85 @@ internal/mcp          Model Context Protocol server
 internal/ui           terminal formatting helpers (color, tables, human-readable units)
 internal/help         command docs, contextual help, shell completion
 ```
+
+## Docs structure
+
+Docs follow Backstage/TechDocs conventions: everything under `docs/` is
+built by `mkdocs.yml` (`docs_dir: docs`) and cataloged by `catalog-info.yaml`
+at the repo root (a Backstage `Component` entity — this repo doesn't run a
+Backstage instance today, but the files are real and would register
+correctly if one existed).
+
+- `docs/index.md` — the docs home page.
+- `docs/user-guide.md` — **the file `//go:embed`ed into the binary as
+  `vitals guide`**. If you move or rename this file, update the
+  `//go:embed` directive in `main.go` and the error message in
+  `TestUserGuideEmbedded` (`main_test.go`) in the same change — this has
+  already bitten one doc reorganization and is easy to miss because the
+  build still succeeds (an empty/missing embed only fails at test time,
+  via `TestUserGuideEmbedded`'s length check, not at compile time for a
+  renamed-but-still-present file).
+- `docs/architecture/design.md` — the architecture doc: what's built, why,
+  and the outcome of any review-panel run against it (see "Roadmap
+  discipline" below).
+- `docs/roadmap/` — one item per initiative; see "Roadmap discipline".
+- Repo-root files that stay at the root regardless of this convention:
+  `README.md` (GitHub renders this as the repo landing page — moving it
+  breaks that), `AGENTS.md` (this file — AI coding agents look for it at
+  the repo root by convention, unrelated to Backstage/TechDocs), `LICENSE`.
+- `plugin/skills/` is a different thing entirely — it's the Claude Code
+  *plugin* vitals ships to its own end users (system-diagnostics skill,
+  `/vitals-*` commands). `.claude/skills/` (see "Roadmap discipline") is
+  for contributors working on vitals itself and never ships to users.
+
+## Roadmap discipline
+
+`docs/roadmap/` holds one directory per roadmap item
+(`items/NNN-slug/index.md` + `implementation-plan.md`), grouped into
+releases (`releases/vX.Y.Z.md`). This exists because unclear intent
+doesn't just slow down a human contributor — handed to an agent, it
+produces confidently-wrong output instead of a slower right answer. A
+roadmap item's `index.md` is the precise, codebase-grounded spec that has
+to exist *before* implementation starts on anything non-trivial; the
+`implementation-plan.md` is what turns that spec into checkable tasks.
+
+- **An implementation plan is a living document, not a historical log.**
+  It shows what's *left*. Check off or delete a task as it lands. Once
+  every task in an item is done, flip that item's `index.md` status to
+  Done — don't leave a fully-checked plan sitting as if it were still
+  active, and don't let a plan silently drift out of sync with what's
+  actually been built. A stale plan is worse than no plan: it tells the
+  next contributor (human or agent) something false with total confidence.
+- **Significant design changes get reviewed before implementation, not
+  after.** "Significant" means: a new package, a new user-facing surface,
+  anything touching the network/filesystem/subprocess trust boundaries, or
+  anything a reviewer would reasonably want to weigh in on before it's
+  hard to unwind. Use the `review-panel` skill (`.claude/skills/`) for
+  this — it runs three independent technical-architect reviews plus
+  security, product, and QA reviews in parallel against the design doc,
+  then synthesizes convergent findings into a must-fix list. This
+  substitutes for the automated review-tooling layer a larger team might
+  have (we don't have one): agents handle the parallel first-pass review
+  at agent speed, the user makes the final call, same split either way.
+  The individual persona skills (`review-architect`, `review-security`,
+  `review-pm`, `review-qa`) can also be invoked standalone for a narrower
+  review.
+- **Verification gates before an item is called done**: the same ones
+  every change in this repo goes through (`go build`, `go vet`,
+  `staticcheck`, `go test -race`, `make coverage`), plus whatever
+  item-specific exit criteria its `implementation-plan.md` states. An
+  item's exit criteria are part of the spec, not an afterthought — write
+  them when the item is created, not when it's finished.
+- **Commit locally as each task lands** — see "Committing" below; this is
+  the SDLC loop for a roadmap item: pick the next unchecked task in its
+  `implementation-plan.md`, TDD it, get the repo's gates green, commit,
+  check it off, repeat.
+- **Sequencing is part of the spec, not just a task order.** If one item
+  has no dependency on another, say so explicitly and let it ship
+  independently — don't default to a linear phase order out of habit. A
+  roadmap review has already caught this mistake once (a static, zero-
+  dependency deliverable was sequenced behind two unrelated items purely
+  by default ordering).
 
 ## Non-negotiable principles
 
@@ -116,6 +196,25 @@ internal/help         command docs, contextual help, shell completion
   are thin and untested directly; the logic they call (parsers, formatters,
   request builders) is tested instead. Don't try to unit-test a `signal.
   NotifyContext` loop; extract the interesting part and test that.
+- **95%+ coverage is the target for a package's pure/testable logic.** This
+  isn't arbitrary: a disk-table column misalignment and `advice` dumping raw
+  Markdown to the terminal both shipped through a passing CI run, and both
+  lived in exactly the kind of formatting code that's trivial to unit test
+  once you look — capture stdout/stderr with `os.Pipe` (see
+  `internal/monitor/monitor_test.go`'s `captureStdout`) rather than assuming
+  a `fmt.Printf`-heavy function can't be tested. Live glue code (the same
+  list as above, plus `main`'s `os.Exit`-driven CLI dispatch) is exempt by
+  design — it's validated by the CLI smoke test and httptest fakes instead —
+  but don't use "it's live" as an excuse to skip testing logic that's
+  actually pure and just happens to sit next to a live call.
+- **Coverage floors are per package, not blended.** `check_coverage.py`
+  (run automatically in CI, `make coverage` locally) enforces a floor per
+  package instead of one number over `./...` — a blended floor lets a
+  97%-covered package carry a 3%-covered one with no warning, which is
+  exactly how the two bugs above got through. Floors only ratchet up: when
+  you raise a package's coverage, bump its floor in `check_coverage.py` to
+  match (rounded down by one point for safety margin) so it can't quietly
+  regress later.
 - **`os.UserConfigDir()` isolation in tests is OS-dependent** and this has
   already caused a real CI failure once: `t.Setenv("HOME", dir)` isolates
   macOS and Linux, but Windows reads `%AppData%`, not `$HOME`. Any test that
@@ -138,7 +237,7 @@ internal/help         command docs, contextual help, shell completion
 - **Verify JSON/jq examples in docs against the actual struct tags**, not
   from memory. `vitals gpu --json` returns `{"devices": [...]}`, not a bare
   array, for instance — an easy wrong guess to make and a real one already
-  caught before it shipped in USERGUIDE.md.
+  caught before it shipped in docs/user-guide.md.
 
 ## ANSI color + fixed-width tables
 
@@ -173,7 +272,20 @@ tagging:
 
 ## Committing
 
-Only commit when explicitly asked. Stage specific files, not `git add -A` —
-this repo's `.gitignore` covers `dist/`, the built `vitals` binary, and
-`.claude/`, but review `git status` before staging broad changes anyway.
-Never amend a pushed commit; make a new one.
+Only commit when explicitly asked — but **once implementation on a
+roadmap item has started, that standing instruction is: commit locally on
+a regular basis as work lands, not once at the end.** In practice: finish
+one checklist item from the item's `implementation-plan.md`, get it
+green (`go build`/`go vet`/`go test -race`/`make coverage` as relevant),
+commit it, check that item off, move to the next. A commit should
+correspond to one working, tested increment — not every file save, and
+not the whole item bundled into one commit either. Reference the roadmap
+item in the commit message (e.g. `dashboard: add Host-header check to
+ServeLocal (001)`) so `git log` stays legible against
+`docs/roadmap/items/`.
+
+Stage specific files, not `git add -A` — this repo's `.gitignore` covers
+`dist/`, the built `vitals` binary, and `.claude/*.lock` (session-local
+runtime state; `.claude/skills/` itself is tracked), but review
+`git status` before staging broad changes anyway. Never amend a pushed
+commit; make a new one.
