@@ -1,0 +1,26 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: vitals
+  description: >-
+    A single static binary that names the one resource constraining your
+    machine right now and the exact command to fix it — cross-platform
+    system diagnostics with cross-resource correlation and local/cloud LLM
+    advice.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    github.com/project-slug: gautampachnanda101/vitals
+  tags:
+    - go
+    - cli
+    - diagnostics
+    - observability
+    - llm
+  links:
+    - url: https://github.com/gautampachnanda101/vitals
+      title: GitHub Repository
+      icon: github
+spec:
+  type: cli-tool
+  lifecycle: production
+  owner: user:gautampachnanda101

@@ -1,4 +1,4 @@
-// Package guide renders vitals' own embedded USERGUIDE.md — for a terminal
+// Package guide renders vitals' own embedded docs/user-guide.md — for a terminal
 // (`vitals guide`) and for a browser (`vitals guide --web`). Both renderers
 // are hand-written against exactly the Markdown subset the guide actually
 // uses (headers, bold, inline code, fenced blocks, bullets, one link style)

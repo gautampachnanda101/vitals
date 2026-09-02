@@ -69,7 +69,7 @@ func defaultOllamaURL() string {
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-//go:embed USERGUIDE.md
+//go:embed docs/user-guide.md
 var userGuide string
 
 // newFlagSet builds a subcommand flag set whose -h / -help output is the
@@ -117,6 +117,7 @@ func main() {
 		quiet := fs.Bool("quiet", false, "print nothing; only the exit code carries the verdict")
 		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
 		webhook := fs.String("webhook", "", "POST the JSON envelope here when the verdict needs attention")
+		webhookAllowInsecure := fs.Bool("webhook-allow-insecure", false, "allow plain http and loopback/private/link-local --webhook targets (refused by default)")
 		compare := fs.Bool("compare", false, "compare two --output-saved reports: vitals doctor --compare old.json new.json")
 		schema := fs.Bool("schema", false, "print the JSON Schema for the --json payload and exit")
 		_ = fs.Parse(args)
@@ -136,7 +137,7 @@ func main() {
 			fmt.Print(doctor.RenderCompare(oldEnv, newEnv))
 			return
 		}
-		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Webhook: *webhook}))
+		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Webhook: *webhook, WebhookAllowInsecure: *webhookAllowInsecure}))
 
 	case "clean":
 		fs := newFlagSet("clean")
@@ -280,7 +281,7 @@ func main() {
 	case "serve":
 		fs := newFlagSet("serve")
 		fs.Bool("prometheus", true, "expose Prometheus metrics (the only format today)")
-		addr := fs.String("addr", ":9100", "listen address for /metrics")
+		addr := fs.String("addr", "127.0.0.1:9100", "listen address for /metrics — a bare \":PORT\" binds every interface")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
 		must(metrics.Serve(metrics.Options{OllamaURL: *url, Addr: *addr}))

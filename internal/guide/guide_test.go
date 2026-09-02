@@ -147,7 +147,7 @@ func TestRenderHTMLHeadersGetAnchorIDsMatchingSlugifiedText(t *testing.T) {
 }
 
 func TestRenderHTMLExistingAnchorLinkResolvesToARealID(t *testing.T) {
-	// USERGUIDE.md itself contains this exact link; it must not be dead.
+	// docs/user-guide.md itself contains this exact link; it must not be dead.
 	out := RenderHTML("[Extending memhogs](#extending-memhogs)\n\n### Extending memhogs\n", "t")
 	if !strings.Contains(out, `href="#extending-memhogs"`) {
 		t.Fatalf("link href missing:\n%s", out)

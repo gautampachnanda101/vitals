@@ -39,7 +39,7 @@ func TestApplyGlobalFlags(t *testing.T) {
 
 func TestUserGuideEmbedded(t *testing.T) {
 	if len(userGuide) < 500 {
-		t.Fatalf("USERGUIDE.md not embedded (got %d bytes)", len(userGuide))
+		t.Fatalf("docs/user-guide.md not embedded (got %d bytes)", len(userGuide))
 	}
 	for _, want := range []string{"vitals doctor", "vitals llm", "Shell completion"} {
 		if !strings.Contains(userGuide, want) {

@@ -29,6 +29,42 @@ Every command takes `--no-color` (or honors `NO_COLOR`). `doctor` and each
 resource deep dive also take `--json`, `--output FILE`, `--ci`, and
 `--quiet`/`-q` for scripting.
 
+## Quick reference
+
+Everything on one page — command groups, universal flags, exit codes, and
+where config lives.
+
+- **Diagnose** — `vitals doctor` · `vitals cpu`/`mem`/`disk`/`net`/`power` · `vitals doctor --compare a.json b.json`
+- **Understand (LLM)** — `vitals advice` · `vitals llm` · `vitals llm fit <model>` · `vitals gpu`
+- **Fix & reclaim** — `vitals clean --dry-run` · `vitals dupes --hardlink` · `vitals tools --install btop` · `vitals explore` · `vitals live`
+- **Watch live** — `vitals top --watch --sort mem` · `vitals memhogs --watch` · `vitals memcheck`
+- **Automate** — `vitals doctor --json --output r.json` · `vitals doctor --webhook <url>` · `vitals serve` / `export` · `vitals mcp`
+- **Configure** — `<config dir>/vitals/config.toml` · `<config dir>/vitals/families.json`
+
+Flags that work the same way on every command:
+
+- `--json` — machine-readable output
+- `--output FILE` — save alongside any other mode
+- `--ci` — one grep-friendly line
+- `-q`, `--quiet` — exit code only, nothing printed
+- `-v`, `--verbose` — everything the default view has no room for
+- `--no-color` — or set `NO_COLOR` in the environment
+
+Exit codes: `0` healthy — nothing to do, `1` warning — worth a look, `2`
+critical — act now.
+
+Config file locations (see [Configuration file](#configuration-file)):
+
+```bash
+# macOS:   ~/Library/Application Support/vitals/
+# Linux:   ~/.config/vitals/  (or $XDG_CONFIG_HOME/vitals/)
+# Windows: %AppData%\vitals\
+```
+
+Get help without leaving the terminal: `vitals help <command>`,
+`vitals guide` (or `guide --web` to render this file in a browser), and
+`vitals completion bash|zsh|fish`.
+
 ## vitals doctor
 
 `doctor` samples CPU, memory, swap, disk, thermal, network, power, GPU, and
@@ -278,9 +314,13 @@ vitals gpu --json | jq '.devices[] | {name, util_percent, temp_c}'
   Prometheus text-exposition metrics, following OpenTelemetry semantic
   conventions (`system_cpu_utilization`, and so on) plus a handful of
   vitals-specific signals (`vitals_llm_gpu_offload_ratio`,
-  `vitals_verdict`). `serve` exposes `/metrics` on `:9100` by default for
-  Prometheus or Grafana Agent to scrape; `export` is the one-shot form for
-  a textfile collector.
+  `vitals_verdict`). `serve` exposes `/metrics` on `127.0.0.1:9100` by
+  default — loopback only, so `vitals serve` never opens a port other
+  machines can reach until you ask it to. Pass `--addr :9100` (a bare
+  `:PORT`, no host) to bind every interface instead, the way
+  `node_exporter` does, once you actually want Prometheus or Grafana Agent
+  on another host to scrape it. `export` is the one-shot form for a
+  textfile collector.
 - **`vitals mcp`** — speaks newline-delimited JSON-RPC 2.0 on stdin/stdout
   so an MCP client (Claude Code, Claude Desktop) can call vitals mid-task.
   Tools exposed: `system_health`, `diagnose_bottleneck`, `llm_status`,
@@ -288,6 +328,13 @@ vitals gpu --json | jq '.devices[] | {name, util_percent, temp_c}'
 - **`--webhook URL`** on `doctor` — posts the JSON envelope only when the
   verdict needs attention, so a cron job running `vitals doctor` can page
   a Slack channel or any webhook-based alerting tool with no extra glue.
+  The URL must be `https`, and must not resolve to a loopback, private, or
+  link-local address (this also blocks the cloud-metadata address,
+  `169.254.169.254`) — both are refused before any request is sent, to
+  close off using `--webhook` as an SSRF vector if its value ever comes
+  from somewhere less trusted than your own command line (templated CI,
+  say). Pass `--webhook-allow-insecure` to lift both restrictions for a
+  local relay or a receiver you run yourself over plain http.
 - **`--compare old.json new.json`** on `doctor` — diffs two saved reports:
   which findings appeared, which resolved, whether the verdict itself
   changed. Save the "before" state with `--output` ahead of a deploy or a
