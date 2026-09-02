@@ -30,6 +30,11 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 - [ ] Discovery hook: `doctor`'s terminal output gets a one-line footer
       suggesting `vitals dashboard` for a browsable view; `README.md`'s
       command table gets a row for it.
+- [ ] **Re-verify WCAG 2.2 Level AAA once real pages are served**, not
+      just the shared shell (item 001 covers `layout`/`verdictBanner`/
+      `findingsList`/`row` only — see `docs/architecture/design.md` §6.8).
+      Check every actual resource page's rendered output, not just the
+      pure-function unit tests, for the same contrast/focus/landmark bar.
 - [ ] First-run/empty-state polish: a short explanatory line on the
       overview page for someone landing on it cold; a version string in
       the footer (reuse `main.version`); a second footer line pointing at

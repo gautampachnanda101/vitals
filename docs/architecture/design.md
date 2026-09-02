@@ -304,7 +304,38 @@ the shared renderer.
   caching fix landing first (auto-refresh against the uncached cost model
   would be actively harmful, not just premature).
 
-### 6.8 Testing requirements (from QA review)
+### 6.8 Accessibility: WCAG 2.2 Level AAA
+
+Standing requirement, not a phase-specific task: every page the dashboard
+serves targets WCAG 2.2 Level AAA, not just AA. Concretely, so this stays
+checkable rather than a vibe:
+
+- **Contrast (1.4.6, AAA)**: every color used as *text* holds >=7:1
+  against every background it can actually appear on — checked in code,
+  not eyeballed (`internal/dashboard/render_test.go`'s
+  `TestPaletteMeetsWCAGAAAForNormalText`, which computes real WCAG
+  relative luminance/contrast ratios and fails the build if a future
+  palette edit regresses below 7:1). Colors used only for borders or a
+  small decorative status dot (`--warn`, `--crit`) are held to the
+  non-text 3:1 rule (AA) instead, since AAA's stricter ratio is a
+  text-contrast requirement — they're not text here and a fresh reviewer
+  should not "fix" them expecting the same 7:1 bar.
+- **Keyboard operability**: `:focus-visible` gets an explicit, high-
+  contrast outline — the browser default is not trusted to be visible
+  against every theme.
+- **Semantic structure**: real landmarks (`<nav aria-label="Primary">`,
+  `<main>`, `<header>`, `<footer>`), and the current nav item is marked
+  with `aria-current="page"` (both the ARIA signal for assistive tech and
+  the sole styling hook — one attribute, not a class that could drift out
+  of sync with it).
+- **Not yet verified**: this section covers what the *shared* page shell
+  (`layout`, `verdictBanner`, `findingsList`, `row`) can guarantee today.
+  Item 002 (the actual HTTP handler + real served pages) must re-check
+  this once real interactive elements (any future buttons/forms in item
+  005's write actions especially) exist — AAA compliance for a static
+  shell doesn't automatically extend to a form control or a modal.
+
+### 6.9 Testing requirements (from QA review)
 
 - `internal/dashboard` must have an entry in `check_coverage.py`'s
   `FLOORS` — its absence today is a real, reproduced CI failure, not a

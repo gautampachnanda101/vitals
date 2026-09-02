@@ -46,6 +46,15 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       `renderPower`, `renderGPU`'s loop body, `renderNet`'s
       active-traffic row, `renderCPU`'s `FreqMHz`/`TopProc` rows
       (`internal/dashboard/modules_resource.go`).
+- [x] **WCAG 2.2 Level AAA for the shared page shell** — `--muted`
+      retuned to hold >=7:1 against every background it appears on (was
+      as low as 4.18:1 in the original prototype); `:focus-visible`
+      outline added; `<nav>`/`<main>` landmarks and `aria-current="page"`
+      added. Pinned by `TestPaletteMeetsWCAGAAAForNormalText` in
+      `internal/dashboard/render_test.go` so a future palette edit can't
+      silently regress it. See `docs/architecture/design.md` §6.8 — item
+      002 must re-verify this once real served pages/interactive elements
+      exist, this only covers the shared shell.
 - [ ] Non-blocking, do in the same pass since it's adjacent code: fix the
       unguarded concurrent read-modify-write on `disk_history.json`
       (`internal/doctor/diskhistory.go`) with a mutex; de-duplicate the
