@@ -7,6 +7,14 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 
 ## Tasks
 
+- [ ] **Every claim on this page must be 100% accurate — no overclaiming,
+      no marketing fibs.** Engaging copy is fine and expected; a stat,
+      comparison, or capability that isn't literally true isn't. Before
+      publishing, check every specific claim (a feature it has, a
+      platform it runs on, a comparison against another tool, a number)
+      against what the code actually does, the same way this repo's own
+      test suite already refuses to let `--json` claim a field it
+      doesn't emit.
 - [ ] Build the static page (location depends on whether this repo serves
       GitHub Pages from `/docs` or a `gh-pages` branch — decide before
       writing, since it affects the file's path; do not let it collide
