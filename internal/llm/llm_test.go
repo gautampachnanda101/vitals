@@ -1,12 +1,39 @@
 package llm
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 )
+
+// captureStdout redirects os.Stdout for the duration of f and returns what
+// it wrote. Reads on a goroutine so a large write can't deadlock against
+// an unread pipe buffer — the fix for a real hang this exact pattern hit
+// on Windows before (see the sibling helper in internal/dupes/dupes_test.go).
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
+	f()
+	w.Close()
+	os.Stdout = old
+	return <-done
+}
 
 func env(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
@@ -215,4 +242,46 @@ func TestProbeOne(t *testing.T) {
 			t.Errorf("got %+v", p)
 		}
 	})
+}
+
+func TestRenderListsModelNamesForReachableLocalProviders(t *testing.T) {
+	// The whole point: after `vitals llm`, the user should be able to
+	// read a model name straight off this output and pass it to
+	// `vitals advice --provider ollama --model <name>` without needing a
+	// separate `ollama list` first.
+	out := captureStdout(t, func() {
+		render(Report{Providers: []Provider{
+			{Name: "Ollama", Endpoint: "http://localhost:11434", Location: "local", Reachable: true, Models: []string{"llama3.1:8b", "qwen3:1.7b"}},
+		}})
+	})
+	if !strings.Contains(out, "llama3.1:8b") || !strings.Contains(out, "qwen3:1.7b") {
+		t.Errorf("render should list a reachable local provider's model names, got:\n%s", out)
+	}
+}
+
+func TestRenderOmitsModelNamesForCloudProviders(t *testing.T) {
+	// Deliberate: a cloud catalogue (OpenAI's /v1/models, say) can run to
+	// dozens of entries — the count is still shown, just not every name.
+	out := captureStdout(t, func() {
+		render(Report{Providers: []Provider{
+			{Name: "OpenAI", Endpoint: "https://api.openai.com/v1/models", Location: "cloud", Reachable: true, Models: []string{"gpt-4o-mini", "gpt-4o", "o1-mini"}},
+		}})
+	})
+	if strings.Contains(out, "gpt-4o-mini") {
+		t.Errorf("render should not list a cloud provider's model names, got:\n%s", out)
+	}
+	if !strings.Contains(out, "3 models") {
+		t.Errorf("render should still show the cloud provider's model count, got:\n%s", out)
+	}
+}
+
+func TestRenderSkipsTheModelListWhenAProviderHasNone(t *testing.T) {
+	out := captureStdout(t, func() {
+		render(Report{Providers: []Provider{
+			{Name: "Ollama", Endpoint: "http://localhost:11434", Location: "local", Reachable: true, Models: nil},
+		}})
+	})
+	if !strings.Contains(out, "0 models") {
+		t.Errorf("render should still show a reachable provider with zero models, got:\n%s", out)
+	}
 }

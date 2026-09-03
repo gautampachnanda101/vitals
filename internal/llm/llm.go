@@ -547,6 +547,16 @@ func render(rep Report) {
 					lat = fmt.Sprintf("  %dms", pr.LatencyMS)
 				}
 				ui.Okf("%-26s %s  (%d model%s)%s", pr.Name, pr.Endpoint, len(pr.Models), plural(len(pr.Models)), lat)
+				// Local providers only: a cloud catalogue (e.g. OpenAI's
+				// /v1/models) can run to dozens of entries most of which
+				// aren't picked by name day to day, but a local runtime's
+				// pulled models are exactly what --model needs to name —
+				// this is the list `vitals advice --provider ollama
+				// --model <name>` expects, so show it instead of making
+				// the user go find it themselves (e.g. `ollama list`).
+				if group == "local" && len(pr.Models) > 0 {
+					fmt.Printf("      %s\n", ui.Key(strings.Join(pr.Models, ", ")))
+				}
 			} else {
 				fmt.Printf("  %s%-26s%s %s  (%s)\n", ui.Dim, pr.Name, ui.Reset, pr.Endpoint, pr.Err)
 			}
