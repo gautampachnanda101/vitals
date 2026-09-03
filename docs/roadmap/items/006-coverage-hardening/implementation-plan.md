@@ -30,10 +30,14 @@ expected.
       genuinely all live gopsutil calls feeding already-tested pure
       functions — the same Collect-then-Analyze shape as `internal/doctor`,
       nothing left to extract.
-- [ ] `internal/monitor` (34.2%) — already raised once this session
-      (15.5%→34.2%); `sample`/`topProcesses`/`readDiskCounters`/
-      `readNetCounters` are the live core and likely stay exempt, but
-      re-check for any remaining pure formatting.
+- [x] `internal/monitor` (34.2% -> 41.2%) — `bar` was missing its
+      yellow-range (60-84%) case entirely (only green/red were tested);
+      `emit` was missing the mem-breakdown/swap/disk-IO/net-IO branches
+      (previous test used a snapshot with none of that data) and the
+      "cap at 4 rows" break in both I/O loops. All pure formatting
+      (`emit`, `bar`, `rate`, `memBreakdownLine`, `ioDelta`) is now 100%;
+      `Run`/`sample`/`readDiskCounters`/`readNetCounters`/`topProcesses`
+      are live gopsutil calls, documented as the ceiling.
 - [ ] `internal/advice` (34.8%) — `Run`'s live LLM call is exempt;
       `Generate` already has good coverage from item 001, check for gaps.
 - [ ] `internal/clean` (41.0%) — real filesystem operations dominate;

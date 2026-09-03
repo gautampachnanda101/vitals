@@ -39,8 +39,9 @@ func TestBar(t *testing.T) {
 		wantFill int // number of filled cells expected
 	}{
 		{0, "0.0%", 0},
-		{50, "50.0%", 10},
-		{100, "100.0%", 20},
+		{50, "50.0%", 10},   // green: below the 60% yellow threshold
+		{70, "70.0%", 14},   // yellow: 60-84%, never exercised before
+		{100, "100.0%", 20}, // red: >= 85%
 		{-5, "0.0%", 0},     // clamped low
 		{150, "100.0%", 20}, // clamped high
 	}
@@ -155,6 +156,48 @@ func TestEmitHumanReadableListsEveryProcessOnce(t *testing.T) {
 	}
 	if n := strings.Count(plain, "\n"); n < 3 {
 		t.Errorf("suspiciously short output (%d lines):\n%s", n, plain)
+	}
+}
+
+func TestEmitHumanReadablePrintsMemBreakdownSwapAndIO(t *testing.T) {
+	// The other emit test uses a minimal Snapshot that skips every
+	// optional section (mem breakdown, swap, disk/net I/O) — this
+	// exercises the branches that only fire when that data is present.
+	snap := Snapshot{
+		Host:      HostInfo{Hostname: "test-host"},
+		Memory:    MemInfo{TotalBytes: 100, UsedBytes: 50, UsedPct: 50},
+		MemDetail: MemBreakdown{Wired: 10 << 20},
+		Swap:      MemInfo{TotalBytes: 200, UsedBytes: 10, UsedPct: 5},
+		// 5 entries each: emit caps the printed list at 4, so this also
+		// exercises that "if i >= 4 { break }" line, not just the happy
+		// path of a single entry.
+		DiskIO: []IORate{
+			{Name: "disk0", ReadPerSec: 1024, WritePerSec: 512},
+			{Name: "disk1", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "disk2", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "disk3", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "disk4-should-be-capped", ReadPerSec: 1, WritePerSec: 1},
+		},
+		NetIO: []IORate{
+			{Name: "en0", ReadPerSec: 2048, WritePerSec: 1024},
+			{Name: "en1", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "en2", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "en3", ReadPerSec: 1, WritePerSec: 1},
+			{Name: "en4-should-be-capped", ReadPerSec: 1, WritePerSec: 1},
+		},
+	}
+	out := ui.StripANSI(captureStdout(t, func() {
+		if err := emit(snap, Options{SortBy: "mem"}); err != nil {
+			t.Fatalf("emit: %v", err)
+		}
+	}))
+	for _, want := range []string{"wired", "SWAP", "Disk I/O", "disk0", "Network I/O", "en0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("emit output missing %q when the data is present, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "disk4-should-be-capped") || strings.Contains(out, "en4-should-be-capped") {
+		t.Errorf("emit should cap disk/net I/O at 4 rows each, got:\n%s", out)
 	}
 }
 

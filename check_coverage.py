@@ -50,7 +50,11 @@ FLOORS = {
     "vitals/internal/memcheck": 33,
     "vitals/internal/memhogs": 53,
     "vitals/internal/metrics": 73,
-    "vitals/internal/monitor": 34,
+    # monitor: Run/sample/readDiskCounters/readNetCounters/topProcesses
+    # are all live gopsutil/process calls (the Collect side of this
+    # package); every pure formatting function (emit, bar, rate,
+    # memBreakdownLine, ioDelta) is at 100%.
+    "vitals/internal/monitor": 41,
     # tools: Installed/detectManager (exec.LookPath), Run/List/Install/
     # Launch/confirm (live subprocess exec, os.Stdin reads, real PATH
     # checks) are the irreducible live-glue majority of this package — a
