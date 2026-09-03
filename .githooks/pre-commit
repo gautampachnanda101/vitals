@@ -43,4 +43,7 @@ go test -coverprofile=/tmp/vitals-precommit-coverage.out ./... >/dev/null
 python3 check_coverage.py /tmp/vitals-precommit-coverage.out
 rm -f /tmp/vitals-precommit-coverage.out
 
+echo "pre-commit: docs consistency (links, roadmap nav, breadcrumbs)"
+python3 check_docs.py
+
 echo "pre-commit: all checks passed"

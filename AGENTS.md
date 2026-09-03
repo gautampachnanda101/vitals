@@ -315,15 +315,28 @@ runtime state; `.claude/skills/` itself is tracked), but review
 commit; make a new one.
 
 **Pre-commit enforcement**: `.githooks/pre-commit` runs gofmt, `go vet`,
-staticcheck, `go test -race`, and the per-package coverage gate — the
-same checks CI runs — before a commit is even created, so a violation of
-the 95%+ hard rule (or any other gate) is caught locally, not discovered
-after a push. Install it once per clone with `make hooks-install` (this
-just points `core.hooksPath` at the versioned `.githooks/` directory,
-since `.git/hooks/` itself is never tracked). It fails closed on
-gofmt/vet/test/coverage; it warns rather than blocks if staticcheck isn't
-installed locally (CI still catches that), so a missing dev tool never
-makes `git commit` unusable outright.
+staticcheck, `go test -race`, the per-package coverage gate, and
+`check_docs.py` — the same checks CI runs — before a commit is even
+created, so a violation of the 95%+ hard rule (or any other gate) is
+caught locally, not discovered after a push. Install it once per clone
+with `make hooks-install` (this just points `core.hooksPath` at the
+versioned `.githooks/` directory, since `.git/hooks/` itself is never
+tracked). It fails closed on gofmt/vet/test/coverage/docs; it warns
+rather than blocks if staticcheck isn't installed locally (CI still
+catches that), so a missing dev tool never makes `git commit` unusable
+outright.
+
+**Docs consistency**: `check_docs.py` (`make check-docs`, wired into
+both the pre-commit hook and CI's `lint` job) checks three things about
+everything under `docs/` plus `README.md`, each added because it caught
+a real bug the first time this was written (2026-09-03): every relative
+Markdown link resolves to a file that actually exists; every
+`docs/roadmap/items/NNN-slug/` directory has a matching entry in
+`mkdocs.yml`'s nav; and every page under `docs/` other than `docs/
+index.md` carries a breadcrumb line back to the docs home (`[docs](...)`
+near the top). Adding a new docs page means wiring it into the nav and
+adding its breadcrumb, or this fails the build — that's the point, not
+an oversight to work around.
 
 **Push regularly — a local commit that never reaches `origin` isn't
 protecting anyone.** CI only runs on push; committing on a regular basis

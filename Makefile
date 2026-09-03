@@ -2,7 +2,7 @@ BINARY  := vitals
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all test race lint vet staticcheck ci run clean install coverage hooks-install
+.PHONY: build build-all test race lint vet staticcheck ci run clean install coverage check-docs hooks-install
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
@@ -29,7 +29,10 @@ coverage:
 	go test -coverprofile=coverage.out ./...
 	python3 check_coverage.py coverage.out
 
-ci: lint race build-all
+check-docs:
+	python3 check_docs.py
+
+ci: lint race build-all check-docs
 
 hooks-install:
 	git config core.hooksPath .githooks
