@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/process"
@@ -346,13 +347,28 @@ func probeOne(client *http.Client, t target, getenv func(string) string) Provide
 	return p
 }
 
+// probeProviders probes every target concurrently — each is an
+// independent network round-trip (a local runtime or a cloud API), so
+// there's no reason to pay N sequential timeouts when checking N targets;
+// a review of `vitals dashboard`'s design flagged this exact loop as the
+// worst-case tens-of-seconds cost of building its nav bar. Order in the
+// result matches targets' order (not completion order), so callers that
+// care about a stable/deterministic ordering (existing ones look up by
+// Name, not position, but no need to make that a requirement) don't need
+// to re-sort.
 func probeProviders(opts Options, getenv func(string) string) []Provider {
 	targets := append(localTargets(opts), cloudTargets(getenv)...)
 	client := &http.Client{Timeout: 4 * time.Second}
-	out := make([]Provider, 0, len(targets))
-	for _, t := range targets {
-		out = append(out, probeOne(client, t, getenv))
+	out := make([]Provider, len(targets))
+	var wg sync.WaitGroup
+	for i, t := range targets {
+		wg.Add(1)
+		go func(i int, t target) {
+			defer wg.Done()
+			out[i] = probeOne(client, t, getenv)
+		}(i, t)
 	}
+	wg.Wait()
 	return out
 }
 

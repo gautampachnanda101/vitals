@@ -31,9 +31,13 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       `Collect()`/probe call, and a cold request is bounded (the cached
       path is sub-second; only one goroutine at a time pays the
       uncached-refresh cost).
-- [ ] **Parallelize provider probes** (`internal/llm`) — per-target
+- [x] **Parallelize provider probes** (`internal/llm`) — per-target
       goroutines instead of a sequential loop, each still
-      individually timeout-bounded.
+      individually timeout-bounded. `TestProbeProvidersRunsTargetsConcurrentlyNotSequentially`
+      pins this with 4 artificially slow (150ms) targets: sequential was
+      measured at ~609ms, concurrent finishes under 400ms. Race-clean
+      (each goroutine writes a distinct result-slice index, no shared
+      mutable state).
 - [ ] **Host-header allow-list in `guide.ServeLocal`**
       (`internal/guide/serve.go`). Done when: a request with a
       non-matching `Host` header is rejected (400) before reaching the

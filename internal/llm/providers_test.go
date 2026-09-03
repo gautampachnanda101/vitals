@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 )
 
 // openAIModelsHandler serves a minimal /v1/models listing.
@@ -35,6 +36,52 @@ func ollamaHandler() http.HandlerFunc {
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
+	}
+}
+
+func TestProbeProvidersRunsTargetsConcurrentlyNotSequentially(t *testing.T) {
+	// Four slow-but-reachable targets at 150ms each: sequential probing
+	// would take >=600ms, concurrent probing should finish close to
+	// 150ms. This is exactly the "up to 20+ seconds on every dashboard
+	// page load" cost the design review flagged — probing multiple
+	// independent local runtimes has no reason to be sequential.
+	slow := func() http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(150 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"models":[{"name":"m"}]}`))
+		}
+	}
+	ollama := httptest.NewServer(func() http.HandlerFunc {
+		h := slow()
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/tags" {
+				h(w, r)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}())
+	defer ollama.Close()
+	lmstudio := httptest.NewServer(slow())
+	defer lmstudio.Close()
+	llamacpp := httptest.NewServer(slow())
+	defer llamacpp.Close()
+	vllm := httptest.NewServer(slow())
+	defer vllm.Close()
+
+	opts := Options{OllamaURL: ollama.URL, LMStudioURL: lmstudio.URL, LlamaCppURL: llamacpp.URL, VLLMURL: vllm.URL}
+	noEnv := func(string) string { return "" }
+
+	start := time.Now()
+	provs := probeProviders(opts, noEnv)
+	elapsed := time.Since(start)
+
+	if len(provs) < 4 {
+		t.Fatalf("want at least 4 probed providers, got %d", len(provs))
+	}
+	if elapsed > 400*time.Millisecond {
+		t.Errorf("probeProviders took %v for 4x150ms targets — looks sequential, want concurrent (~150ms)", elapsed)
 	}
 }
 
