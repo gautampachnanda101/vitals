@@ -45,10 +45,17 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       measured at ~609ms, concurrent finishes under 400ms. Race-clean
       (each goroutine writes a distinct result-slice index, no shared
       mutable state).
-- [ ] **Host-header allow-list in `guide.ServeLocal`**
-      (`internal/guide/serve.go`). Done when: a request with a
-      non-matching `Host` header is rejected (400) before reaching the
-      mux, with a regression test. This also hardens `guide --web`.
+- [x] **Host-header allow-list in `guide.ServeLocal`**
+      (`internal/guide/serve.go`) — closes the DNS-rebinding hole the
+      security review found: binding to `127.0.0.1` alone doesn't stop an
+      external page from rebinding its own origin's DNS to loopback and
+      reading live data through the browser's own trust, since `net/http`
+      never validates the `Host` header on its own. `allowedHostsOnly`
+      rejects (400) anything but the actual bound `127.0.0.1:PORT` or
+      `localhost:PORT` before it reaches any handler — the first real
+      tests `internal/guide` has ever had for its server plumbing
+      (`serve_test.go`, previously nonexistent per the QA review). This
+      also hardens `guide --web`, not just the future dashboard.
 - [ ] **Scheme allow-list for Markdown links in `renderInlineHTML`**
       (`internal/guide/html.go`) — allow `http:`/`https:`/`mailto:`, strip
       or neutralize anything else (`javascript:`/`data:` specifically).

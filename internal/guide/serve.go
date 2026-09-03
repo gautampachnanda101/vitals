@@ -47,7 +47,19 @@ func ServeLocal(handler http.Handler, label string) error {
 	if err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
-	url := "http://" + ln.Addr().String() + "/"
+	addr := ln.Addr().String()
+	url := "http://" + addr + "/"
+
+	// Binding to 127.0.0.1 alone does not stop DNS rebinding: an external
+	// page can rebind its own origin's DNS to 127.0.0.1 with a short TTL,
+	// then fetch() this server from what the browser now considers the
+	// same origin. The request still arrives with the attacker's
+	// original hostname in the Host header, not 127.0.0.1 — net/http
+	// does not validate Host by default, so checking it against the
+	// actual bound address is what actually defeats this, not the bind
+	// address alone.
+	_, port, _ := net.SplitHostPort(addr)
+	handler = allowedHostsOnly(handler, addr, "localhost:"+port)
 
 	srv := &http.Server{Handler: handler}
 
@@ -73,6 +85,23 @@ func ServeLocal(handler http.Handler, label string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+// allowedHostsOnly rejects any request whose Host header isn't one of
+// allowed with 400, before it reaches next. See the comment in ServeLocal
+// for why binding to loopback alone isn't sufficient.
+func allowedHostsOnly(next http.Handler, allowed ...string) http.Handler {
+	ok := make(map[string]bool, len(allowed))
+	for _, h := range allowed {
+		ok[h] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ok[r.Host] {
+			http.Error(w, "invalid host", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // openBrowser hands url to the OS's own "open this" command — never a
