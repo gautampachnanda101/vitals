@@ -125,6 +125,18 @@ func findingsList(findings []diag.Finding) string {
 	return b.String()
 }
 
+// reportHeadline is the one-line summary a verdict banner leads with: the
+// worst finding's title when there is one, or healthyText otherwise.
+// Shared by the overview and every resource page so the two can't drift
+// into subtly different wording for the same "what's the one thing wrong
+// here" question.
+func reportHeadline(report diag.Report, healthyText string) string {
+	if len(report.Findings) == 0 {
+		return healthyText
+	}
+	return report.SortedBySeverity()[0].Title
+}
+
 // row renders one label/value line inside a .card.
 func row(label, value string) string {
 	return fmt.Sprintf(`<div class="row"><span class="k">%s</span><span>%s</span></div>`, html.EscapeString(label), html.EscapeString(value))

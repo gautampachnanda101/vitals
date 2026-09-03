@@ -28,7 +28,7 @@ FLOORS = {
     "vitals/internal/config": 80,
     "vitals/internal/dashboard": 98,
     "vitals/internal/diag": 96,
-    "vitals/internal/doctor": 48,
+    "vitals/internal/doctor": 50,
     "vitals/internal/dupes": 51,
     "vitals/internal/gpu": 46,
     # guide's floor is lower than its earlier 77 despite new tests, not a

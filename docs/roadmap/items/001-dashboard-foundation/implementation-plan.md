@@ -98,11 +98,16 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       silently regress it. See `docs/architecture/design.md` §6.8 — item
       002 must re-verify this once real served pages/interactive elements
       exist, this only covers the shared shell.
-- [ ] Non-blocking, do in the same pass since it's adjacent code: fix the
-      unguarded concurrent read-modify-write on `disk_history.json`
-      (`internal/doctor/diskhistory.go`) with a mutex; de-duplicate the
-      "worst finding as headline" logic shared by
-      `modules_overview.go`/`modules_resource.go` into one helper.
+- [x] Fixed the unguarded concurrent read-modify-write on
+      `disk_history.json` (`internal/doctor/diskhistory.go`) —
+      `withDiskHistory` wraps load-mutate-save in one lock (`diskHistoryMu`)
+      instead of leaving `collectDisks` to manage it at the call site.
+      `TestWithDiskHistorySerializesConcurrentReadModifyWrite` runs 50
+      concurrent increments and asserts none are lost — a real
+      correctness check, not just an absence of a `-race` report.
+      De-duplicated the "worst finding as headline" logic shared by
+      `modules_overview.go`/`modules_resource.go` into one tested helper,
+      `reportHeadline` (`internal/dashboard/render.go`).
 
 ## Exit criteria
 

@@ -23,10 +23,7 @@ func init() {
 func resourcePage(resource string, body func(doctor.Snapshot) string) func(PageContext) string {
 	return func(ctx PageContext) string {
 		report := doctor.AnalyzeResource(ctx.Snapshot, resource)
-		headline := "No issues found"
-		if len(report.Findings) > 0 {
-			headline = report.SortedBySeverity()[0].Title
-		}
+		headline := reportHeadline(report, "No issues found")
 		out := verdictBanner(headline, "", report.Worst())
 		out += `<div class="card">` + body(ctx.Snapshot) + `</div>`
 		out += `<div class="card">` + findingsList(report.SortedBySeverity()) + `</div>`

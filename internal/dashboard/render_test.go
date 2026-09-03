@@ -157,6 +157,21 @@ func TestRowEscapesBothSides(t *testing.T) {
 	}
 }
 
+func TestReportHeadlineUsesHealthyTextWhenNoFindings(t *testing.T) {
+	if got := reportHeadline(diag.Report{}, "All good"); got != "All good" {
+		t.Errorf("reportHeadline(empty) = %q, want the healthy text", got)
+	}
+}
+
+func TestReportHeadlineUsesTheWorstFindingsTitle(t *testing.T) {
+	var report diag.Report
+	report.Add(diag.Finding{Severity: diag.Warn, Title: "RAM elevated"})
+	report.Add(diag.Finding{Severity: diag.Critical, Title: "Swap thrashing"})
+	if got := reportHeadline(report, "All good"); got != "Swap thrashing" {
+		t.Errorf("reportHeadline = %q, want the worst finding's title", got)
+	}
+}
+
 func TestUnavailablePageNamesTheModuleAndReason(t *testing.T) {
 	out := unavailablePage("Advice", "no local or cloud LLM is reachable")
 	if !strings.Contains(out, "Advice") || !strings.Contains(out, "no local or cloud LLM is reachable") {

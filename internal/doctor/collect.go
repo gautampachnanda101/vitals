@@ -324,42 +324,42 @@ func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration)
 	if err != nil {
 		return nil
 	}
-	hist := loadDiskHistory()
 	now := time.Now()
 	seen := map[string]bool{}
 	var out []Disk
-	for _, p := range parts {
-		if seen[p.Mountpoint] {
-			continue
-		}
-		seen[p.Mountpoint] = true
-		u, ok := diskUsage(p.Mountpoint)
-		if !ok || u.Total == 0 {
-			continue
-		}
-		if !isRealFilesystem(p.Fstype, p.Mountpoint, u.Total) {
-			continue
-		}
-		d := Disk{Mount: p.Mountpoint, UsedPct: u.UsedPercent, FreeBytes: u.Free, InodesUsedPct: u.InodesUsedPercent}
-		d.GrowthBytesPerSec = diskGrowthRate(hist, p.Mountpoint, u.Free, now)
-		if c0, ok0 := io0[p.Device]; ok0 {
-			if c1, ok1 := io1[p.Device]; ok1 {
-				ms := float64(window.Milliseconds())
-				if ms > 0 && c1.IoTime >= c0.IoTime {
-					d.UtilPct = float64(c1.IoTime-c0.IoTime) / ms * 100
-				}
-				ops := (c1.ReadCount + c1.WriteCount) - (c0.ReadCount + c0.WriteCount)
-				busy := c1.IoTime - c0.IoTime
-				if ops > 0 {
-					d.AwaitMS = float64(busy) / float64(ops)
-				}
-				if secs := window.Seconds(); secs > 0 {
-					d.IOPS = float64(ops) / secs
+	withDiskHistory(func(hist map[string]diskHistoryEntry) {
+		for _, p := range parts {
+			if seen[p.Mountpoint] {
+				continue
+			}
+			seen[p.Mountpoint] = true
+			u, ok := diskUsage(p.Mountpoint)
+			if !ok || u.Total == 0 {
+				continue
+			}
+			if !isRealFilesystem(p.Fstype, p.Mountpoint, u.Total) {
+				continue
+			}
+			d := Disk{Mount: p.Mountpoint, UsedPct: u.UsedPercent, FreeBytes: u.Free, InodesUsedPct: u.InodesUsedPercent}
+			d.GrowthBytesPerSec = diskGrowthRate(hist, p.Mountpoint, u.Free, now)
+			if c0, ok0 := io0[p.Device]; ok0 {
+				if c1, ok1 := io1[p.Device]; ok1 {
+					ms := float64(window.Milliseconds())
+					if ms > 0 && c1.IoTime >= c0.IoTime {
+						d.UtilPct = float64(c1.IoTime-c0.IoTime) / ms * 100
+					}
+					ops := (c1.ReadCount + c1.WriteCount) - (c0.ReadCount + c0.WriteCount)
+					busy := c1.IoTime - c0.IoTime
+					if ops > 0 {
+						d.AwaitMS = float64(busy) / float64(ops)
+					}
+					if secs := window.Seconds(); secs > 0 {
+						d.IOPS = float64(ops) / secs
+					}
 				}
 			}
+			out = append(out, d)
 		}
-		out = append(out, d)
-	}
-	saveDiskHistory(hist)
+	})
 	return out
 }

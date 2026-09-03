@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,27 @@ func loadDiskHistory() map[string]diskHistoryEntry {
 		return map[string]diskHistoryEntry{}
 	}
 	return m
+}
+
+// diskHistoryMu serializes every read-modify-write cycle against
+// disk_history.json within this process. Two Collect() calls running
+// concurrently (the dashboard's cache refresh racing a CLI invocation,
+// or two dashboard requests before the snapshot cache existed) could
+// otherwise both load the same starting map and each save their own
+// version, silently dropping whichever update saved first — a real,
+// if low-impact, lost-update race the design review flagged.
+var diskHistoryMu sync.Mutex
+
+// withDiskHistory loads the persisted history, runs fn against it (which
+// may read and mutate it, e.g. via diskGrowthRate), and saves it back —
+// all under one lock, so the load-mutate-save cycle can never interleave
+// with another call in the same process.
+func withDiskHistory(fn func(hist map[string]diskHistoryEntry)) {
+	diskHistoryMu.Lock()
+	defer diskHistoryMu.Unlock()
+	hist := loadDiskHistory()
+	fn(hist)
+	saveDiskHistory(hist)
 }
 
 func saveDiskHistory(hist map[string]diskHistoryEntry) {
