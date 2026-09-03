@@ -196,17 +196,37 @@ to exist *before* implementation starts on anything non-trivial; the
   are thin and untested directly; the logic they call (parsers, formatters,
   request builders) is tested instead. Don't try to unit-test a `signal.
   NotifyContext` loop; extract the interesting part and test that.
-- **95%+ coverage is the target for a package's pure/testable logic.** This
-  isn't arbitrary: a disk-table column misalignment and `advice` dumping raw
-  Markdown to the terminal both shipped through a passing CI run, and both
-  lived in exactly the kind of formatting code that's trivial to unit test
-  once you look — capture stdout/stderr with `os.Pipe` (see
-  `internal/monitor/monitor_test.go`'s `captureStdout`) rather than assuming
-  a `fmt.Printf`-heavy function can't be tested. Live glue code (the same
-  list as above, plus `main`'s `os.Exit`-driven CLI dispatch) is exempt by
-  design — it's validated by the CLI smoke test and httptest fakes instead —
-  but don't use "it's live" as an excuse to skip testing logic that's
-  actually pure and just happens to sit next to a live call.
+- **95%+ coverage of a package's pure/testable logic is a hard rule, not
+  an aspiration.** Confirmed explicitly by the user (2026-09-03) after a
+  coverage audit showed only 2 of 19 packages actually cleared it. This
+  isn't arbitrary: a disk-table column misalignment and `advice` dumping
+  raw Markdown to the terminal both shipped through a passing CI run, and
+  both lived in exactly the kind of formatting code that's trivial to
+  unit test once you look — capture stdout/stderr with `os.Pipe` (see
+  `internal/monitor/monitor_test.go`'s `captureStdout`) rather than
+  assuming a `fmt.Printf`-heavy function can't be tested.
+  - **What "hard rule" means in practice**: any package you create or
+    touch must be at 95%+ (or demonstrably as close as its live-glue
+    fraction allows) before the task touching it is done — not "higher
+    than before," 95%+ specifically. If a package is nowhere near that
+    when you arrive, don't shrug and move on: extract more pure logic out
+    of the live glue first (the way `withDiskHistory`,
+    `internal/dashboard`'s `Prepare` hook, and `advice.Generate` did this
+    session), then test the extracted piece. A package's *reducible*
+    live-glue surface should end up small, not be used as a blanket
+    excuse for the whole package staying low.
+  - **What's still genuinely exempt**: a blocking server loop
+    (`signal.NotifyContext`, `http.Server.Serve`), an OS browser-launch
+    command, `main`'s `os.Exit`-driven dispatch — validated by the CLI
+    smoke test and httptest fakes instead of unit tests. The exemption
+    covers the specific irreducible live call, never the formatting/
+    parsing/decision logic sitting next to it.
+  - **This is not yet true of most of the codebase** (2026-09-03 audit:
+    `dashboard` 98%, `diag` 97%, everything else below, down to `main` at
+    3.3%) — bringing existing packages up is tracked as its own roadmap
+    work, not retrofitted silently; see `docs/roadmap/`. New/touched code
+    meets the bar going forward regardless of where the rest of the
+    codebase currently stands.
 - **Coverage floors are per package, not blended.** `check_coverage.py`
   (run automatically in CI, `make coverage` locally) enforces a floor per
   package instead of one number over `./...` — a blended floor lets a
