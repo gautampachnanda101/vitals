@@ -13,6 +13,26 @@ what you actually want.
 One static binary, one dependency (gopsutil), no bundled installer, no
 phone-home. Runs the same way on macOS, Linux and Windows.
 
+**On this page** — `vitals guide --web` builds its own navigable table
+of contents from the headings below automatically; this plain list is
+for reading the raw file itself (GitHub, an editor, `vitals guide --raw`,
+the plain `vitals guide` terminal view) without one:
+
+- [Quick start](#quick-start)
+- [Quick reference](#quick-reference)
+- [vitals doctor](#vitals-doctor)
+- [vitals dashboard](#vitals-dashboard)
+- [Resource deep dives: cpu, mem, disk, net, power](#resource-deep-dives-cpu-mem-disk-net-power)
+- [vitals advice](#vitals-advice)
+- [vitals llm](#vitals-llm)
+- [vitals top, memhogs, memcheck](#vitals-top-memhogs-memcheck)
+- [vitals clean, dupes, tools, explore, live](#vitals-clean-dupes-tools-explore-live)
+- [vitals gpu](#vitals-gpu)
+- [Automation and integration](#automation-and-integration)
+- [Configuration file](#configuration-file)
+- [Shell completion](#shell-completion)
+- [Contextual help](#contextual-help)
+
 ## Quick start
 
 ```bash
@@ -187,9 +207,14 @@ vitals mem --output mem-snapshot.json
 
 ## vitals advice
 
-`advice` gathers the full `doctor` snapshot and hands it to an LLM for
-prioritized, plain-English advice — the same data `doctor` already prints,
-interpreted for you instead of by you.
+`advice` answers in two parts, and the first one needs no LLM at all:
+`doctor`'s own rule-based findings and fixes print immediately, exactly
+as `vitals doctor` would show them. Then, if a local or cloud LLM is
+reachable, its synthesis prints underneath as **AI commentary** — shared
+root causes across findings, what matters most when there's more than
+one issue — a complement to the heuristic answer, never a replacement
+for it. No LLM configured, or none reachable, means you still get a
+useful answer; it just stops after the heuristic half.
 
 It never assumes a runtime is installed. Provider selection tries, in
 order, a local Ollama server, then LM Studio, then llama.cpp, then vLLM,
@@ -198,15 +223,24 @@ available — not just because its default port is configured. If none of
 them respond, it falls back to the first cloud provider with a configured
 API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, and so on),
 using the same provider detection as `vitals llm`. `--provider` forces one
-specific choice, local or cloud, instead of auto-detecting.
+specific choice, local or cloud, instead of auto-detecting. Not sure which
+local model you have pulled? `vitals llm` lists a reachable local
+provider's model names directly — see [vitals llm](#vitals-llm) below —
+so there's no need to go check with the provider's own CLI first.
 
 ```bash
 vitals advice
 vitals advice --provider ollama --model llama3.1:8b
 OPENAI_API_KEY=sk-... vitals advice --provider openai
 vitals advice --provider lmstudio --lmstudio-url http://localhost:1234
-vitals advice --json | jq -r .advice
+vitals advice --json | jq -r .heuristic_advice   # always present, no LLM required
+vitals advice --json | jq -r .llm_advice         # present only when a provider answered
 ```
+
+`--json`'s `source` field is `"heuristic"` or `"heuristic+llm"`, and
+`llm_error` is set instead of `llm_advice` when no provider answered —
+the payload always has something to show, it just tells you honestly
+which half of it is present.
 
 ## vitals llm
 
@@ -214,13 +248,19 @@ One command for every LLM endpoint, local or remote, built entirely on open
 APIs.
 
 Local runtimes — Ollama, LM Studio, llama.cpp, vLLM — are probed on their
-default ports. For Ollama, each loaded model's VRAM footprint and its exact
-GPU-offload percentage are shown (`size_vram / size`). Below 100% means
-layers are split between GPU and CPU, and generation will be slow; try a
-smaller quant or fewer layers. When a model is running entirely on the CPU,
-`llm` also checks whether the GPU driver itself (`nvidia-smi`/`rocm-smi`)
-is reachable, since that's the standard first troubleshooting step — it
-tells you whether to blame the driver, the VRAM budget, or the runtime.
+default ports. A reachable local provider's line lists every model it has
+pulled, not just a count — copy a name straight from here into `vitals
+advice --provider ollama --model <name>` or `vitals llm fit <name>`
+instead of checking with `ollama list` first. Cloud providers still show
+only a count: a hosted catalogue can run to dozens of entries not chosen
+by name the same way. For Ollama, each loaded model's VRAM footprint and
+its exact GPU-offload percentage are also shown (`size_vram / size`).
+Below 100% means layers are split between GPU and CPU, and generation
+will be slow; try a smaller quant or fewer layers. When a model is
+running entirely on the CPU, `llm` also checks whether the GPU driver
+itself (`nvidia-smi`/`rocm-smi`) is reachable, since that's the standard
+first troubleshooting step — it tells you whether to blame the driver,
+the VRAM budget, or the runtime.
 
 Cloud providers — OpenAI, Anthropic, Groq, Mistral, Together, OpenRouter,
 DeepSeek, xAI, Fireworks, Gemini, Ollama Cloud — are probed only when their
