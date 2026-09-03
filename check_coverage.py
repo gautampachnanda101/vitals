@@ -22,7 +22,16 @@ import sys
 from collections import defaultdict
 
 FLOORS = {
-    "vitals": 3,  # main.go: os.Exit-driven CLI dispatch, validated by cli_smoke_test.go instead
+    # vitals (main.go): main() itself is a one-line os.Exit(run(...)) wrapper,
+    # exempt by construction. run()'s dispatch/validation logic (unknown
+    # commands, missing args, --schema/--compare validation, help/version/
+    # completion output) is now unit tested directly; the remaining
+    # uncovered lines in run() are each subcommand's live Run/RunFocus call
+    # (doctor, clean, dupes, tools, memhogs, memcheck, gpu, monitor, advice,
+    # llm, metrics.Serve/RunOnce, mcp.Serve, guide --web) — real subprocess/
+    # network/filesystem work, validated by cli_smoke_test.go exec'ing the
+    # real binary instead.
+    "vitals": 42,
     # advice: Run is thin live glue (doctor.Assess, then the
     # already-100%-covered Generate, then print/JSON-encode) — nothing
     # left to extract without testing doctor.Assess itself.

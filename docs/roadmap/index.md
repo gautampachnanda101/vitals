@@ -38,7 +38,7 @@ depends on.
 | [003](items/003-product-site/) | Public product site | Not started | — (parallel) | v0.5.0 |
 | [004](items/004-native-launcher/) | Native double-click launcher | Not started | 002 | v0.6.0 |
 | [005](items/005-dashboard-write-actions/) | Dashboard write actions | Not started | 001, 002, 004 | v0.7.0+ |
-| [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | In progress | — (cross-cutting, ongoing) | ongoing |
+| [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | Done | — (cross-cutting, ongoing) | ongoing |
 
 ## Releases
 

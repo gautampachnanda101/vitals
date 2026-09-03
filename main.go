@@ -98,10 +98,20 @@ func applyGlobalFlags(in []string) []string {
 
 func main() {
 	doctor.SetThresholds(cfg)
-	argv := applyGlobalFlags(os.Args[1:])
+	os.Exit(run(applyGlobalFlags(os.Args[1:]), version))
+}
+
+// run dispatches a single CLI invocation and returns the process exit code.
+// main just wraps this call in os.Exit — kept separate so the dispatch and
+// flag-validation logic (unknown commands, missing args, --schema/--compare
+// validation, and so on) can be unit tested directly instead of only via the
+// exec-the-real-binary smoke test. Most subcommands still shell out to their
+// package's own Run/RunFocus, which touches real OS/network state — that
+// part remains exercised by cli_smoke_test.go, not here.
+func run(argv []string, version string) int {
 	if len(argv) < 1 {
 		help.RenderList(os.Stderr, version)
-		os.Exit(2)
+		return 2
 	}
 
 	cmd := argv[0]
@@ -123,21 +133,25 @@ func main() {
 		_ = fs.Parse(args)
 		if *schema {
 			os.Stdout.Write(doctor.Schema())
-			return
+			return 0
 		}
 		if *compare {
 			if fs.NArg() != 2 {
 				fmt.Fprintln(os.Stderr, "usage: vitals doctor --compare <old.json> <new.json>")
-				os.Exit(2)
+				return 2
 			}
 			oldEnv, err := doctor.LoadJSONEnvelope(fs.Arg(0))
-			must(err)
+			if err != nil {
+				return must(err)
+			}
 			newEnv, err := doctor.LoadJSONEnvelope(fs.Arg(1))
-			must(err)
+			if err != nil {
+				return must(err)
+			}
 			fmt.Print(doctor.RenderCompare(oldEnv, newEnv))
-			return
+			return 0
 		}
-		os.Exit(doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Webhook: *webhook, WebhookAllowInsecure: *webhookAllowInsecure}))
+		return doctor.Run(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Webhook: *webhook, WebhookAllowInsecure: *webhookAllowInsecure})
 
 	case "clean":
 		fs := newFlagSet("clean")
@@ -145,7 +159,7 @@ func main() {
 		yes := fs.Bool("yes", false, "skip the confirmation prompt")
 		history := fs.Bool("history", false, "print past clean runs (date, freed) instead of cleaning")
 		_ = fs.Parse(args)
-		must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
+		return must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
 
 	case "dupes":
 		fs := newFlagSet("dupes")
@@ -157,7 +171,7 @@ func main() {
 		hardlink := fs.Bool("hardlink", false, "replace duplicates with hardlinks to reclaim space (destroys no data)")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt before applying --hardlink")
 		_ = fs.Parse(args)
-		must(dupes.Run(dupes.Options{
+		return must(dupes.Run(dupes.Options{
 			Root:     *root,
 			MinSize:  *minMB << 20,
 			Top:      *top,
@@ -172,7 +186,7 @@ func main() {
 		install := fs.String("install", "", "install this companion tool via the system package manager")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt")
 		_ = fs.Parse(args)
-		must(tools.Run(tools.Options{Install: *install, Yes: *yes}))
+		return must(tools.Run(tools.Options{Install: *install, Yes: *yes}))
 
 	case "explore":
 		fs := newFlagSet("explore")
@@ -181,12 +195,12 @@ func main() {
 		if fs.NArg() > 0 {
 			path = fs.Arg(0)
 		}
-		must(tools.Launch("disk explorer", []string{path}))
+		return must(tools.Launch("disk explorer", []string{path}))
 
 	case "live":
 		fs := newFlagSet("live")
 		_ = fs.Parse(args)
-		must(tools.Launch("live monitor", nil))
+		return must(tools.Launch("live monitor", nil))
 
 	case "memhogs":
 		fs := newFlagSet("memhogs")
@@ -194,18 +208,18 @@ func main() {
 		watch := fs.Bool("watch", false, "refresh continuously until interrupted")
 		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
 		_ = fs.Parse(args)
-		must(memhogs.Run(memhogs.Options{Top: *top, Watch: *watch, Interval: *interval}))
+		return must(memhogs.Run(memhogs.Options{Top: *top, Watch: *watch, Interval: *interval}))
 
 	case "memcheck":
 		fs := newFlagSet("memcheck")
 		_ = fs.Parse(args)
-		must(memcheck.Run())
+		return must(memcheck.Run())
 
 	case "gpu":
 		fs := newFlagSet("gpu")
 		asJSON := fs.Bool("json", false, "emit GPU telemetry as JSON")
 		_ = fs.Parse(args)
-		must(gpu.Run(*asJSON))
+		return must(gpu.Run(*asJSON))
 
 	case "cpu", "mem", "memory", "disk", "net", "network", "power", "battery":
 		fs := newFlagSet(cmd)
@@ -218,7 +232,7 @@ func main() {
 		verbose := fs.Bool("verbose", false, "show more than the default view has room for (every core, the full reclaimable list, more net peers)")
 		fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 		_ = fs.Parse(args)
-		os.Exit(doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose}))
+		return doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose})
 
 	case "top", "monitor":
 		fs := newFlagSet("top")
@@ -228,7 +242,7 @@ func main() {
 		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
 		asJSON := fs.Bool("json", false, "emit a machine-readable snapshot instead of a report")
 		_ = fs.Parse(args)
-		must(monitor.Run(monitor.Options{
+		return must(monitor.Run(monitor.Options{
 			Top:      *top,
 			SortBy:   *sortBy,
 			Watch:    *watch,
@@ -246,7 +260,7 @@ func main() {
 		model := fs.String("model", "", "override the provider's default model")
 		asJSON := fs.Bool("json", false, "emit {\"advice\": \"...\"} as JSON instead of plain text")
 		_ = fs.Parse(args)
-		must(advice.Run(advice.Options{
+		return must(advice.Run(advice.Options{
 			OllamaURL:   *url,
 			LMStudioURL: *lmstudioURL,
 			LlamaCppURL: *llamacppURL,
@@ -262,8 +276,7 @@ func main() {
 			if len(args) >= 2 {
 				model = args[1]
 			}
-			must(llm.RunFit(model))
-			return
+			return must(llm.RunFit(model))
 		}
 		fs := newFlagSet("llm")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
@@ -271,7 +284,7 @@ func main() {
 		interval := fs.Duration("interval", 2*time.Second, "refresh interval when --watch is set")
 		asJSON := fs.Bool("json", false, "emit a machine-readable snapshot instead of a report")
 		_ = fs.Parse(args)
-		must(llm.Run(llm.Options{
+		return must(llm.Run(llm.Options{
 			OllamaURL: *url,
 			Watch:     *watch,
 			Interval:  *interval,
@@ -284,23 +297,24 @@ func main() {
 		addr := fs.String("addr", "127.0.0.1:9100", "listen address for /metrics — a bare \":PORT\" binds every interface")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
-		must(metrics.Serve(metrics.Options{OllamaURL: *url, Addr: *addr}))
+		return must(metrics.Serve(metrics.Options{OllamaURL: *url, Addr: *addr}))
 
 	case "export":
 		fs := newFlagSet("export")
 		fs.Bool("prometheus", true, "Prometheus text-exposition format (the only format today)")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
-		must(metrics.RunOnce(metrics.Options{OllamaURL: *url}))
+		return must(metrics.RunOnce(metrics.Options{OllamaURL: *url}))
 
 	case "mcp":
 		fs := newFlagSet("mcp")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
 		_ = fs.Parse(args)
-		must(mcp.Serve(os.Stdin, os.Stdout, mcp.Options{OllamaURL: *url}))
+		return must(mcp.Serve(os.Stdin, os.Stdout, mcp.Options{OllamaURL: *url}))
 
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
+		return 0
 
 	case "guide":
 		fs := newFlagSet("guide")
@@ -309,46 +323,53 @@ func main() {
 		_ = fs.Parse(args)
 		switch {
 		case *web:
-			must(guide.Serve(userGuide, "vitals user guide"))
+			return must(guide.Serve(userGuide, "vitals user guide"))
 		case *raw:
 			fmt.Print(userGuide)
+			return 0
 		default:
 			fmt.Print(guide.RenderTerminal(userGuide))
+			return 0
 		}
 
 	case "completion":
 		if len(args) < 1 {
 			fmt.Fprintln(os.Stderr, "usage: vitals completion bash|zsh|fish")
-			os.Exit(2)
+			return 2
 		}
 		script, err := help.CompletionScript(args[0])
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(2)
+			return 2
 		}
 		fmt.Print(script)
+		return 0
 
 	case "help", "-h", "--help":
 		if len(args) >= 1 {
 			if err := help.RenderCommand(os.Stdout, args[0]); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n\n", err)
 				help.RenderList(os.Stderr, version)
-				os.Exit(2)
+				return 2
 			}
-			return
+			return 0
 		}
 		help.RenderList(os.Stdout, version)
+		return 0
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		help.RenderList(os.Stderr, version)
-		os.Exit(2)
+		return 2
 	}
 }
 
-func must(err error) {
+// must prints err (if any) and returns the exit code run should return for
+// it: 1 on error, 0 on success.
+func must(err error) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

@@ -136,14 +136,25 @@ expected.
       takes an `io.Writer` parameter (no stdout-capture needed), covered
       via `bytes.Buffer` — asserts version/USAGE/COMMANDS/footer text and
       that every `Names()` entry appears in the rendered list.
-- [ ] `main` (3.3%) — the hardest one. Extracting a testable
-      `run(args []string) (int, error)` that `main()` just wraps with
-      `os.Exit` (instead of every `case` calling `os.Exit`/`must` inline)
-      would let most of the flag-parsing/dispatch logic be unit tested
-      directly, the same way `cli_smoke_test.go` proves it works but at
-      unit-test speed and granularity. This is a real refactor, not a
-      quick pass — worth its own design note before starting given how
-      central `main.go` is; don't attempt it casually.
+- [x] `main` (3.3% -> 42.2%) — extracted `run(argv []string, version
+      string) int` holding the entire dispatch switch that used to live in
+      `main()`; every inline `os.Exit(N)` became `return N`, and `must`
+      became `must(err error) int` (prints, returns 1/0) instead of
+      calling `os.Exit` itself. `main()` is now the one-line
+      `os.Exit(run(applyGlobalFlags(os.Args[1:]), version))`. This made
+      the whole dispatch/validation surface — empty args, unknown
+      commands, `help`/`version`/`completion` variants, `doctor --schema`,
+      `doctor --compare`'s arg-count and unreadable-file validation,
+      `guide --raw`/default (not `--web`) — directly unit testable
+      in-process via `main_test.go`'s new `TestRun*` tests, no subprocess
+      needed. `newFlagSet` and `defaultOllamaURL` (both previously 0%)
+      are now 100%. Deliberately left calling into `run()` for any
+      subcommand's real `Run`/`RunFocus` (doctor, clean, dupes, tools,
+      memhogs, memcheck, gpu, monitor, advice, llm, metrics, mcp, `guide
+      --web`) — those touch real subprocess/network/filesystem state and
+      stay validated by `cli_smoke_test.go`'s exec-the-real-binary
+      approach, consistent with every other package's Collect/Run-is-live
+      exemption in this initiative.
 
 ## Exit criteria
 

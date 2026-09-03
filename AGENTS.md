@@ -221,12 +221,16 @@ to exist *before* implementation starts on anything non-trivial; the
     smoke test and httptest fakes instead of unit tests. The exemption
     covers the specific irreducible live call, never the formatting/
     parsing/decision logic sitting next to it.
-  - **This is not yet true of most of the codebase** (2026-09-03 audit:
-    `dashboard` 98%, `diag` 97%, everything else below, down to `main` at
-    3.3%) — bringing existing packages up is tracked as its own roadmap
-    work, not retrofitted silently; see `docs/roadmap/`. New/touched code
-    meets the bar going forward regardless of where the rest of the
-    codebase currently stands.
+  - **Status (2026-09-03, roadmap item 006, now Done)**: every package
+    has been brought to 95%+ or given a documented live-glue ceiling in
+    `check_coverage.py` — including `main`, where the dispatch switch was
+    extracted into a testable `run(argv []string, version string) int`
+    (`main()` is now just `os.Exit(run(...))`), taking it from 3.3% to
+    42.2% with the remaining gap being each subcommand's genuinely live
+    `Run`/`RunFocus` call. See `docs/roadmap/items/006-coverage-hardening/`
+    for the per-package rationale. New/touched code still meets the bar
+    going forward; floors ratchet up as real coverage improves, never
+    down.
 - **Coverage floors are per package, not blended.** `check_coverage.py`
   (run automatically in CI, `make coverage` locally) enforces a floor per
   package instead of one number over `./...` — a blended floor lets a

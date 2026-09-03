@@ -1,6 +1,7 @@
 # 006 — Coverage hardening to the 95%+ hard rule
 
-**Status**: In progress
+**Status**: Done — every package in `implementation-plan.md` is either at
+95%+ or has a documented live-glue ceiling in `check_coverage.py`.
 **Depends on**: —
 **Target release**: ongoing (not gated to v0.5.0)
 **Architecture**: `AGENTS.md`'s "Testing conventions" — 95%+ of a
