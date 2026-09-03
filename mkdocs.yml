@@ -28,6 +28,7 @@ nav:
           - 006 Coverage hardening: roadmap/items/006-coverage-hardening/index.md
           - 007 Dashboard visuals & machine identity: roadmap/items/007-dashboard-visuals/index.md
           - 008 vitals heal: roadmap/items/008-heal-command/index.md
+          - 009 Raw 95%+ coverage: roadmap/items/009-raw-coverage-95/index.md
 
 plugins:
   - techdocs-core
