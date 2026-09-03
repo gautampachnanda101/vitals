@@ -61,11 +61,14 @@ slightly in `check_coverage.py` to reflect the new, documented live-glue
 surface (`Serve`, `ServeLocal`'s `Addr`/`NoOpen` branches), not a
 regression in what's actually tested.
 
-**Known follow-up, raised after this shipped, not yet scoped**: the
-overview page is intentionally minimal for this MVP (verdict + findings
-list, no charts/sparklines/trend visualization, no expanded machine
-identity block beyond what `doctor`'s own summary line shows). Making it
-visually distinctive and/or adding richer machine detail is real,
-reasonable feedback — but it's a scope decision for its own roadmap item,
-not a silent addition here, since item 002's design was shaped by an
-explicit six-agent architecture review that didn't include it.
+**Known follow-up, now scoped as [item 007](../007-dashboard-visuals/)**:
+the overview page is intentionally minimal for this MVP (verdict +
+findings list, no charts/sparklines/trend visualization, no expanded
+machine identity block beyond what `doctor`'s own summary line shows).
+The maintainer disagreed with deferring this silently; a second
+seven-agent review panel (2026-09-03) assessed the specific "build it
+now" question and converged on deferring the broad feature (see item
+007's own "Why" section for the reasoning) while pulling two related bugs
+it surfaced — the dashboard never recording to `doctor`'s history file,
+and `/advice`'s `Prepare` hook bypassing the snapshot cache on every
+request — forward as immediate fixes instead of waiting on 007.
