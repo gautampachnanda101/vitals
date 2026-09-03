@@ -48,16 +48,27 @@ type snapshotCache struct {
 }
 
 // newSnapshotCache builds a cache that refreshes from the real, live
-// doctor.Collect + doctor.Analyze + llm.ProbeProviders, using ollamaURL
-// for both (matching every other command's --ollama-url wiring).
+// doctor.Assess + llm.ProbeProviders, using ollamaURL for both (matching
+// every other command's --ollama-url wiring). doctor.Assess, not a bare
+// Collect+Analyze, so a dashboard-only user's usage still feeds doctor's
+// trend history (recordHistory) and gets the memory-leak finding
+// (addLeakFinding) the overview page would otherwise silently never show
+// — a real gap found by review after item 002 shipped: this cache
+// previously called Collect+Analyze directly and never recorded
+// anything. Unlike internal/metrics' deliberate Collect+Analyze-only
+// scrape path (metrics.Serve has no cache at all, so recording on every
+// scrape could fill the 2000-point/24h history budget in minutes), this
+// cache's own 3s TTL already bounds how often a real Assess — and thus a
+// real history write — can happen, to at most once per 3 seconds of
+// active browsing.
 func newSnapshotCache(ollamaURL string) *snapshotCache {
 	return &snapshotCache{
 		ttl: snapshotCacheTTL,
 		refresh: func() cachedSnapshot {
-			snap := doctor.Collect(doctor.Options{OllamaURL: ollamaURL})
+			snap, report := doctor.Assess(doctor.RunOptions{OllamaURL: ollamaURL})
 			return cachedSnapshot{
 				Snapshot:  snap,
-				Report:    doctor.Analyze(snap),
+				Report:    report,
 				Providers: llm.ProbeProviders(llm.Options{OllamaURL: ollamaURL}),
 			}
 		},

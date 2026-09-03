@@ -75,7 +75,10 @@ func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
 	_, port, _ := net.SplitHostPort(addr)
 	handler = allowedHostsOnly(handler, addr, "localhost:"+port)
 
-	srv := &http.Server{Handler: handler}
+	// ReadHeaderTimeout guards against a client that opens a connection
+	// and trickles headers in slowly (a slowloris-style hang) — the same
+	// defense internal/metrics.Serve already sets; this server had none.
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

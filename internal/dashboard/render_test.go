@@ -134,6 +134,13 @@ func TestVerdictBannerReflectsSeverity(t *testing.T) {
 	}
 }
 
+func TestVerdictBannerEscapesHeadlineAndSummary(t *testing.T) {
+	out := verdictBanner("<script>alert(1)</script>", "<b>x</b>", diag.OK)
+	if strings.Contains(out, "<script>alert(1)</script>") || strings.Contains(out, "<b>x</b>") {
+		t.Errorf("verdictBanner did not escape headline/summary: %s", out)
+	}
+}
+
 func TestFindingsListEmptyIsFriendly(t *testing.T) {
 	out := findingsList(nil)
 	if !strings.Contains(strings.ToLower(out), "no findings") {
@@ -185,5 +192,12 @@ func TestUnavailablePageNamesTheModuleAndReason(t *testing.T) {
 	out := unavailablePage("Advice", "no local or cloud LLM is reachable")
 	if !strings.Contains(out, "Advice") || !strings.Contains(out, "no local or cloud LLM is reachable") {
 		t.Errorf("unavailablePage = %s", out)
+	}
+}
+
+func TestUnavailablePageEscapesItsArguments(t *testing.T) {
+	out := unavailablePage("<script>alert(1)</script>", "<b>reason</b>")
+	if strings.Contains(out, "<script>alert(1)</script>") || strings.Contains(out, "<b>reason</b>") {
+		t.Errorf("unavailablePage did not escape its arguments: %s", out)
 	}
 }

@@ -193,6 +193,18 @@ func TestRenderAdviceShowsTheErrorInstead(t *testing.T) {
 	}
 }
 
+func TestRenderAdviceEscapesTheErrorMessage(t *testing.T) {
+	// An error's message can embed arbitrary provider/network detail —
+	// this was a raw string-concat + manual html.EscapeString call before
+	// the html/template migration; confirm it's still escaped now that
+	// escaping is the template's job, not a call the author has to
+	// remember.
+	out := renderAdvice(PageContext{AdviceErr: errors.New("<script>alert(1)</script>")})
+	if strings.Contains(out, "<script>alert(1)</script>") {
+		t.Errorf("AdviceErr message was not escaped: %s", out)
+	}
+}
+
 func TestModulesRegisterThemselvesWithDistinctSlugs(t *testing.T) {
 	// This runs against the REAL registry (populated by every module's own
 	// init()) on purpose — it's the one test that catches a future module
@@ -246,7 +258,22 @@ func TestOnlyAdviceModuleHasAPrepareHook(t *testing.T) {
 	}
 }
 
+// withFreshAdviceCache swaps defaultAdviceCache for a new, empty instance
+// for the duration of a test and restores the original after — the same
+// swap-and-restore shape withRegistry uses, needed because
+// TestPrepareAdviceCallsTheLLMAndPopulatesTheReply and
+// TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt each
+// expect prepareAdvice to actually run, not serve a result cached by
+// whichever of the two ran first in the same test binary.
+func withFreshAdviceCache(t *testing.T) {
+	t.Helper()
+	old := defaultAdviceCache
+	defaultAdviceCache = newPrepareAdviceCache()
+	t.Cleanup(func() { defaultAdviceCache = old })
+}
+
 func TestPrepareAdviceCallsTheLLMAndPopulatesTheReply(t *testing.T) {
+	withFreshAdviceCache(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/tags":
@@ -272,6 +299,7 @@ func TestPrepareAdviceCallsTheLLMAndPopulatesTheReply(t *testing.T) {
 }
 
 func TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt(t *testing.T) {
+	withFreshAdviceCache(t)
 	// No reachable provider at all — Generate fails. prepareAdvice must
 	// still return nil and let renderAdvice show the friendly message via
 	// ctx.AdviceErr, the same graceful-degradation shape every other

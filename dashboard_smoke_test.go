@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -59,8 +60,40 @@ func TestDashboardSmoke(t *testing.T) {
 	// 404) that findModule/route exist to produce instead.
 	assertRoute(t, url, "advice", http.StatusOK, "")
 	assertRoute(t, url, "nope-does-not-exist", http.StatusNotFound, "")
+	assertHistoryWasRecorded(t, scratch)
 
 	assertGracefulShutdown(t, cmd)
+}
+
+// assertHistoryWasRecorded confirms the GET above actually wrote a point to
+// doctor's trend history file — the bug this guards against: the dashboard
+// used to call doctor.Collect+Analyze directly, bypassing doctor.Assess's
+// recordHistory entirely, so a dashboard-only user silently accumulated no
+// history at all (internal/dashboard/snapshot_cache.go now calls Assess
+// specifically to fix this). Resolves the same config-dir path the
+// subprocess resolved by temporarily setting the identical env vars in
+// this process and calling os.UserConfigDir() — t.Setenv auto-restores
+// them after the test.
+func assertHistoryWasRecorded(t *testing.T, scratch string) {
+	t.Helper()
+	t.Setenv("HOME", scratch)
+	t.Setenv("APPDATA", scratch)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("os.UserConfigDir(): %v", err)
+	}
+	historyPath := filepath.Join(configDir, "vitals", "history.jsonl")
+
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Errorf("expected %s to exist after hitting the dashboard, got: %v", historyPath, err)
+		return
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		t.Errorf("%s exists but is empty — no history point was recorded", historyPath)
+	}
 }
 
 // waitForDashboardURL reads r line by line until it sees ServeLocal's

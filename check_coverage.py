@@ -55,7 +55,14 @@ FLOORS = {
     # http.Handler, then calls guide.ServeLocal, a blocking server), the
     # same shape as every other Serve function in this codebase. route
     # and loopbackAddr, the pure logic Serve wraps, are both 100%.
-    "vitals/internal/dashboard": 89,
+    # Raised to 91 after the html/template migration + advice-cache fix
+    # (item 007's review follow-ups): mustExecute's panic branch (only
+    # reachable from a template/struct mismatch, i.e. a coding bug) and
+    # generateAdvice's json.Marshal error branch (doctor.JSONReport is
+    # plain structs/slices/strings, can't realistically fail to marshal)
+    # are the only remaining gaps, both the same class of genuinely
+    # unreachable defensive code already exempted elsewhere in this repo.
+    "vitals/internal/dashboard": 91,
     "vitals/internal/diag": 96,
     # doctor: Collect and its OS-level helpers (firstTimes, percoreTimes,
     # topProcs, swapCounters, diskCounters, netCounters, collectPower,

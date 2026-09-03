@@ -2,7 +2,9 @@ package dashboard
 
 import (
 	"encoding/json"
-	"html"
+	"html/template"
+	"sync"
+	"time"
 
 	"vitals/internal/advice"
 	"vitals/internal/diag"
@@ -14,6 +16,92 @@ func init() {
 	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: AnyLLMReachable, UnavailableReason: "no local or cloud LLM is reachable", Render: renderAdvice})
 }
 
+// prepareAdviceCacheTTL bounds how stale a synthesized advice reply can
+// be. Deliberately longer than snapshotCacheTTL: generating a real
+// completion is slow and costs real API quota, and the answer doesn't
+// meaningfully change every few seconds the way raw metrics do. This
+// cache is what actually fixes a real bug found by review after item 002
+// shipped: every request to /advice was triggering a fresh, uncached LLM
+// call, unlike every other route, which route (dashboard.go) already
+// protects via snapshotCache.
+const prepareAdviceCacheTTL = 30 * time.Second
+
+// prepareAdviceCache is a single-flight, TTL cache for prepareAdvice's
+// one real cost — the LLM call — same shape as snapshotCache
+// (snapshot_cache.go). A generic, slug-keyed version of this (so any
+// future Prepare hook would get this for free automatically) was
+// considered and deliberately not built: advice is still the only module
+// using Prepare today, and this codebase's own convention is to extract
+// a shared abstraction when a second real case shows up, not
+// speculatively for a hypothetical one.
+type prepareAdviceCache struct {
+	ttl      time.Duration
+	generate func(*PageContext) (string, error)
+
+	mu      sync.Mutex
+	reply   string
+	err     error
+	expiry  time.Time
+	loading chan struct{}
+}
+
+func newPrepareAdviceCache() *prepareAdviceCache {
+	return &prepareAdviceCache{ttl: prepareAdviceCacheTTL, generate: generateAdvice}
+}
+
+// Get returns the cached advice, generating it first if missing or
+// stale. A caller that arrives mid-refresh waits on that same refresh
+// rather than starting its own — identical shape to snapshotCache.Get.
+func (c *prepareAdviceCache) Get(ctx *PageContext) (string, error) {
+	c.mu.Lock()
+	if time.Now().Before(c.expiry) {
+		reply, err := c.reply, c.err
+		c.mu.Unlock()
+		return reply, err
+	}
+	if c.loading != nil {
+		ch := c.loading
+		c.mu.Unlock()
+		<-ch
+		c.mu.Lock()
+		reply, err := c.reply, c.err
+		c.mu.Unlock()
+		return reply, err
+	}
+	ch := make(chan struct{})
+	c.loading = ch
+	c.mu.Unlock()
+
+	reply, err := c.generate(ctx)
+
+	c.mu.Lock()
+	c.reply, c.err = reply, err
+	c.expiry = time.Now().Add(c.ttl)
+	c.loading = nil
+	c.mu.Unlock()
+	close(ch)
+
+	return reply, err
+}
+
+// defaultAdviceCache is the one instance prepareAdvice uses in the real
+// binary — a single `vitals dashboard` process serves one machine, so a
+// package-level cache is safe there. Tests that need a clean cache use
+// withFreshAdviceCache (modules_test.go), the same swap-and-restore
+// pattern withRegistry uses for the module registry.
+var defaultAdviceCache = newPrepareAdviceCache()
+
+// generateAdvice does the actual LLM call — split out from prepareAdvice
+// so prepareAdviceCache.Get has something pure-ish (given a ctx) to
+// memoize.
+func generateAdvice(ctx *PageContext) (string, error) {
+	reportJSON, err := json.Marshal(doctor.JSONReport(ctx.Snapshot, ctx.Report))
+	if err != nil {
+		return "", err
+	}
+	return advice.Generate(reportJSON, ctx.LLMOpts)
+}
+
 // prepareAdvice is the advice module's Prepare hook: the one piece of
 // request-scoped work Render can't do on its own, since it needs an
 // actual LLM call rather than just formatting already-collected data.
@@ -22,12 +110,7 @@ func init() {
 // still renders a friendly message instead of an error page when no
 // provider answers.
 func prepareAdvice(ctx *PageContext) error {
-	reportJSON, err := json.Marshal(doctor.JSONReport(ctx.Snapshot, ctx.Report))
-	if err != nil {
-		ctx.AdviceErr = err
-		return nil
-	}
-	reply, err := advice.Generate(reportJSON, ctx.LLMOpts)
+	reply, err := defaultAdviceCache.Get(ctx)
 	if err != nil {
 		ctx.AdviceErr = err
 		return nil
@@ -36,12 +119,19 @@ func prepareAdvice(ctx *PageContext) error {
 	return nil
 }
 
+// adviceErrorTmpl renders ctx.AdviceErr's message — an error string that
+// can embed arbitrary provider/network detail, so it goes through
+// html/template's auto-escaping like every other render function in this
+// package, not a manual html.EscapeString call.
+var adviceErrorTmpl = template.Must(template.New("adviceError").Parse(
+	`<div class="card"><p class="unavailable">Could not reach a model: {{.}}</p></div>`))
+
 // renderAdvice shows the LLM's synthesis, fetched via Prepare above —
 // Render itself stays pure over whatever ctx.AdviceReply/AdviceErr it's
 // handed, consistent with every other module, and testable the same way.
 func renderAdvice(ctx PageContext) string {
 	if ctx.AdviceErr != nil {
-		return `<div class="card"><p class="unavailable">Could not reach a model: ` + html.EscapeString(ctx.AdviceErr.Error()) + `</p></div>`
+		return mustExecute(adviceErrorTmpl, ctx.AdviceErr.Error())
 	}
 	body := verdictBanner("Synthesized advice", "", diag.OK)
 	body += `<div class="card">` + guide.RenderFragment(ctx.AdviceReply) + `</div>`

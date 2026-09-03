@@ -38,17 +38,31 @@ shaping them, risks guessing wrong on retention window/resolution
 (charts) or scope creep into data with no diagnostic value (identity)
 more than it saves engineering time later.
 
-Two things the panel found *were* worth doing immediately, precisely
+Four things the panel found *were* worth doing immediately, precisely
 because they're cheap now and get more expensive the more the dashboard
-grows around the current gap — these are being fixed directly as
-follow-up commits, not gated on this item:
-- The dashboard never records to `doctor`'s history file (calls
-  `Collect` directly, skipping `recordHistory`) — a dashboard-only user
-  accumulates zero trend data today, and history is time-based, so this
-  can't be backfilled once noticed later.
-- `/advice`'s `Prepare` hook calls a real LLM completion on every
-  request, unlike every other route, which is fully cache-protected — an
-  already-shipped bug, not a groundwork question.
+grows around the current gap — **all four done** as follow-up commits,
+not gated on this item:
+
+- [x] The dashboard now records to `doctor`'s history file: `snapshotCache`
+      calls `doctor.Assess` instead of a bare `Collect`+`Analyze`, so a
+      dashboard-only user's usage feeds the trend history and the overview
+      picks up the memory-leak finding it previously never showed.
+      Verified by `dashboard_smoke_test.go` actually reading the recorded
+      file after hitting a route, not just asserting the code path exists.
+- [x] `/advice`'s `Prepare` hook no longer calls a real LLM completion on
+      every request — `prepareAdviceCache` (30s TTL, single-flight, same
+      shape as `snapshotCache`) fixes the gap found by review.
+- [x] `guide.ServeLocal`'s `http.Server` now sets `ReadHeaderTimeout`
+      (5s), matching `metrics.Serve`'s existing pattern; it previously had
+      no timeouts at all.
+- [x] `internal/dashboard`'s HTML composition migrated to `html/template`
+      (auto-escaping) across every render function — `pageShell`, nav,
+      `verdictBanner`, `findingsList`, `row`, `unavailablePage`, and one
+      real pre-existing instance of the exact bug class this closes,
+      found along the way: `renderAdvice`'s error path was still a raw
+      string-concat + manual `html.EscapeString` call. New tests confirm
+      script-injection attempts are neutralized through every entry
+      point, not just the ones already tested before.
 
 ## Trigger
 
