@@ -40,7 +40,17 @@ FLOORS = {
     "vitals/internal/config": 80,
     "vitals/internal/dashboard": 98,
     "vitals/internal/diag": 96,
-    "vitals/internal/doctor": 50,
+    # doctor: Collect and its OS-level helpers (firstTimes, percoreTimes,
+    # topProcs, swapCounters, diskCounters, netCounters, collectPower,
+    # runCmd, readLinuxBattery, collectDisks), the CLI entrypoints
+    # (Run/Assess/RunFocus and their print helpers focusDetail/
+    # printFindings/printReclaimable/listExcludedMounts), and
+    # checkDNSLatency/topRemotePeers are all live. The correlation engine
+    # itself (Analyze/AnalyzeResource and every analyze* rule) and the
+    # small pure helpers (pct, throttleNote, fullestDisk, summaryLine,
+    # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
+    # or near 100%.
+    "vitals/internal/doctor": 55,
     "vitals/internal/dupes": 51,
     # gpu: Probe/run (report.go's Run too) shell out to nvidia-smi/
     # rocm-smi/ioreg — genuinely live. Every pure parser (parseNvidiaSMI/

@@ -6,6 +6,46 @@ import (
 	"time"
 )
 
+func TestDiskGrowthRateNoPriorSampleReturnsZero(t *testing.T) {
+	hist := map[string]diskHistoryEntry{}
+	got := diskGrowthRate(hist, "/", 1000, time.Now())
+	if got != 0 {
+		t.Errorf("diskGrowthRate(first sample) = %v, want 0", got)
+	}
+	if hist["/"].FreeBytes != 1000 {
+		t.Error("diskGrowthRate should still record the reading for next time")
+	}
+}
+
+func TestDiskGrowthRateTooCloseTogetherReturnsZero(t *testing.T) {
+	now := time.Now()
+	hist := map[string]diskHistoryEntry{"/": {FreeBytes: 2000, UnixTime: now.Unix()}}
+	got := diskGrowthRate(hist, "/", 1000, now.Add(10*time.Second)) // well under minGrowthInterval
+	if got != 0 {
+		t.Errorf("diskGrowthRate(samples 10s apart) = %v, want 0 (too close to be stable)", got)
+	}
+}
+
+func TestDiskGrowthRateFreeSpaceGrewReturnsZero(t *testing.T) {
+	now := time.Now()
+	hist := map[string]diskHistoryEntry{"/": {FreeBytes: 1000, UnixTime: now.Add(-2 * minGrowthInterval).Unix()}}
+	got := diskGrowthRate(hist, "/", 2000, now) // free space went UP — cleanup, not filling
+	if got != 0 {
+		t.Errorf("diskGrowthRate(free space grew) = %v, want 0", got)
+	}
+}
+
+func TestDiskGrowthRateComputesBytesPerSecond(t *testing.T) {
+	now := time.Now()
+	past := now.Add(-2 * time.Minute)
+	hist := map[string]diskHistoryEntry{"/": {FreeBytes: 1000, UnixTime: past.Unix()}}
+	got := diskGrowthRate(hist, "/", 400, now) // 600 bytes freed over 120s
+	want := 600.0 / 120.0
+	if got != want {
+		t.Errorf("diskGrowthRate = %v, want %v (600 bytes over 120s)", got, want)
+	}
+}
+
 func TestWithDiskHistoryPersistsAcrossCalls(t *testing.T) {
 	isolateConfigDir(t)
 

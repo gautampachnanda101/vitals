@@ -2,11 +2,64 @@ package doctor
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"vitals/internal/diag"
+	"vitals/internal/ui"
 )
+
+func TestPct(t *testing.T) {
+	if got := ui.StripANSI(pct(50, 70, 90)); got != "50%" {
+		t.Errorf("pct(50, 70, 90) = %q, want 50%%", got)
+	}
+	if got := ui.StripANSI(pct(95, 70, 90)); got != "95%" {
+		t.Errorf("pct(95, 70, 90) = %q, want 95%%", got)
+	}
+}
+
+func TestThrottleNote(t *testing.T) {
+	if got := throttleNote(false); got != "" {
+		t.Errorf("throttleNote(false) = %q, want empty", got)
+	}
+	if got := ui.StripANSI(throttleNote(true)); !strings.Contains(got, "throttling") {
+		t.Errorf("throttleNote(true) = %q, want it to mention throttling", got)
+	}
+}
+
+func TestFullestDiskPicksTheHighestUsagePercent(t *testing.T) {
+	if _, ok := fullestDisk(nil); ok {
+		t.Error("fullestDisk(nil) should report ok=false")
+	}
+	d, ok := fullestDisk([]Disk{{Mount: "/", UsedPct: 30}, {Mount: "/data", UsedPct: 90}, {Mount: "/tmp", UsedPct: 50}})
+	if !ok || d.Mount != "/data" {
+		t.Errorf("fullestDisk = %+v, want /data (90%%)", d)
+	}
+}
+
+func TestSummaryLineIncludesDiskAndBatteryWhenPresent(t *testing.T) {
+	s := Snapshot{
+		CPU:    CPU{UsedPct: 10},
+		Memory: Memory{UsedPct: 20},
+		Disks:  []Disk{{Mount: "/", UsedPct: 30}, {Mount: "/data", UsedPct: 90}},
+		Power:  Power{OnBattery: true, Percent: 55},
+	}
+	got := ui.StripANSI(summaryLine(s))
+	for _, want := range []string{"cpu 10%", "mem 20%", "disk 90% (/data)", "battery 55%"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summaryLine missing %q, got %q", want, got)
+		}
+	}
+}
+
+func TestSummaryLineOmitsBatteryWhenOnACPower(t *testing.T) {
+	s := Snapshot{CPU: CPU{UsedPct: 10}, Memory: Memory{UsedPct: 20}}
+	got := summaryLine(s)
+	if strings.Contains(got, "battery") {
+		t.Errorf("summaryLine on AC power should not mention battery, got %q", got)
+	}
+}
 
 // finishAssess is the non-live half of Assess (everything after the real
 // Collect() call), so it's testable against a fixture Snapshot without

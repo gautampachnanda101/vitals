@@ -18,6 +18,107 @@ func find(r diag.Report, sub string) diag.Finding {
 	return diag.Finding{}
 }
 
+func TestAnalyzeResourceDispatchesToTheRightAnalyzer(t *testing.T) {
+	// AnalyzeResource is the switch `vitals cpu|mem|disk|net|power|gpu`
+	// and the dashboard's resource pages both dispatch through — it had
+	// no direct test in this package at all (only exercised indirectly
+	// via internal/dashboard's own tests, which don't count toward this
+	// package's coverage).
+	snap := Snapshot{
+		CPU:    CPU{UsedPct: 99, Load1: 20, Cores: 2},
+		Memory: Memory{UsedPct: 95, SwapUsedPct: 91, SwapOutPerSec: 1},
+		Disks:  []Disk{{Mount: "/", UsedPct: 99}},
+		GPUs:   []GPU{{Name: "gpu0", VRAMUsed: 99, VRAMTotal: 100}},
+		Net:    []NetIface{{Name: "en0", LinkSpeedbps: 1e9, RxBytesPerSec: 1e8, TxBytesPerSec: 1e8}},
+		Power:  Power{OnBattery: true, Percent: 5},
+	}
+	cases := []struct {
+		resource  string
+		wantTitle string // a substring guaranteed to appear only if the right analyzer ran
+	}{
+		{"cpu", "CPU"},
+		{"mem", "RAM"},
+		{"memory", "RAM"},
+		{"disk", "/"},
+		{"gpu", "gpu0"},
+		{"net", "en0"},
+		{"power", "Battery"},
+		{"battery", "Battery"},
+	}
+	for _, c := range cases {
+		t.Run(c.resource, func(t *testing.T) {
+			r := AnalyzeResource(snap, c.resource)
+			if len(r.Findings) == 0 {
+				t.Fatalf("AnalyzeResource(%q) found nothing, want at least one finding from this deliberately unhealthy snapshot", c.resource)
+			}
+			found := false
+			for _, f := range r.Findings {
+				if strings.Contains(f.Title, c.wantTitle) || strings.Contains(f.Detail, c.wantTitle) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("AnalyzeResource(%q) = %+v, wanted a finding mentioning %q", c.resource, r.Findings, c.wantTitle)
+			}
+		})
+	}
+	if r := AnalyzeResource(snap, "not-a-real-resource"); len(r.Findings) != 0 {
+		t.Errorf("AnalyzeResource(unknown) = %+v, want no findings", r.Findings)
+	}
+}
+
+func TestProcSuffix(t *testing.T) {
+	if got := procSuffix(ProcRef{}, true); got != "" {
+		t.Errorf("procSuffix(empty) = %q, want empty", got)
+	}
+	if got := procSuffix(ProcRef{Name: "chrome", PID: 1, CPUPct: 50}, true); !strings.Contains(got, "chrome") || !strings.Contains(got, "CPU") {
+		t.Errorf("procSuffix(byCPU) = %q", got)
+	}
+	if got := procSuffix(ProcRef{Name: "chrome", PID: 1, RSSBytes: 100 << 20}, false); !strings.Contains(got, "chrome") || !strings.Contains(got, "RSS") {
+		t.Errorf("procSuffix(byRSS) = %q", got)
+	}
+}
+
+func TestQuitFix(t *testing.T) {
+	if got := quitFix(ProcRef{}); !strings.Contains(got, "memhogs") {
+		t.Errorf("quitFix(empty) = %q, want the generic memhogs pointer", got)
+	}
+	if got := quitFix(ProcRef{Name: "chrome", PID: 42}); !strings.Contains(got, "chrome") || !strings.Contains(got, "42") {
+		t.Errorf("quitFix(named) = %q, want it to name the process", got)
+	}
+}
+
+func TestCoreSpread(t *testing.T) {
+	if _, _, ok := coreSpread([]float64{50}); ok {
+		t.Error("coreSpread with fewer than 2 cores should report ok=false")
+	}
+	second, hi, ok := coreSpread([]float64{10, 90, 50})
+	if !ok || hi != 90 || second != 50 {
+		t.Errorf("coreSpread([10 90 50]) = second=%v hi=%v ok=%v, want second=50 hi=90 ok=true", second, hi, ok)
+	}
+}
+
+func TestTimeToFull(t *testing.T) {
+	if got := timeToFull(600); !strings.Contains(got, "minutes") {
+		t.Errorf("timeToFull(600s) = %q, want minutes", got)
+	}
+	if got := timeToFull(10 * 3600); !strings.Contains(got, "hours") {
+		t.Errorf("timeToFull(10h) = %q, want hours", got)
+	}
+	if got := timeToFull(5 * 86400); !strings.Contains(got, "days") {
+		t.Errorf("timeToFull(5d) = %q, want days", got)
+	}
+}
+
+func TestNz(t *testing.T) {
+	if got := nz(""); got != "(unnamed)" {
+		t.Errorf("nz(\"\") = %q, want (unnamed)", got)
+	}
+	if got := nz("gpu0"); got != "gpu0" {
+		t.Errorf("nz(\"gpu0\") = %q, want it unchanged", got)
+	}
+}
+
 func TestAnalyzeHealthy(t *testing.T) {
 	r := Analyze(Snapshot{
 		CPU:    CPU{Cores: 8, UsedPct: 12, Load1: 1.0},

@@ -62,11 +62,18 @@ expected.
       just doesn't crash), and blank/malformed-line skipping in
       `parseNvidiaSMI`/`parseNvidiaApps`. `Probe`/`run`/report.go's `Run`
       shell out to nvidia-smi/rocm-smi/ioreg — genuinely live.
-- [ ] `internal/doctor` (50.1%) — large package; `Analyze`/
-      `AnalyzeResource` should already be near-100% (the correlation
-      engine's whole design point). Audit `Collect` and its helpers for
-      any pure sub-logic not yet split out the way `diskGrowthRate`/
-      `withDiskHistory` were.
+- [x] `internal/doctor` (50.1% -> 55.0%) — `AnalyzeResource` (the switch
+      `vitals cpu|mem|disk|...` and the dashboard's resource pages both
+      dispatch through) had zero direct tests in this package at all —
+      only exercised indirectly via `internal/dashboard`'s own tests,
+      which don't count toward this package's coverage. `diskGrowthRate`
+      was fully pure and fully untested despite a detailed doc comment
+      describing three branches. Also covered: `pct`, `throttleNote`,
+      `fullestDisk`, `summaryLine`, `procSuffix`, `quitFix`, `coreSpread`,
+      `timeToFull`, `nz` — all small pure helpers nobody had gotten to.
+      Remaining low-coverage functions are `Collect`'s live OS-level
+      helpers and the CLI entrypoints' print wrappers, documented inline
+      in `check_coverage.py`.
 - [ ] `internal/dupes` (51.1%) — hashing/comparison logic should be pure
       and testable; the live directory walk is the exempt part.
 - [ ] `internal/memhogs` (53.2%) — `appFamily`/`bucketFamilies` (per
