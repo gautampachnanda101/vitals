@@ -162,15 +162,15 @@ func PrintFindings(findings []diag.Finding, spaced bool) {
 // assertion, and a warning has real numbers to compare against instantly.
 func summaryLine(s Snapshot) string {
 	parts := []string{
-		fmt.Sprintf("cpu %s", pct(s.CPU.UsedPct, 70, 90)),
-		fmt.Sprintf("mem %s", pct(s.Memory.UsedPct, thresholds.RAMWarnPercent, thresholds.RAMHighPercent)),
+		fmt.Sprintf("🖥️ cpu %s", pct(s.CPU.UsedPct, 70, 90)),
+		fmt.Sprintf("🧠 mem %s", pct(s.Memory.UsedPct, thresholds.RAMWarnPercent, thresholds.RAMHighPercent)),
 	}
 	if d, ok := fullestDisk(s.Disks); ok {
-		parts = append(parts, fmt.Sprintf("disk %s (%s)",
+		parts = append(parts, fmt.Sprintf("💾 disk %s (%s)",
 			pct(d.UsedPct, thresholds.DiskWarnPercent, thresholds.DiskCriticalPercent), d.Mount))
 	}
 	if s.Power.OnBattery && s.Power.Percent > 0 {
-		parts = append(parts, fmt.Sprintf("battery %s", ui.GradeLow(fmt.Sprintf("%.0f%%", s.Power.Percent), s.Power.Percent, 20, 8)))
+		parts = append(parts, fmt.Sprintf("🔋 battery %s", ui.GradeLow(fmt.Sprintf("%.0f%%", s.Power.Percent), s.Power.Percent, 20, 8)))
 	}
 	return strings.Join(parts, "   ")
 }
