@@ -42,7 +42,11 @@ FLOORS = {
     "vitals/internal/diag": 96,
     "vitals/internal/doctor": 50,
     "vitals/internal/dupes": 51,
-    "vitals/internal/gpu": 46,
+    # gpu: Probe/run (report.go's Run too) shell out to nvidia-smi/
+    # rocm-smi/ioreg — genuinely live. Every pure parser (parseNvidiaSMI/
+    # Apps, attachNvidiaApps, parseRocmSMIJSON, atoiOr/numOr/
+    # firstNonEmpty/strSort) is at or near 100%.
+    "vitals/internal/gpu": 54,
     # guide's floor is lower than its earlier 77 despite new tests, not a
     # regression: allowedHostsOnly/safeLinkHref are fully covered, but the
     # package grew around Serve/ServeHTML/ServeLocal/openBrowser, which

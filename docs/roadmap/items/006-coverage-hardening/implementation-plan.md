@@ -54,10 +54,14 @@ expected.
       before, now 100%. Remaining 0%/low functions are genuinely live —
       this package's whole job is filesystem/subprocess I/O — documented
       inline in `check_coverage.py`.
-- [ ] `internal/gpu` (46.9%) — `Probe`'s subprocess calls are exempt; the
-      output *parsers* (`parseNvidiaSMI` etc., per memory of this
-      package's design) should already be near 100% pure-tested — verify,
-      don't assume.
+- [x] `internal/gpu` (46.9% -> 54.7%) — several parsers were much less
+      tested than assumed: `attachNvidiaApps` (0 devices/procs edge
+      cases, multi-device attach), `atoiOr`/`numOr`/`firstNonEmpty`'s
+      default-fallback branches, `strSort` (a hand-rolled insertion sort
+      that was essentially untested — now verified it actually sorts, not
+      just doesn't crash), and blank/malformed-line skipping in
+      `parseNvidiaSMI`/`parseNvidiaApps`. `Probe`/`run`/report.go's `Run`
+      shell out to nvidia-smi/rocm-smi/ioreg — genuinely live.
 - [ ] `internal/doctor` (50.1%) — large package; `Analyze`/
       `AnalyzeResource` should already be near-100% (the correlation
       engine's whole design point). Audit `Collect` and its helpers for
