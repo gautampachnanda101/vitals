@@ -236,7 +236,7 @@ func TestModulesRegisterThemselvesWithDistinctSlugs(t *testing.T) {
 		}
 		seen[m.Slug] = true
 	}
-	for _, want := range []string{"", "cpu", "mem", "disk", "net", "power", "gpu", "advice"} {
+	for _, want := range []string{"", "cpu", "mem", "disk", "net", "power", "gpu", "advice", "clean"} {
 		if !seen[want] {
 			t.Errorf("expected a registered module with slug %q", want)
 		}

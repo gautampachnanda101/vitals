@@ -73,6 +73,9 @@ nav a[aria-current="page"]{color:var(--accent);border-color:var(--accent);font-w
 .row:last-child{border-bottom:none}
 .row .k{color:var(--muted)}
 .unavailable{color:var(--muted);font-style:italic}
+.btn{font:inherit;font-weight:600;color:var(--accent);background:transparent;border:1px solid var(--accent);border-radius:8px;padding:.5rem 1.1rem;cursor:pointer}
+.btn:hover{background:var(--bg)}
+.btn:disabled{opacity:.6;cursor:default}
 footer{color:var(--muted);font-size:.78rem;margin-top:2rem;text-align:center}
 </style>
 </head>

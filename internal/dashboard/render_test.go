@@ -66,6 +66,11 @@ func TestPaletteMeetsWCAGAAAForNormalText(t *testing.T) {
 		{"muted/ok-bg dark", mutedDark, "#1b2b26"},
 		{"muted/warn-bg dark", mutedDark, "#362b18"},
 		{"muted/crit-bg dark", mutedDark, "#3a241f"},
+		// accent/bg is also .btn:hover's background (render.go) — chosen
+		// specifically because it was already verified here, unlike
+		// --ok-bg, which a first attempt at .btn:hover used and which
+		// actually fails AAA for accent-colored text (6.32:1/6.83:1,
+		// caught by this test before it shipped).
 		{"accent/bg light", accentLight, "#fbfaf7"},
 		{"accent/surface light", accentLight, "#ffffff"},
 		{"accent/bg dark", accentDark, "#14171a"},

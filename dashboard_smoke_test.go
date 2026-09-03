@@ -60,6 +60,7 @@ func TestDashboardSmoke(t *testing.T) {
 	// asserting on the LLM-unreachable note specifically.
 	assertRoute(t, url, "advice", http.StatusOK, "rule-based checks found")
 	assertRoute(t, url, "nope-does-not-exist", http.StatusNotFound, "")
+	assertRoute(t, url, "clean", http.StatusOK, "clean-preview-btn")
 	// Exercises the actual write-action HTTP path end to end, not just
 	// routeWrite in isolation: a real bug shipped where Serve's handler
 	// never dispatched POST to routeWrite at all (every POST silently

@@ -64,6 +64,30 @@ func TestHandleCleanPreviewReturns200WithARenderedBody(t *testing.T) {
 	}
 }
 
+func TestRenderCleanPageHasTheButtonAndResultContainer(t *testing.T) {
+	out := renderCleanPage(PageContext{})
+	for _, want := range []string{`id="clean-preview-btn"`, `id="clean-preview-result"`, "/clean/preview"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderCleanPage missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestCleanModuleIsRegistered(t *testing.T) {
+	// Runs against the REAL registry, same pattern
+	// TestModulesRegisterThemselvesWithDistinctSlugs uses.
+	m, exists, available := findModule("clean", PageContext{})
+	if !exists {
+		t.Fatal("clean module should be registered")
+	}
+	if !available {
+		t.Error("clean module should always be available")
+	}
+	if m.NavLabel != "Clean" {
+		t.Errorf("NavLabel = %q, want Clean", m.NavLabel)
+	}
+}
+
 func TestCleanPreviewWriteActionIsRegistered(t *testing.T) {
 	// Runs against the REAL registry (populated by modules_clean.go's
 	// own init()), same pattern TestModulesRegisterThemselvesWithDistinctSlugs

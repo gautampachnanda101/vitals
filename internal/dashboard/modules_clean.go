@@ -10,7 +10,45 @@ import (
 )
 
 func init() {
+	Register(Module{Slug: "clean", NavLabel: "Clean", Order: 80, Available: Always, Render: renderCleanPage})
 	RegisterWrite(WriteAction{Path: "/clean/preview", Handler: handleCleanPreview})
+}
+
+// cleanPageTmpl is the dashboard's first client-side interactivity: a
+// button POSTs to /clean/preview and injects the (already
+// html/template-escaped, server-rendered) response — no framework, no
+// build step, matching the rest of this page's zero-external-asset
+// approach. sameOriginOnly (internal/guide/serve.go) is what actually
+// protects this POST; the fetch call itself needs no token or header,
+// consistent with the design's own reasoning that same-origin is the
+// real boundary here, not a client-side secret.
+var cleanPageTmpl = template.Must(template.New("cleanPage").Parse(`<div class="card">
+<p>Measure what a real <code>vitals clean</code> run would reclaim — cache, log and temp files — without deleting anything.</p>
+<button type="button" class="btn" id="clean-preview-btn">Preview</button>
+</div>
+<div id="clean-preview-result" aria-live="polite"></div>
+<script>
+(function(){
+  var btn = document.getElementById('clean-preview-btn');
+  var out = document.getElementById('clean-preview-result');
+  btn.addEventListener('click', function(){
+    btn.disabled = true;
+    out.innerHTML = '<p class="unavailable">Measuring…</p>';
+    fetch('/clean/preview', {method: 'POST'})
+      .then(function(r){ return r.text().then(function(t){ return {ok: r.ok, text: t}; }); })
+      .then(function(res){
+        out.innerHTML = res.ok ? res.text : '<p class="unavailable">Preview failed.</p>';
+      })
+      .catch(function(){
+        out.innerHTML = '<p class="unavailable">Preview failed — could not reach the server.</p>';
+      })
+      .finally(function(){ btn.disabled = false; });
+  });
+})();
+</script>`))
+
+func renderCleanPage(PageContext) string {
+	return mustExecute(cleanPageTmpl, nil)
 }
 
 // cleanPreviewBudget bounds how long measuring can take, so a huge
