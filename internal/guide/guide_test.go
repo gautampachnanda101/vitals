@@ -238,6 +238,31 @@ func extractBetween(t *testing.T, s, start, end string) string {
 	return s[i : i+j]
 }
 
+func TestRenderHTMLDisambiguatesDuplicateHeadingSlugs(t *testing.T) {
+	// Two "## Example" headings must not collide on the same #example
+	// anchor — GitHub's own convention (and this renderer's) is to
+	// suffix the second one -1, the third -2, and so on.
+	out := RenderHTML("## Example\n\n## Example\n\n## Example\n", "t")
+	for _, want := range []string{`id="example"`, `id="example-1"`, `id="example-2"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected a disambiguated anchor %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildTOCClosesSubListWhenAnH2FollowsH3Children(t *testing.T) {
+	out := RenderHTML("## One\n### Sub\n## Two\n", "t")
+	if !strings.Contains(out, "</ul></li>") && !strings.Contains(out, "</ul>\n") {
+		t.Errorf("expected the H3 sub-list to close before the second H2, got:\n%s", out)
+	}
+	// Both top-level entries must still be present and in order.
+	iOne := strings.Index(out, `id="one"`)
+	iTwo := strings.Index(out, `id="two"`)
+	if iOne == -1 || iTwo == -1 || iOne > iTwo {
+		t.Errorf("both H2 anchors should appear, One before Two, got:\n%s", out)
+	}
+}
+
 func TestSlugifyMatchesGitHubStyleAnchors(t *testing.T) {
 	cases := map[string]string{
 		"vitals doctor":     "vitals-doctor",

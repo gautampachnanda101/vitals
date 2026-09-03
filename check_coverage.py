@@ -68,7 +68,7 @@ FLOORS = {
     # OS browser-launch command) exempt from unit coverage by convention.
     # See AGENTS.md's "95%+ coverage is the target for a package's pure/
     # testable logic" — this is that exemption showing up in the number.
-    "vitals/internal/guide": 73,
+    "vitals/internal/guide": 75,
     "vitals/internal/help": 86,
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
