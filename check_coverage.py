@@ -26,7 +26,7 @@ FLOORS = {
     "vitals/internal/advice": 34,
     "vitals/internal/clean": 41,
     "vitals/internal/config": 80,
-    "vitals/internal/dashboard": 85,
+    "vitals/internal/dashboard": 98,
     "vitals/internal/diag": 96,
     "vitals/internal/doctor": 48,
     "vitals/internal/dupes": 51,

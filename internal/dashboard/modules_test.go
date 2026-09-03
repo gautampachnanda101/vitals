@@ -55,6 +55,99 @@ func TestResourcePageUsesAnalyzeResourceNotFullAnalyze(t *testing.T) {
 	}
 }
 
+func TestRenderCPUShowsOptionalRowsWhenPresent(t *testing.T) {
+	out := renderCPU(doctor.Snapshot{CPU: doctor.CPU{
+		UsedPct: 40, IOWaitPct: 5, Load1: 1.2, Cores: 8, FreqMHz: 3200,
+		TopProc: doctor.ProcRef{Name: "chrome", PID: 42, CPUPct: 30},
+	}})
+	for _, want := range []string{"40%", "1.2", "8 cores", "3200 MHz", "chrome", "42", "30%"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderCPU missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestRenderCPUOmitsOptionalRowsWhenAbsent(t *testing.T) {
+	out := renderCPU(doctor.Snapshot{CPU: doctor.CPU{UsedPct: 4}})
+	if strings.Contains(out, "Clock") || strings.Contains(out, "Top process") {
+		t.Errorf("renderCPU should omit rows for zero-value fields, got: %s", out)
+	}
+}
+
+func TestRenderMemShowsOptionalRowsWhenPresent(t *testing.T) {
+	out := renderMem(doctor.Snapshot{Memory: doctor.Memory{
+		UsedPct: 78, AvailablePct: 15, SwapUsedPct: 20,
+		TopProc: doctor.ProcRef{Name: "Code Helper", PID: 99, RSSBytes: 500 << 20},
+	}})
+	for _, want := range []string{"78%", "15%", "20%", "Code Helper", "99", "MB"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderMem missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestRenderMemOmitsOptionalRowsWhenAbsent(t *testing.T) {
+	out := renderMem(doctor.Snapshot{Memory: doctor.Memory{UsedPct: 40}})
+	if strings.Contains(out, "Available") || strings.Contains(out, "Top process") {
+		t.Errorf("renderMem should omit rows for zero-value fields, got: %s", out)
+	}
+}
+
+func TestRenderPowerShowsOptionalRowsWhenPresent(t *testing.T) {
+	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: true, Percent: 62, MinutesLeft: 90}})
+	for _, want := range []string{"battery", "62%", "90 min"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderPower missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestRenderPowerOnACWithNoEstimate(t *testing.T) {
+	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: false}})
+	if !strings.Contains(out, "AC power") {
+		t.Errorf("renderPower should report AC power when not on battery, got: %s", out)
+	}
+	if strings.Contains(out, "Charge") || strings.Contains(out, "Remaining") {
+		t.Errorf("renderPower should omit charge/remaining rows when unknown, got: %s", out)
+	}
+}
+
+func TestRenderNetShowsActiveInterfaces(t *testing.T) {
+	out := renderNet(doctor.Snapshot{Net: []doctor.NetIface{
+		{Name: "en0", RxBytesPerSec: 2 << 20, TxBytesPerSec: 1 << 20},
+		{Name: "lo0", RxBytesPerSec: 0, TxBytesPerSec: 0}, // idle, should be skipped
+	}})
+	if !strings.Contains(out, "en0") {
+		t.Errorf("renderNet should list the active interface, got: %s", out)
+	}
+	if strings.Contains(out, "lo0") {
+		t.Errorf("renderNet should skip the idle interface, got: %s", out)
+	}
+}
+
+func TestRenderGPUListsEveryDevice(t *testing.T) {
+	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{
+		{Name: "RTX 4090", UtilPct: 80, VRAMUsed: 10 << 30, VRAMTotal: 24 << 30},
+	}})
+	for _, want := range []string{"RTX 4090", "80%", "GB"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderGPU missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestResourcePageHeadlinesTheWorstFindingWhenThereIsOne(t *testing.T) {
+	// The zero-findings path is already covered by
+	// TestResourcePageUsesAnalyzeResourceNotFullAnalyze; this covers the
+	// other branch — a resource with a real problem should headline it,
+	// not the generic "No issues found".
+	s := doctor.Snapshot{CPU: doctor.CPU{UsedPct: 99, Load1: 20, Cores: 2}}
+	out := resourcePage("cpu", renderCPU)(PageContext{Snapshot: s})
+	if strings.Contains(out, "No issues found") {
+		t.Errorf("resourcePage should headline the actual finding, not the healthy default, got: %s", out)
+	}
+}
+
 func TestRenderDiskListsEveryMount(t *testing.T) {
 	out := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30}}})
 	if !strings.Contains(out, "/") || !strings.Contains(out, "50%") {

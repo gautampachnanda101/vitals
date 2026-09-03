@@ -83,10 +83,12 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       command) exempt by the same convention as `doctor.Collect()`.
       `vitals/internal/advice` also ratcheted up (22% -> 34%) from the
       `Generate` extraction's tests. `make coverage` now exits 0.
-- [ ] **Cover the 0%/low-coverage render branches**: `renderMem`,
+- [x] **Covered the 0%/low-coverage render branches**: `renderMem`,
       `renderPower`, `renderGPU`'s loop body, `renderNet`'s
-      active-traffic row, `renderCPU`'s `FreqMHz`/`TopProc` rows
-      (`internal/dashboard/modules_resource.go`).
+      active-traffic row, `renderCPU`'s `FreqMHz`/`TopProc` rows, and
+      `resourcePage`'s has-a-real-finding branch (only the healthy/
+      no-findings path was tested before). Package coverage went
+      85.1% -> 98.0%; floor ratcheted up to match.
 - [x] **WCAG 2.2 Level AAA for the shared page shell** — `--muted`
       retuned to hold >=7:1 against every background it appears on (was
       as low as 4.18:1 in the original prototype); `:focus-visible`
