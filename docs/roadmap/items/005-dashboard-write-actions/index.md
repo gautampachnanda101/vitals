@@ -7,9 +7,12 @@
 reviewed (seven-persona panel, go-with-changes) and implemented, see
 its own "As built" section for what shipped and what didn't
 
-**Status**: In progress — `sameOriginOnly` (guide.ServeLocal) and the
-`WriteAction` registry (`internal/dashboard`) are done and in `main`;
-no write action itself (e.g. `clean` preview/apply) is wired up yet
+**Status**: In progress — `sameOriginOnly`, the `WriteAction` registry,
+and `POST /clean/preview` (backend only — reclaimable-space measurement,
+`html/template`-rendered, verified end to end against a live dashboard)
+are done and in `main`. Still open: a page/button to trigger the
+preview (the dashboard's first client-side JS), `/clean/apply`, and
+everything after it in `implementation-plan.md`
 **Depends on**: [001](../001-dashboard-foundation/), [002](../002-dashboard-mvp/), [004](../004-native-launcher/)
 **Target release**: v0.7.0+
 **Architecture**: [design doc](../../../architecture/design.md) §6.5, §6.7; this item's own [design.md](design.md)

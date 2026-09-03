@@ -30,13 +30,33 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       session not to over-count on partial failure) instead of only
       `error`. `Run` is now a thin CLI wrapper over it — no behavior
       change, confirmed by the existing test suite.
-- [ ] Mandate `html/template` for the new write-action render
-      functions, with a crafted-filename regression test (matching the
-      migration already done for every read-only render function in
-      007's follow-up work).
-- [ ] Wire `clean --dry-run`-equivalent (the new preview function above)
-      to a dashboard `POST /clean/preview` write action and a button —
-      read-only, no filesystem mutation.
+- [x] Mandate `html/template` for the new write-action render
+      functions, with a crafted-filename regression test — commit
+      `7265006`. `internal/dashboard/modules_clean.go`'s
+      `renderCleanPreview` goes through `cleanPreviewTmpl`
+      (`html/template`); `TestRenderCleanPreviewEscapesACraftedPath`
+      proves a `<script>`-bearing cache path renders escaped.
+- [x] Wire `clean --dry-run`-equivalent to a dashboard `POST
+      /clean/preview` write action — commit `7265006`. Backend half
+      only: `POST /clean/preview` calls `clean.ReclaimableSummary`
+      directly and returns the rendered result, verified end to end
+      against a real running dashboard (curl, and
+      `dashboard_smoke_test.go`'s `assertPostRoute` case) — no
+      filesystem mutation. **The button/page half is intentionally
+      still open**: the dashboard has zero client-side JS anywhere
+      today, so wiring an actual "Preview" button would be the first
+      fetch()-driven interactivity in the whole product — worth its own
+      quick check-in on approach before landing, not something to
+      improvise alongside a backend commit.
+
+      Wiring the backend also surfaced and fixed a real, previously
+      invisible bug (same commit): `dashboard.Serve`'s own
+      `http.HandlerFunc` never dispatched `POST` requests to
+      `routeWrite` at all — every POST silently 404'd through the GET
+      `route` path instead, even though `routeWrite` itself was fully,
+      correctly unit tested. No unit test of `routeWrite` in isolation
+      could have caught this; only a real request against the live
+      server could, and now does.
 - [ ] A single-flight guard against concurrent `/clean/apply` calls
       (same shape as `prepareAdviceCache`'s single-flight pattern in
       `internal/dashboard/modules_advice.go`).
