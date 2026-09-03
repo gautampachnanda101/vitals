@@ -407,6 +407,13 @@ func parseModels(data []byte, kind string) []string {
 // not running or has nothing loaded.
 func OllamaModels(ollamaURL string) []ModelState { return ollamaModels(ollamaURL) }
 
+// ProbeProviders reports every local and cloud LLM provider's
+// reachability, probed concurrently (never assumed installed or
+// running — a cloud provider is only probed when its API-key env var is
+// set). Exported for `vitals dashboard`'s capability-gating check on
+// whether to offer its advice page.
+func ProbeProviders(opts Options) []Provider { return probeProviders(opts, os.Getenv) }
+
 // collectResidentModels builds the unified list of loaded models across every
 // reachable local runtime — not just Ollama. Ollama entries carry full
 // VRAM / GPU-offload detail from /api/ps; other runtimes (LM Studio, llama.cpp,

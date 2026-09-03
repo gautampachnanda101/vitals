@@ -24,13 +24,20 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       specific slug string — item 002 still needs to actually call
       `m.Prepare(&ctx)` uniformly for whichever module matched; this task
       only adds the mechanism and wires the one module that needs it.
-- [ ] **Cache `Collect()`/`probeProviders()` behind a short TTL +
+- [x] **Cache `Collect()`/`probeProviders()` behind a short TTL +
       single-flight guard**, shared across concurrent requests
-      (`internal/dashboard`, e.g. a new `snapshot_cache.go`). Done when: a
-      test issuing N concurrent requests shows exactly one underlying
-      `Collect()`/probe call, and a cold request is bounded (the cached
-      path is sub-second; only one goroutine at a time pays the
-      uncached-refresh cost).
+      (`internal/dashboard/snapshot_cache.go`). Hand-rolled (no new
+      dependency): a 3s TTL, a mutex, and a `chan struct{}` closed when an
+      in-flight refresh completes so concurrent callers wait on the same
+      refresh instead of starting their own.
+      `TestSnapshotCacheSingleFlightsConcurrentRefreshes` proves 20
+      concurrent callers collapse into exactly 1 real refresh. The
+      TTL/single-flight logic itself is unit-tested via an injectable
+      `refresh func() cachedSnapshot` field — `newSnapshotCache` wires
+      that to the real, live `doctor.Collect`/`doctor.Analyze`/
+      `llm.ProbeProviders` (the last needed a small export,
+      `llm.ProbeProviders`, added in the same change). Not wired into a
+      live `Serve` yet — that's item 002.
 - [x] **Parallelize provider probes** (`internal/llm`) — per-target
       goroutines instead of a sequential loop, each still
       individually timeout-bounded. `TestProbeProvidersRunsTargetsConcurrentlyNotSequentially`
