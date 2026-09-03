@@ -37,7 +37,7 @@ FLOORS = {
     # parameterization, appendCleanHistoryTo, renderCleanHistory, plural)
     # is at or near 100%.
     "vitals/internal/clean": 50,
-    "vitals/internal/config": 80,
+    "vitals/internal/config": 99,  # 100.0% measured; 99 for float-rounding margin
     "vitals/internal/dashboard": 98,
     "vitals/internal/diag": 96,
     # doctor: Collect and its OS-level helpers (firstTimes, percoreTimes,

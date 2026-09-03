@@ -123,8 +123,14 @@ expected.
       used elsewhere. `colorEnabled`'s NO_COLOR branch is now covered
       too; its TTY-detection branch is environment-dependent and left as
       the only real gap.
-- [ ] `internal/config` (80.6%) — a flat-file parser; should be easy to
-      push higher, it's almost entirely pure.
+- [x] `internal/config` (80.6% -> **100.0%**) — `Parse` only had 3 of 6
+      recognized keys exercised (`disk_critical_percent`/`ram_warn_percent`/
+      `ram_high_percent` were untested). `Path`/`Load`'s
+      `os.UserConfigDir()`-fails branch turned out to be reliably
+      testable cross-platform: setting `HOME`/`APPDATA`/`XDG_CONFIG_HOME`
+      to the empty string (not just unset) makes the real stdlib function
+      itself return an error identically on macOS/Linux — no need to
+      treat it as an untestable defensive branch.
 - [ ] `internal/help` (86.5%) — static command-doc data + rendering;
       should be easy to push higher.
 - [ ] `main` (3.3%) — the hardest one. Extracting a testable
