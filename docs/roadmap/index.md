@@ -42,6 +42,7 @@ depends on.
 | [005](items/005-dashboard-write-actions/) | Dashboard write actions | Not started | 001, 002, 004 | v0.7.0+ |
 | [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | Done | — (cross-cutting, ongoing) | ongoing |
 | [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Not started — unscheduled, see its Trigger | 002 | not yet |
+| [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Not started — captured as a followup, not yet designed | diag findings/fixes model | not yet |
 
 ## Releases
 
