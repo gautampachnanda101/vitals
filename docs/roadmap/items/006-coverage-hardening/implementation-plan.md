@@ -131,8 +131,11 @@ expected.
       to the empty string (not just unset) makes the real stdlib function
       itself return an error identically on macOS/Linux — no need to
       treat it as an untestable defensive branch.
-- [ ] `internal/help` (86.5%) — static command-doc data + rendering;
-      should be easy to push higher.
+- [x] `internal/help` (86.5% -> **100.0%**) — `RenderList` was the sole
+      0%-coverage function: pure and trivially testable since it already
+      takes an `io.Writer` parameter (no stdout-capture needed), covered
+      via `bytes.Buffer` — asserts version/USAGE/COMMANDS/footer text and
+      that every `Names()` entry appears in the rendered list.
 - [ ] `main` (3.3%) — the hardest one. Extracting a testable
       `run(args []string) (int, error)` that `main()` just wraps with
       `os.Exit` (instead of every `case` calling `os.Exit`/`must` inline)

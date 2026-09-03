@@ -1,10 +1,27 @@
 package help
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestRenderListIncludesVersionUsageAndEveryCommand(t *testing.T) {
+	var buf bytes.Buffer
+	RenderList(&buf, "1.2.3")
+	out := buf.String()
+	for _, want := range []string{"1.2.3", "USAGE", "COMMANDS", "vitals help <command>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("RenderList missing %q, got:\n%s", want, out)
+		}
+	}
+	for _, name := range Names() {
+		if !strings.Contains(out, name) {
+			t.Errorf("RenderList missing command %q from the list, got:\n%s", name, out)
+		}
+	}
+}
 
 func TestNamesAreSortedAndComplete(t *testing.T) {
 	names := Names()

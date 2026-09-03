@@ -69,7 +69,7 @@ FLOORS = {
     # See AGENTS.md's "95%+ coverage is the target for a package's pure/
     # testable logic" — this is that exemption showing up in the number.
     "vitals/internal/guide": 75,
-    "vitals/internal/help": 86,
+    "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
     # exec), and render (a print function, like internal/dupes' — not yet
