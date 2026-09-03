@@ -36,8 +36,13 @@ FLOORS = {
     "vitals": 40,
     # advice: Run is thin live glue (doctor.Assess, then the
     # already-100%-covered Generate, then print/JSON-encode) — nothing
-    # left to extract without testing doctor.Assess itself.
-    "vitals/internal/advice": 39,
+    # left to extract without testing doctor.Assess itself. Dropped from
+    # 39 to 37 when Run started calling doctor.PrintFindings directly for
+    # the styled/coloured terminal path (matching vitals doctor's own
+    # output instead of a plain text dump) — still glue, still exercised
+    # end-to-end by cli_smoke_test.go, not unit tested for the same reason
+    # as the rest of Run.
+    "vitals/internal/advice": 37,
     # clean: this package's whole job is filesystem/subprocess I/O, so
     # Run/confirm/freeSpace/cleanDevCaches/cleanLinux/cleanMacOS/
     # cleanWindows/ReclaimableSummary/optional and the clean_history.jsonl

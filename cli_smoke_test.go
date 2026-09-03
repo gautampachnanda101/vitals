@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"vitals/internal/llm"
 )
 
 // TestCLISmoke execs the real, compiled binary for every read-only command —
@@ -25,12 +27,16 @@ import (
 // Deliberately excluded: anything destructive against real user state
 // (`clean` without --dry-run, `tools --install`), anything that blocks
 // forever by design (`serve`, `mcp`, `--watch`, `guide --web`, `dashboard`
-// — see dashboard_smoke_test.go for that one's own dedicated test), and
-// `advice` (needs a real LLM endpoint — network-flaky, not appropriate for
-// a fast deterministic test; its provider-selection logic already has
-// direct unit test coverage in internal/llm). `dupes --hardlink` IS
-// included — safely, against a directory guaranteed to be empty, so it
-// only exercises flag-wiring, never real file mutation.
+// — see dashboard_smoke_test.go for that one's own dedicated test).
+// `dupes --hardlink` IS included — safely, against a directory guaranteed
+// to be empty, so it only exercises flag-wiring, never real file mutation.
+// `advice` IS included too, forced onto a closed port (--ollama-url
+// http://127.0.0.1:1) so it never depends on or waits on a real local LLM
+// — this exercises Run's no-LLM-reachable path specifically (the
+// heuristic findings print/encode and it exits 0), not a real completion;
+// every cloud provider's API key env var is cleared below for the same
+// reason, so this can never make a real network call even if the machine
+// running the test happens to have one set for unrelated work.
 func TestCLISmoke(t *testing.T) {
 	bin := buildCLIOnce(t)
 	scratch := t.TempDir()
@@ -76,6 +82,14 @@ func TestCLISmoke(t *testing.T) {
 		{"clean-dry-run", []string{"clean", "--dry-run"}},
 		{"clean-history", []string{"clean", "--history"}},
 		{"export", []string{"export"}},
+		// --ollama-url points at a closed port so this never depends on
+		// (or waits on) a real local LLM being installed on the machine
+		// running the test — deterministic exercise of Run's no-LLM path:
+		// the heuristic findings print/encode and it exits 0, not the old
+		// bare-error behavior. See internal/advice/advice_test.go for the
+		// unit-level Heuristic/Generate coverage this complements.
+		{"advice-no-llm", []string{"advice", "--ollama-url", "http://127.0.0.1:1"}},
+		{"advice-no-llm-json", []string{"advice", "--ollama-url", "http://127.0.0.1:1", "--json"}},
 	}
 
 	for _, c := range cases {
@@ -88,6 +102,13 @@ func TestCLISmoke(t *testing.T) {
 			// macOS/Linux, APPDATA covers Windows, and XDG_CONFIG_HOME is
 			// force-cleared so an inherited value from the host can't win.
 			cmd.Env = append(os.Environ(), "HOME="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=", "NO_COLOR=1")
+			// Cleared unconditionally, not just for the advice cases: a
+			// stray cloud API key in the environment running this test
+			// must never turn any subcommand into a real network call to
+			// a paid provider.
+			for _, keyEnv := range llm.CloudAPIKeyEnvVars() {
+				cmd.Env = append(cmd.Env, keyEnv+"=")
+			}
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out

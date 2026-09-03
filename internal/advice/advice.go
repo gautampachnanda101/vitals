@@ -111,7 +111,12 @@ func Run(opts Options) error {
 	if !opts.JSON {
 		ui.Header("ADVICE")
 		fmt.Println()
-		fmt.Print(heuristic)
+		if findings := report.SortedBySeverity(); len(findings) == 0 {
+			ui.Okf("no findings — this machine looks healthy")
+		} else {
+			doctor.PrintFindings(findings, true)
+		}
+		fmt.Println()
 		ui.Infof("checking for a local or cloud LLM to add further commentary — this can take a while on a local model, especially the first response after it loads...")
 	}
 

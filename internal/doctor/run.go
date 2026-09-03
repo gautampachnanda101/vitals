@@ -102,7 +102,7 @@ func Run(opts RunOptions) int {
 	fmt.Printf("  %s\n\n", ui.Key(time.Now().Format("2006-01-02 15:04:05")))
 	fmt.Printf("  %s\n\n", summaryLine(snap))
 
-	printFindings(report.SortedBySeverity(), true)
+	PrintFindings(report.SortedBySeverity(), true)
 
 	fmt.Println()
 	switch report.Worst() {
@@ -118,10 +118,12 @@ func Run(opts RunOptions) int {
 	return report.ExitCode()
 }
 
-// printFindings renders a ranked finding list: a severity-coloured title, a
+// PrintFindings renders a ranked finding list: a severity-coloured title, a
 // dim detail line, and yellow-arrowed fixes. spaced adds a blank line between
-// findings.
-func printFindings(findings []diag.Finding, spaced bool) {
+// findings. Exported so `vitals advice` can render the same styled findings
+// list `vitals doctor` uses for its own heuristic section, instead of a
+// plain unstyled text dump.
+func PrintFindings(findings []diag.Finding, spaced bool) {
 	for i, f := range findings {
 		if spaced && i > 0 {
 			fmt.Println()

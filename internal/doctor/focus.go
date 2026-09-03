@@ -69,7 +69,7 @@ func RunFocus(resource string, opts RunOptions) int {
 		return 0
 	}
 	fmt.Println()
-	printFindings(report.SortedBySeverity(), false)
+	PrintFindings(report.SortedBySeverity(), false)
 	return report.ExitCode()
 }
 

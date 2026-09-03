@@ -414,6 +414,20 @@ func OllamaModels(ollamaURL string) []ModelState { return ollamaModels(ollamaURL
 // whether to offer its advice page.
 func ProbeProviders(opts Options) []Provider { return probeProviders(opts, os.Getenv) }
 
+// CloudAPIKeyEnvVars returns every cloud provider's API-key environment
+// variable name (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). Exported for
+// cli_smoke_test.go, so a stray key already set in the environment
+// running the tests can be cleared deterministically instead of risking
+// a real network call to a paid provider during `vitals advice`'s smoke
+// test.
+func CloudAPIKeyEnvVars() []string {
+	names := make([]string, len(cloudRegistry))
+	for i, t := range cloudRegistry {
+		names[i] = t.keyEnv
+	}
+	return names
+}
+
 // collectResidentModels builds the unified list of loaded models across every
 // reachable local runtime — not just Ollama. Ollama entries carry full
 // VRAM / GPU-offload detail from /api/ps; other runtimes (LM Studio, llama.cpp,
