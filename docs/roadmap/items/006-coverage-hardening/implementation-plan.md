@@ -1,5 +1,7 @@
 # Implementation plan — 006 Coverage hardening
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [006 — Coverage hardening to the 95%+ hard rule](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off a package once it's at 95%+
 (or its genuinely-irreducible live-glue ceiling, documented inline in
 `check_coverage.py` the way `guide`'s is) and its floor is ratcheted up

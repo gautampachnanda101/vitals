@@ -1,9 +1,13 @@
 # 004 — Native double-click launcher
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / **004 — Native double-click launcher**
+
+**Implementation plan**: [what's left →](implementation-plan.md)
+
 **Status**: Not started
 **Depends on**: [002](../002-dashboard-mvp/)
 **Target release**: v0.6.0
-**Architecture**: [design doc](../../architecture/design.md) §7
+**Architecture**: [design doc](../../../architecture/design.md) §7
 
 ## What
 

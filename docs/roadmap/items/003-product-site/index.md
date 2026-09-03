@@ -1,9 +1,13 @@
 # 003 — Public product site
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / **003 — Public product site**
+
+**Implementation plan**: [what's left →](implementation-plan.md)
+
 **Status**: Not started
 **Depends on**: — (runs in parallel with 001/002)
 **Target release**: [v0.5.0](../../releases/v0.5.0.md)
-**Architecture**: [design doc](../../architecture/design.md) §5.3
+**Architecture**: [design doc](../../../architecture/design.md) §5.3
 
 ## What
 

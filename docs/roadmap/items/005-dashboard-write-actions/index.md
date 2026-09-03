@@ -1,9 +1,13 @@
 # 005 — Dashboard write actions
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / **005 — Dashboard write actions**
+
+**Implementation plan**: [what's left →](implementation-plan.md)
+
 **Status**: Not started
 **Depends on**: [001](../001-dashboard-foundation/), [002](../002-dashboard-mvp/), [004](../004-native-launcher/)
 **Target release**: v0.7.0+
-**Architecture**: [design doc](../../architecture/design.md) §6.5, §6.7
+**Architecture**: [design doc](../../../architecture/design.md) §6.5, §6.7
 
 ## What
 

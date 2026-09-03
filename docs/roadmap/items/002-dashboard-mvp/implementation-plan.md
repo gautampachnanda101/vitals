@@ -1,5 +1,7 @@
 # Implementation plan — 002 `vitals dashboard` MVP
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [002 — `vitals dashboard` MVP](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off or delete a task as it lands.
 See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 

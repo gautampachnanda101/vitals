@@ -18,6 +18,7 @@ nav:
           - 003 Product site: roadmap/items/003-product-site/index.md
           - 004 Native launcher: roadmap/items/004-native-launcher/index.md
           - 005 Dashboard write actions: roadmap/items/005-dashboard-write-actions/index.md
+          - 006 Coverage hardening: roadmap/items/006-coverage-hardening/index.md
 
 plugins:
   - techdocs-core

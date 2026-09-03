@@ -1,5 +1,7 @@
 # Implementation plan — 004 Native double-click launcher
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [004 — Native double-click launcher](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off or delete a task as it lands.
 See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 

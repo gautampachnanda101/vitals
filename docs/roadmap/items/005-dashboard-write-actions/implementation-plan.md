@@ -1,5 +1,7 @@
 # Implementation plan — 005 Dashboard write actions
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [005 — Dashboard write actions](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off or delete a task as it lands.
 See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 

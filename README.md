@@ -89,7 +89,7 @@ Every module answers three things, not one: the gauge, what it means *causally*
 (compute-bound vs I/O-wait vs contention vs thermal vs reclaimable), and the
 exact fix. The correlation engine (`internal/doctor`) is a pure function over a
 `Snapshot`, so it's tested entirely from fixtures. Full write-up:
-[the blueprint](https://claude.ai/code/artifact/1809c7db-3b3f-425b-b0dd-a7f4489293da).
+[docs/architecture/design.md](docs/architecture/design.md).
 
 ```text
 main.go            CLI dispatcher
@@ -106,6 +106,15 @@ internal/clean     `clean`
 internal/ui        terminal formatting helpers
 internal/help      command docs, contextual help, shell completion
 ```
+
+## Documentation
+
+- [docs/](docs/index.md) — the full docs site (also builds with `mkdocs`, see `mkdocs.yml`)
+  - [User guide](docs/user-guide.md) — every command, with runnable examples (same content as `vitals guide`)
+  - [Architecture](docs/architecture/design.md) — design + the review that shaped it
+  - [Roadmap](docs/roadmap/index.md) — shipped, in progress, and planned
+- [AGENTS.md](AGENTS.md) — build/test/lint commands and repo conventions
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) · [SECURITY.md](SECURITY.md)
 
 ## License
 

@@ -1,9 +1,13 @@
 # 002 — `vitals dashboard` MVP
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / **002 — `vitals dashboard` MVP**
+
+**Implementation plan**: [what's left →](implementation-plan.md)
+
 **Status**: Not started
 **Depends on**: [001](../001-dashboard-foundation/)
 **Target release**: [v0.5.0](../../releases/v0.5.0.md)
-**Architecture**: [design doc](../../architecture/design.md) §5.1, §6
+**Architecture**: [design doc](../../../architecture/design.md) §5.1, §6
 
 ## What
 

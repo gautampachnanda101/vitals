@@ -1,5 +1,7 @@
 # vitals — product design & architecture
 
+[docs](../index.md) / **Architecture**
+
 Status: **reviewed.** Six independent reviews (3 technical architects, 1
 security architect, 1 product manager, 1 QA lead) assessed this design and
 the working prototype it describes. All six independently returned

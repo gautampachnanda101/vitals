@@ -1,5 +1,7 @@
 # Implementation plan — 003 Public product site
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [003 — Public product site](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off or delete a task as it lands.
 See `AGENTS.md`'s "Roadmap discipline" section for the rule.
 

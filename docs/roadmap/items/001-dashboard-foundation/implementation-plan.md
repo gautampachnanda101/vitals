@@ -1,5 +1,7 @@
 # Implementation plan — 001 Dashboard foundation fixes
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / [001 — Dashboard foundation fixes](index.md) / **Implementation plan**
+
 This file shows what's **left**. Check off or delete a task as it lands —
 don't leave completed work checked-but-present once the whole item ships;
 at that point the item's README status changes to Done and this file

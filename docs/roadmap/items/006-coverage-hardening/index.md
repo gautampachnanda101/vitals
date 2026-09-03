@@ -1,5 +1,9 @@
 # 006 — Coverage hardening to the 95%+ hard rule
 
+[docs](../../../index.md) / [Roadmap](../../index.md) / **006 — Coverage hardening to the 95%+ hard rule**
+
+**Implementation plan**: [what's left →](implementation-plan.md)
+
 **Status**: Done — every package in `implementation-plan.md` is either at
 95%+ or has a documented live-glue ceiling in `check_coverage.py`.
 **Depends on**: —

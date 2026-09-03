@@ -1,5 +1,7 @@
 # vitals roadmap
 
+[docs](../index.md) / **Roadmap**
+
 Architecture and rationale for everything here: [design doc](../architecture/design.md).
 This is the roadmap: one item per initiative, phased, tied to the release
 that ships it. It's meant to stay current — see the maintenance rule in
