@@ -23,14 +23,22 @@ from collections import defaultdict
 
 FLOORS = {
     "vitals": 3,  # main.go: os.Exit-driven CLI dispatch, validated by cli_smoke_test.go instead
-    "vitals/internal/advice": 22,
+    "vitals/internal/advice": 34,
     "vitals/internal/clean": 41,
     "vitals/internal/config": 80,
+    "vitals/internal/dashboard": 85,
     "vitals/internal/diag": 96,
     "vitals/internal/doctor": 48,
     "vitals/internal/dupes": 51,
     "vitals/internal/gpu": 46,
-    "vitals/internal/guide": 77,
+    # guide's floor is lower than its earlier 77 despite new tests, not a
+    # regression: allowedHostsOnly/safeLinkHref are fully covered, but the
+    # package grew around Serve/ServeHTML/ServeLocal/openBrowser, which
+    # are — like doctor.Collect() — live glue (a blocking server loop, an
+    # OS browser-launch command) exempt from unit coverage by convention.
+    # See AGENTS.md's "95%+ coverage is the target for a package's pure/
+    # testable logic" — this is that exemption showing up in the number.
+    "vitals/internal/guide": 73,
     "vitals/internal/help": 86,
     "vitals/internal/llm": 53,
     "vitals/internal/mcp": 55,

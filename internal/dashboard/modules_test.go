@@ -85,12 +85,11 @@ func TestRenderGPUEmptyIsFriendly(t *testing.T) {
 
 func TestRenderAdviceShowsTheReply(t *testing.T) {
 	out := renderAdvice(PageContext{AdviceReply: "**Restart** the app."})
-	if !strings.Contains(out, "<strong>") && !strings.Contains(out, "<b>") {
-		// guide.RenderFragment renders inline bold as <b> today; assert on the
-		// plain text surviving regardless of which tag it picks.
+	if !strings.Contains(out, "<strong>Restart</strong>") {
+		t.Errorf("renderAdvice should render the reply's Markdown (guide.RenderFragment turns **x** into <strong>x</strong>), got: %s", out)
 	}
-	if !strings.Contains(out, "Restart") {
-		t.Errorf("renderAdvice should include the reply text, got: %s", out)
+	if !strings.Contains(out, "the app.") {
+		t.Errorf("renderAdvice should include the reply's plain text too, got: %s", out)
 	}
 }
 
