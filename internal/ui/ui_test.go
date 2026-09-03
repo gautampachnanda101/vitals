@@ -9,8 +9,12 @@ import (
 
 // captureStdout swaps both os.Stdout and os.Stderr for the duration of f
 // and returns everything written to either — Errf specifically writes to
-// stderr. Matches the pattern used across this codebase's other
-// print-directly packages (internal/monitor, internal/memcheck, ...).
+// stderr. The pipe is drained concurrently, not after f returns: Windows'
+// small default anonymous-pipe buffer deadlocks a synchronous write larger
+// than it (this bit main_test.go's guide/schema output, tens of KB, though
+// nothing in this package prints that much). Matches the pattern used
+// across this codebase's other print-directly packages (internal/monitor,
+// internal/memcheck, ...).
 func captureStdout(t *testing.T, f func()) string {
 	t.Helper()
 	oldOut, oldErr := os.Stdout, os.Stderr
@@ -19,11 +23,17 @@ func captureStdout(t *testing.T, f func()) string {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stdout, os.Stderr = w, w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
 	f()
 	w.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	out, _ := io.ReadAll(r)
-	return string(out)
+	return <-done
 }
 
 func TestHeaderPrintsTheTitleWithARuleUnderIt(t *testing.T) {

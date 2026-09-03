@@ -12,9 +12,12 @@ import (
 )
 
 // captureStdout swaps both os.Stdout and os.Stderr for the duration of f and
-// returns everything written to either. Matches the pattern used across this
-// codebase's other print-directly packages (internal/monitor, internal/ui,
-// ...).
+// returns everything written to either. The pipe is drained concurrently,
+// not after f returns — some of what run() prints (the embedded user guide,
+// the JSON Schema) is tens of KB, comfortably larger than the small
+// anonymous-pipe buffer Windows allocates by default, so writing it all
+// before anyone reads deadlocks there (it didn't surface on Linux/macOS,
+// whose pipe buffers are large enough to absorb it unread).
 func captureStdout(t *testing.T, f func()) string {
 	t.Helper()
 	oldOut, oldErr := os.Stdout, os.Stderr
@@ -23,11 +26,17 @@ func captureStdout(t *testing.T, f func()) string {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stdout, os.Stderr = w, w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
 	f()
 	w.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	out, _ := io.ReadAll(r)
-	return string(out)
+	return <-done
 }
 
 func TestApplyGlobalFlags(t *testing.T) {

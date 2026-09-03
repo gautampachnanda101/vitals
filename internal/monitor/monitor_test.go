@@ -16,7 +16,9 @@ import (
 // rather than building a string first (the same convention doctor.Run's
 // verdict-printing switch uses), and some of vitals' own print helpers
 // (ui.Errf) write to stderr specifically, so capturing stdout alone would
-// silently miss output a user would still see in their terminal.
+// silently miss output a user would still see in their terminal. Drained
+// concurrently, not after f returns — a synchronous write bigger than
+// Windows' small default pipe buffer deadlocks otherwise.
 func captureStdout(t *testing.T, f func()) string {
 	t.Helper()
 	oldOut, oldErr := os.Stdout, os.Stderr
@@ -25,11 +27,17 @@ func captureStdout(t *testing.T, f func()) string {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stdout, os.Stderr = w, w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
 	f()
 	w.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	out, _ := io.ReadAll(r)
-	return string(out)
+	return <-done
 }
 
 func TestBar(t *testing.T) {
