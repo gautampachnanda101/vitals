@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vitals — names the one thing slowing your machine down</title>
+<meta name="description" content="A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM diagnostics into one ranked verdict and the exact fix — for macOS, Linux and Windows.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fbfaf7; --surface:#fff; --surface-2:#f3f1ea; --ink:#1b1f23; --muted:#4b4e53; --line:#e3e1db;
+  --accent:#2b5d53; --accent-soft:#e2eeea;
+  --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14171a; --surface:#1b1f23; --surface-2:#1f242a; --ink:#e9eaea; --muted:#b4b9bd; --line:#2a2e33;
+  --accent:#6fbfa8; --accent-soft:#1b2b26;
+  --ok:#6fbfa8; --ok-bg:#1b2b26; --warn:#d9a441; --warn-bg:#362b18; --crit:#e2694a; --crit-bg:#3a241f; }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Inter,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wrap{max-width:880px;margin:0 auto;padding:0 1.5rem}
+h1,h2,h3{text-wrap:balance;font-weight:800;letter-spacing:-0.02em}
+h2{font-size:1.7rem;margin:0 0 .3rem}
+p{max-width:65ch}
+.eyebrow{font:600 .8rem/1 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+
+header.hero{padding:4.5rem 0 3.5rem;border-bottom:1px solid var(--line)}
+header.hero .wrap{display:flex;flex-direction:column;gap:1.1rem}
+header.hero h1{font-size:2.6rem;line-height:1.15;margin:0}
+header.hero p.lede{font-size:1.15rem;color:var(--muted);max-width:52ch;margin:0}
+.cta-row{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:.6rem}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.95rem;border:1px solid transparent}
+.btn.primary{background:var(--accent);color:var(--surface)}
+.btn.secondary{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.primary:hover{opacity:.9}
+.btn.secondary:hover{border-color:var(--accent);color:var(--accent)}
+
+.term{background:#14171a;color:#e9eaea;border-radius:10px;padding:1.1rem 1.3rem;font:.9rem/1.6 "JetBrains Mono",monospace;overflow-x:auto;margin-top:.5rem}
+.term .prompt{color:#6fbfa8}
+.term .crit{color:#e2694a;font-weight:700}
+.term .muted{color:#8a8f95}
+.term .warn-arrow{color:#d9a441}
+
+section{padding:3.2rem 0;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1.1rem;margin-top:1.6rem}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1.3rem}
+.card h3{font-size:1.02rem;margin:0 0 .4rem}
+.card p{margin:0;color:var(--muted);font-size:.92rem}
+.card .cmd{display:block;margin-top:.6rem;font-size:.82rem;color:var(--accent)}
+
+table{width:100%;border-collapse:collapse;margin-top:1.6rem;font-size:.92rem}
+th,td{text-align:left;padding:.65rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 .78rem/1 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+td.yes{color:var(--ok)}
+td.tool{font-weight:700;white-space:nowrap}
+.table-wrap{overflow-x:auto}
+.note{font-size:.85rem;color:var(--muted);margin-top:1rem}
+
+.install pre{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:.9rem 1.1rem;overflow-x:auto;font-size:.85rem;margin:.6rem 0 0}
+.install h3{font-size:1rem;margin:1.4rem 0 0}
+.install h3:first-of-type{margin-top:0}
+
+footer{padding:2.5rem 0 3.5rem;color:var(--muted);font-size:.88rem}
+footer a{color:var(--muted);text-decoration:underline}
+footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">vitals · v0.4.0 · macOS · Linux · Windows</span>
+    <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
+    <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
+    <div class="term" aria-label="Example output of vitals doctor">
+<span class="prompt">$</span> vitals doctor
+<span class="crit">● CRITICAL</span>   Memory is your bottleneck — not CPU
+             swap 91% full, paging out at 40 MB/s   <span class="muted">→ the machine is stalling on disk</span>
+  <span class="warn-arrow">→</span> free RAM now: <code>vitals memhogs</code> then quit the top consumers
+  <span class="warn-arrow">→</span> macOS: <code>sudo purge</code>
+  <span class="muted">exit 2</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn primary" href="#install">Install vitals</a>
+      <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals">View on GitHub</a>
+      <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals/blob/main/docs/user-guide.md">Read the user guide</a>
+    </div>
+  </div>
+</header>
+
+<section id="what">
+  <div class="wrap">
+    <span class="eyebrow">What it does</span>
+    <h2>One binary. Every resource. One verdict.</h2>
+    <p>vitals reads the same system data <code>htop</code>/<code>btop</code>, <code>ncdu</code> and <code>nvtop</code> already read — it doesn't replace them. What it adds is the layer above: correlating CPU, memory, swap, disk, network, power and GPU into a single ranked list of what's actually wrong, with a concrete fix for each finding, not just a number.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Cross-resource correlation</h3>
+        <p>High CPU that's really disk I/O wait. Swap thrashing vs. reclaimable cache. A single-threaded bottleneck vs. one that needs more cores.</p>
+        <span class="cmd">vitals doctor</span>
+      </div>
+      <div class="card">
+        <h3>Local &amp; cloud LLM insight</h3>
+        <p>Per-model GPU VRAM offload percentage for Ollama, LM Studio, llama.cpp and vLLM — plus reachability across 11 open-API cloud providers, only probed when you've set the key.</p>
+        <span class="cmd">vitals llm · vitals llm fit &lt;model&gt;</span>
+      </div>
+      <div class="card">
+        <h3>A browsable dashboard</h3>
+        <p>The same correlation as local, loopback-only web pages — one per resource, opens your browser automatically. Nothing leaves your machine.</p>
+        <span class="cmd">vitals dashboard</span>
+      </div>
+      <div class="card">
+        <h3>Safe disk cleanup</h3>
+        <p>Cross-platform cache/log/temp cleanup and byte-identical duplicate detection — always <code>--dry-run</code> first, never deletes without confirmation.</p>
+        <span class="cmd">vitals clean --dry-run · vitals dupes</span>
+      </div>
+      <div class="card">
+        <h3>Scriptable by design</h3>
+        <p>Exit codes (0/1/2) for CI and cron, <code>--json</code> with a versioned schema, a Prometheus exporter, and an MCP server for AI coding assistants.</p>
+        <span class="cmd">vitals doctor --json | jq</span>
+      </div>
+      <div class="card">
+        <h3>No phone-home, one dependency</h3>
+        <p>A single Go module dependency (gopsutil) in the whole build. No telemetry, no accounts, no network calls unless you point it at an LLM endpoint yourself.</p>
+        <span class="cmd">go build -o vitals .</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <span class="eyebrow">How it fits alongside what you already use</span>
+    <h2>Complements, not a replacement</h2>
+    <p>Each of these tools does one job well. vitals doesn't try to out-gauge them — it adds the correlation and remediation layer none of them provide on their own.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Tool</th><th>What it's for</th><th>What vitals adds</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="tool">htop / btop</td>
+            <td>Live per-process CPU, memory and load, interactively.</td>
+            <td class="yes">Explains <em>why</em> a number is high (I/O wait vs. real compute) and what to do about it.</td>
+          </tr>
+          <tr>
+            <td class="tool">ncdu / gdu / dust</td>
+            <td>Interactive disk-usage browsing, directory by directory.</td>
+            <td class="yes">A one-line disk verdict correlated with the rest of the machine, plus safe automated cleanup and duplicate detection.</td>
+          </tr>
+          <tr>
+            <td class="tool">nvtop</td>
+            <td>Live GPU utilization and VRAM per process.</td>
+            <td class="yes">Per-model LLM offload percentage specifically, and whether a model is silently running CPU-only.</td>
+          </tr>
+          <tr>
+            <td class="tool">glances</td>
+            <td>A single-screen overview of most system metrics at once.</td>
+            <td class="yes">A ranked verdict instead of a dashboard of numbers, plus JSON/Prometheus output and exit codes for automation.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">This table describes each tool's own core purpose as of vitals v0.4.0 — check each project's own docs for its current full feature set.</p>
+  </div>
+</section>
+
+<section id="install" class="install">
+  <div class="wrap">
+    <span class="eyebrow">Install</span>
+    <h2>Get started</h2>
+
+    <h3>macOS / Linux</h3>
+    <pre><code>brew install gautampachnanda101/tap/vitals
+# or, without Homebrew:
+curl -fsSL https://raw.githubusercontent.com/gautampachnanda101/vitals/main/install.sh | sh</code></pre>
+
+    <h3>Windows</h3>
+    <pre><code>scoop bucket add gautampachnanda101 https://github.com/gautampachnanda101/scoop-bucket
+scoop install vitals</code></pre>
+
+    <h3>Direct download</h3>
+    <p>Grab a tarball from the <a href="https://github.com/gautampachnanda101/vitals/releases/latest">latest release</a> — prebuilt for linux/darwin/windows, amd64 and arm64.</p>
+
+    <h3>From source</h3>
+    <pre><code>go build -o vitals .   # Go 1.27+</code></pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>MIT licensed. Built as a single Go binary — no telemetry, no accounts.</p>
+    <div class="links">
+      <a href="https://github.com/gautampachnanda101/vitals">GitHub repo</a>
+      <a href="https://github.com/gautampachnanda101/vitals/blob/main/docs/user-guide.md">User guide</a>
+      <a href="https://github.com/gautampachnanda101/vitals/issues/new/choose">Report an issue</a>
+      <a href="https://github.com/gautampachnanda101/vitals/blob/main/CONTRIBUTING.md">Contributing</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
