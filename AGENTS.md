@@ -209,46 +209,43 @@ to exist *before* implementation starts on anything non-trivial; the
 - **TDD for new logic**: write the failing test, confirm it fails for the
   right reason, then implement. This repo's test suite was built this way;
   keep doing it rather than writing tests after the fact.
-- **Pure functions get unit tests. Live loops don't** — `--watch` loops,
-  `exec.Command` wrappers, and HTTP servers (`guide.Serve`, `metrics.Serve`)
-  are thin and untested directly; the logic they call (parsers, formatters,
-  request builders) is tested instead. Don't try to unit-test a `signal.
-  NotifyContext` loop; extract the interesting part and test that.
-- **95%+ coverage of a package's pure/testable logic is a hard rule, not
-  an aspiration.** Confirmed explicitly by the user (2026-09-03) after a
-  coverage audit showed only 2 of 19 packages actually cleared it. This
-  isn't arbitrary: a disk-table column misalignment and `advice` dumping
-  raw Markdown to the terminal both shipped through a passing CI run, and
-  both lived in exactly the kind of formatting code that's trivial to
-  unit test once you look — capture stdout/stderr with `os.Pipe` (see
-  `internal/monitor/monitor_test.go`'s `captureStdout`) rather than
-  assuming a `fmt.Printf`-heavy function can't be tested.
-  - **What "hard rule" means in practice**: any package you create or
-    touch must be at 95%+ (or demonstrably as close as its live-glue
-    fraction allows) before the task touching it is done — not "higher
-    than before," 95%+ specifically. If a package is nowhere near that
-    when you arrive, don't shrug and move on: extract more pure logic out
-    of the live glue first (the way `withDiskHistory`,
-    `internal/dashboard`'s `Prepare` hook, and `advice.Generate` did this
-    session), then test the extracted piece. A package's *reducible*
-    live-glue surface should end up small, not be used as a blanket
-    excuse for the whole package staying low.
-  - **What's still genuinely exempt**: a blocking server loop
-    (`signal.NotifyContext`, `http.Server.Serve`), an OS browser-launch
-    command, `main`'s `os.Exit`-driven dispatch — validated by the CLI
-    smoke test and httptest fakes instead of unit tests. The exemption
-    covers the specific irreducible live call, never the formatting/
-    parsing/decision logic sitting next to it.
-  - **Status (2026-09-03, roadmap item 006, now Done)**: every package
-    has been brought to 95%+ or given a documented live-glue ceiling in
-    `check_coverage.py` — including `main`, where the dispatch switch was
-    extracted into a testable `run(argv []string, version string) int`
-    (`main()` is now just `os.Exit(run(...))`), taking it from 3.3% to
-    42.2% with the remaining gap being each subcommand's genuinely live
-    `Run`/`RunFocus` call. See `docs/roadmap/items/006-coverage-hardening/`
-    for the per-package rationale. New/touched code still meets the bar
-    going forward; floors ratchet up as real coverage improves, never
-    down.
+- **95%+ raw coverage of every package is a hard rule, with no live-glue
+  exemption.** (Re-confirmed explicitly by the user, 2026-09-04, after
+  challenging an earlier version of this rule that scoped the 95% target
+  to a package's "pure/testable logic" only — that scoping could not be
+  traced to any verbatim record of the user actually asking for it; it
+  was an agent's own framing, written into this file and described as
+  "confirmed by the user" without a quote to back it up. Given the
+  choice — keep the pure-logic scope, or require 95%+ raw coverage of
+  everything including what was previously called "live glue" — the
+  user chose the latter, explicitly and by name, so that is now the
+  rule, full stop.)
+  - This means `exec.Command` wrappers, OS/network reads (gopsutil
+    calls, `/proc` reads), `--watch`/`signal.NotifyContext` loops, and
+    HTTP servers (`guide.Serve`, `metrics.Serve`) are **not** exempt
+    anymore — they need to become genuinely testable, typically by
+    injecting the live call (a function value, an interface, a small
+    "runner" abstraction) so a test can substitute a fake and exercise
+    the surrounding logic and the call site itself. `main`'s
+    `os.Exit`-driven dispatch is the one thing that cannot be unit
+    tested even in principle (the process exits) — everything else is a
+    "how do we make this injectable," not a "this can never be tested."
+  - **Status (2026-09-04)**: not yet met. A coverage run the same day
+    this rule was re-confirmed showed roughly 14 of 19 packages well
+    below 95% raw (`internal/memcheck` 33.3%, `internal/monitor` 41.2%,
+    `main` 40.9%, `internal/advice` 37.0%, `internal/tools` 44.6%,
+    `internal/gpu`/`internal/doctor` ~54-55%, `internal/llm` 62.6%,
+    `internal/clean` 67.9%, `internal/dupes`/`internal/mcp` ~68%,
+    `internal/guide` 72.0%, `internal/metrics` 75.2%). Tracked as its
+    own roadmap item — see `docs/roadmap/items/` for the current one —
+    with a per-package task list for what specifically needs to become
+    injectable/fakeable. `check_coverage.py`'s floors stay at each
+    package's own already-measured number until real work raises it;
+    do not bulk-raise a floor to 95% before the tests exist to support
+    it, since that would just break every future commit until someone
+    does the work — floors ratchet up alongside real coverage gains,
+    same discipline as before, just against the new 95%-raw target
+    instead of a pure-logic-scoped one.
 - **Coverage floors are per package, not blended.** `check_coverage.py`
   (run automatically in CI, `make coverage` locally) enforces a floor per
   package instead of one number over `./...` — a blended floor lets a

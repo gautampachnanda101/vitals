@@ -8,13 +8,18 @@ ANSI/padding bug, `advice` dumping raw Markdown to the terminal) shipped
 through a passing CI run. This enforces a floor per package instead.
 
 Floors below are each package's own measured coverage at the time they were
-set (rounded down), so today's numbers can never silently regress. Packages
-whose logic is genuinely pure (already tested from fixtures, no live OS/
-network/subprocess calls) should keep climbing toward 95%+; packages
-dominated by live glue code (exec.Command wrappers, network probes, watch
-loops, main's os.Exit-driven dispatch) are validated by other means instead
-(the CLI smoke test, httptest fakes) and are not expected to hit that bar by
-adding mocks for their own sake — see AGENTS.md's Testing conventions.
+set (rounded down), so today's numbers can never silently regress and only
+ever ratchet up as real coverage improves.
+
+The target is 95%+ raw coverage for every package, no exemption for live
+glue (exec.Command wrappers, network probes, watch loops, OS reads) — see
+AGENTS.md's "Testing conventions" (re-confirmed 2026-09-04 after an earlier
+version of this rule scoped 95% to "pure/testable logic" only, a carve-out
+that could not be traced to anything the user actually asked for). Most
+floors below still reflect the pre-2026-09-04 pure-logic-scoped baseline,
+not yet the raw-95% target — see docs/roadmap/items/ for the tracked,
+per-package work to close that gap. Do not read a floor below 95% as "this
+package is fine as-is."
 
 Usage: go test -coverprofile=coverage.out ./... && python3 check_coverage.py coverage.out
 """

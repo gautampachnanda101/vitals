@@ -244,3 +244,100 @@ spec (what preview shows, per-category exclusion, partial-failure
 display); a preview→apply single-use token as defense-in-depth
 (recommended by the security reviewer, not required — the same-origin
 check is the real boundary here, per §4 above).
+
+By 2026-09-03, `/clean/preview` (backend + button, commits `7265006`,
+`c2dd226`) is the only one of these actually shipped — see
+`implementation-plan.md` for exact status. `/clean/apply` itself is
+still pending the security-focused review §4 originally scoped for it
+("A security-focused review... signs off on the CSRF/auth model
+specifically, before any write route ships" — the exit criteria was met
+for the CSRF/`WriteAction` foundation itself, but a real *mutating*
+route is new risk surface the panel never evaluated). §7 below is that
+design, submitted for exactly that review before implementation.
+
+## 7. `/clean/apply` design (pending its own security review)
+
+Extends §4 with the concrete decisions needed to actually implement it.
+
+**Endpoint**: `POST /clean/apply`, registered as a second `WriteAction`
+alongside `/clean/preview` in `internal/dashboard/modules_clean.go`.
+Routed through the same `sameOriginOnly` protection every write action
+gets — no new middleware.
+
+**Request**: body must be exactly `{"confirm": true}` (parsed with
+`encoding/json`, a fixed struct, not a generic map — an unknown extra
+field is ignored, not rejected, matching `encoding/json`'s default and
+avoiding a brittle strict-schema requirement for a single boolean).
+Anything else — missing body, `{"confirm": false}`, malformed JSON, a
+body over `maxWriteActionBody` — is rejected with `400` *before*
+`clean.Apply` is ever called. This mirrors the CLI's own `--yes`/`-y`
+bar (a deliberate, hard-to-mistype confirmation) rather than inventing
+a stricter web-only requirement: the same-origin check is what actually
+defends against an unintended trigger from a hostile page; `confirm`
+defends against a client-side bug (e.g. a button wired to the wrong
+handler) more than an attacker, exactly as reasoned in §4.
+
+**Single-flight guard**: a package-level guard in
+`internal/dashboard/modules_clean.go`, shaped like
+`prepareAdviceCache`'s (`internal/dashboard/modules_advice.go`) but
+simpler — no TTL/caching semantics are wanted here (a second apply
+*should* eventually be allowed to run, just never concurrently with a
+first one still in flight):
+
+```go
+var cleanApplyMu sync.Mutex
+
+func handleCleanApply(_ PageContext, body []byte) (int, string) {
+	var req struct{ Confirm bool `json:"confirm"` }
+	if json.Unmarshal(body, &req) != nil || !req.Confirm {
+		return http.StatusBadRequest, `{"error":"confirm must be true"}`
+	}
+	if !cleanApplyMu.TryLock() {
+		return http.StatusConflict, `{"error":"a clean is already running"}`
+	}
+	defer cleanApplyMu.Unlock()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return http.StatusInternalServerError, `{"error":"cannot determine home directory"}`
+	}
+	result := clean.Apply(home, clean.Options{Assume: true})
+	return http.StatusOK, renderCleanApplyResult(result)
+}
+```
+
+`sync.Mutex.TryLock` (stdlib since Go 1.18, already vitals' Go version
+floor) is enough — no channel/semaphore machinery needed for "reject a
+second concurrent caller outright" rather than "make it wait." A
+concurrent request during a real apply is exactly the failure mode a
+double-click or two open browser tabs would produce; `409 Conflict` is
+the correct HTTP semantics for "the request conflicts with the current
+state of the resource" (RFC 9110 §15.5.10) and needs no new status-code
+convention in this codebase.
+
+**Response**: `renderCleanApplyResult(result clean.Result) string`
+mirrors `renderCleanPreview` exactly — `html/template`, a `.card`
+showing `result.FreedBytes` (humanized) and each `result.Records` entry
+as a `row()`-shaped line, plus a `partial`-style note if a record's
+`Bytes` came back lower than what preview measured for the same path
+(informational only; `clean.Apply`'s existing accounting, verified
+earlier this session not to over-count on a real partial failure,
+already handles the underlying correctness — this is purely a
+proof: the person clicking Apply sees *what actually happened*, not
+just a bare "done").
+
+**Client-side UX** (extends `modules_clean.go`'s existing script): an
+"Apply" button appears only after a preview response has rendered
+(`out.innerHTML` being non-empty is enough of a signal — no separate
+state variable needed since the DOM already carries it), and is
+disabled again for the duration of its own in-flight request the same
+way "Preview" already is. Not enforced server-side beyond `confirm`
+(per §4) — this is UX sequencing, not a security control.
+
+**Preview→apply single-use token**: still not implemented, per the
+original open question — `sameOriginOnly` is the real boundary, and a
+token would add server-side state (today there is none at all) for a
+threat this codebase's own model (§1) already excludes: a legitimate
+same-machine, same-origin caller replaying a request is the user's own
+action, not an attacker's. Flagged again here explicitly so this
+review pass can either close the question or override it.
