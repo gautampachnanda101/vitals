@@ -3,6 +3,13 @@ site_description: 'A single static binary that names the one resource constraini
 repo_url: 'https://github.com/gautampachnanda101/vitals'
 
 docs_dir: docs
+# mkdocs' own default output dir is "site/" (relative to this file, i.e.
+# the repo root) — which would silently collide with and overwrite
+# site/index.html, the real public product page (roadmap item 003),
+# built and deployed by a completely separate pipeline
+# (.github/workflows/pages.yml). Redirect TechDocs' build output
+# elsewhere so `mkdocs build` can never touch that directory.
+site_dir: .mkdocs-build
 
 nav:
   - Home: index.md

@@ -1,19 +1,34 @@
 # Build output
 /vitals
+/vitals.exe
 /dist/
-*.exe
-*.test
-*.out
-coverage.txt
 
 # Go
 /vendor/
+*.test
+*.out
+coverage.txt
+coverage.out
+
+# TechDocs (mkdocs) build output — see mkdocs.yml's site_dir comment;
+# deliberately not named "site/", which is the real, tracked public
+# product page (roadmap item 003), not a build artifact.
+/.mkdocs-build/
+
+# Python (check_coverage.py / check_docs.py have no dependencies, but a
+# local venv or bytecode cache can still show up if one is ever created)
+__pycache__/
+*.pyc
+.venv/
+venv/
 
 # Editor / OS
 .DS_Store
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # Claude Code session-local runtime state (keep .claude/skills/ tracked)
 .claude/*.lock
