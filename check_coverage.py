@@ -27,7 +27,16 @@ FLOORS = {
     # already-100%-covered Generate, then print/JSON-encode) — nothing
     # left to extract without testing doctor.Assess itself.
     "vitals/internal/advice": 39,
-    "vitals/internal/clean": 41,
+    # clean: this package's whole job is filesystem/subprocess I/O, so
+    # Run/confirm/freeSpace/cleanDevCaches/cleanLinux/cleanMacOS/
+    # cleanWindows/ReclaimableSummary/optional and the clean_history.jsonl
+    # path/read/write wrappers (cleanHistoryPath/History/recordRun, same
+    # shape as internal/doctor's disk_history.json ones) are the
+    # irreducible live majority. Every pure decision function
+    # (devCacheDirs, osCacheDirs, freeSpaceRoot, withSudo-style OS/env
+    # parameterization, appendCleanHistoryTo, renderCleanHistory, plural)
+    # is at or near 100%.
+    "vitals/internal/clean": 50,
     "vitals/internal/config": 80,
     "vitals/internal/dashboard": 98,
     "vitals/internal/diag": 96,

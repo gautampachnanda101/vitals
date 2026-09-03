@@ -42,9 +42,18 @@ expected.
       provider reachable) was untested; now 100%. `Run` (0%) is thin live
       glue over `doctor.Assess` + the now-fully-tested `Generate` —
       nothing left to extract.
-- [ ] `internal/clean` (41.0%) — real filesystem operations dominate;
-      look for pure decision logic (what counts as a cache dir, size
-      thresholds) separable from the actual `os.Remove` calls.
+- [x] `internal/clean` (41.0% -> 50.2%) — `osCacheDirs` and `withSudo`'s
+      sibling pattern applied again: `freeSpaceRoot`/`osCacheDirs` now
+      take `goos`/`systemRoot` as parameters instead of reading
+      `runtime.GOOS`/`os.Getenv` directly, making their Windows/darwin
+      branches testable on Linux CI (one exception, documented in a test
+      comment: the exact Windows drive-letter extraction depends on
+      `filepath.VolumeName`'s own OS-aware stdlib behavior and can only
+      be verified on a real Windows host). `devCacheDirs`, `plural`, and
+      `renderCleanHistory`'s location-count branch were fully untested
+      before, now 100%. Remaining 0%/low functions are genuinely live —
+      this package's whole job is filesystem/subprocess I/O — documented
+      inline in `check_coverage.py`.
 - [ ] `internal/gpu` (46.9%) — `Probe`'s subprocess calls are exempt; the
       output *parsers* (`parseNvidiaSMI` etc., per memory of this
       package's design) should already be near 100% pure-tested — verify,

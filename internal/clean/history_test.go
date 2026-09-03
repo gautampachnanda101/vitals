@@ -89,6 +89,32 @@ func TestRenderCleanHistoryListsRunsNewestFirst(t *testing.T) {
 	}
 }
 
+func TestRenderCleanHistoryShowsLocationCountWhenPurgesArePresent(t *testing.T) {
+	records := []RunRecord{
+		{Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), TotalBytes: 100, Purges: []PurgeRecord{{Dir: "/a"}}},
+		{Time: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), TotalBytes: 200, Purges: []PurgeRecord{{Dir: "/a"}, {Dir: "/b"}}},
+	}
+	out := renderCleanHistory(records)
+	if !strings.Contains(out, "1 location)") {
+		t.Errorf("singular location count wrong, got:\n%s", out)
+	}
+	if !strings.Contains(out, "2 locations)") {
+		t.Errorf("plural location count wrong, got:\n%s", out)
+	}
+}
+
+func TestPlural(t *testing.T) {
+	if got := plural(1); got != "" {
+		t.Errorf("plural(1) = %q, want empty", got)
+	}
+	if got := plural(2); got != "s" {
+		t.Errorf("plural(2) = %q, want \"s\"", got)
+	}
+	if got := plural(0); got != "s" {
+		t.Errorf("plural(0) = %q, want \"s\" (zero is plural)", got)
+	}
+}
+
 func TestRenderCleanHistoryEmptyIsFriendly(t *testing.T) {
 	out := renderCleanHistory(nil)
 	if !strings.Contains(out, "no") {

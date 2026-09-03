@@ -124,15 +124,24 @@ func confirm() bool {
 	return ans == "y" || ans == "yes"
 }
 
-func freeSpace() int64 {
-	root := "/"
-	if runtime.GOOS == "windows" {
-		root = filepath.VolumeName(os.Getenv("SystemRoot")) + `\`
-		if root == `\` {
-			root = `C:\`
-		}
+// freeSpaceRoot picks which volume/mount freeSpace measures — pulled out
+// as a pure function of (goos, systemRoot) so both branches are testable
+// without depending on which OS actually runs the test (the coverage
+// gate only ever runs on Linux CI, so a Windows-only branch would
+// otherwise never be exercised there regardless of the test matrix).
+func freeSpaceRoot(goos, systemRoot string) string {
+	if goos != "windows" {
+		return "/"
 	}
-	u, err := disk.Usage(root)
+	root := filepath.VolumeName(systemRoot) + `\`
+	if root == `\` {
+		root = `C:\`
+	}
+	return root
+}
+
+func freeSpace() int64 {
+	u, err := disk.Usage(freeSpaceRoot(runtime.GOOS, os.Getenv("SystemRoot")))
 	if err != nil {
 		return 0
 	}
@@ -158,8 +167,10 @@ func devCacheDirs(home string) []string {
 
 // osCacheDirs are the OS-specific cache/log/temp locations cleaned by
 // cleanLinux/cleanMacOS/cleanWindows. Shared with ReclaimableSummary.
-func osCacheDirs(home string) []string {
-	switch runtime.GOOS {
+// goos is a parameter (not read from runtime.GOOS directly) for the same
+// testability reason as freeSpaceRoot/withSudo — see their comments.
+func osCacheDirs(goos, home string) []string {
+	switch goos {
 	case "linux":
 		return []string{"/var/tmp", "/tmp"}
 	case "darwin":
@@ -217,14 +228,14 @@ func (r *runner) cleanLinux() {
 	r.optional("pacman", "-Scc", "--noconfirm")
 	r.optional("journalctl", "--vacuum-time=7d")
 	r.optional("flatpak", "uninstall", "--unused", "-y")
-	for _, d := range osCacheDirs(r.home) {
+	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
 		r.purgeContents(d)
 	}
 }
 
 func (r *runner) cleanMacOS() {
 	ui.Infof("macOS caches, logs & trash")
-	for _, d := range osCacheDirs(r.home) {
+	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
 		r.purgeContents(d)
 	}
 	r.optional("brew", "cleanup", "-s")
@@ -233,7 +244,7 @@ func (r *runner) cleanMacOS() {
 
 func (r *runner) cleanWindows() {
 	ui.Infof("windows temp & component store")
-	for _, d := range osCacheDirs(r.home) {
+	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
 		r.purgeContents(d)
 	}
 	if sr := os.Getenv("SystemRoot"); sr != "" {
@@ -267,7 +278,7 @@ func ReclaimableSummary(budget time.Duration) (entries []CacheEntry, complete bo
 	if err != nil {
 		return nil, false
 	}
-	dirs := append(devCacheDirs(home), osCacheDirs(home)...)
+	dirs := append(devCacheDirs(home), osCacheDirs(runtime.GOOS, home)...)
 	return measureDirs(dirs, budget)
 }
 

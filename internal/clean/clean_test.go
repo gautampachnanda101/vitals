@@ -3,6 +3,7 @@ package clean
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,6 +24,94 @@ func mktree(t *testing.T) string {
 	write(filepath.Join("a", "f2"), 200)
 	write(filepath.Join("a", "b", "f3"), 300)
 	return d
+}
+
+func TestDevCacheDirsAreUnderHome(t *testing.T) {
+	dirs := devCacheDirs("/home/x")
+	if len(dirs) == 0 {
+		t.Fatal("devCacheDirs returned nothing")
+	}
+	for _, d := range dirs {
+		if !strings.HasPrefix(d, "/home/x") {
+			t.Errorf("devCacheDirs entry %q is not under the given home", d)
+		}
+	}
+}
+
+func TestOSCacheDirsPerPlatform(t *testing.T) {
+	if got := osCacheDirs("linux", "/home/x"); len(got) == 0 {
+		t.Error("osCacheDirs(linux, ...) returned nothing")
+	}
+	darwin := osCacheDirs("darwin", "/Users/x")
+	if len(darwin) == 0 {
+		t.Fatal("osCacheDirs(darwin, ...) returned nothing")
+	}
+	for _, d := range darwin {
+		if !strings.HasPrefix(d, "/Users/x") {
+			t.Errorf("osCacheDirs(darwin) entry %q is not under home", d)
+		}
+	}
+	if got := osCacheDirs("plan9", "/home/x"); got != nil {
+		t.Errorf("osCacheDirs(unknown goos) = %v, want nil", got)
+	}
+}
+
+func TestOSCacheDirsWindowsUsesEnvVars(t *testing.T) {
+	t.Setenv("TEMP", `C:\Users\x\Temp`)
+	t.Setenv("TMP", "")
+	t.Setenv("LOCALAPPDATA", "")
+	got := osCacheDirs("windows", `C:\Users\x`)
+	if len(got) != 1 || got[0] != `C:\Users\x\Temp` {
+		t.Errorf("osCacheDirs(windows, ...) = %v, want just $TEMP with LOCALAPPDATA unset", got)
+	}
+}
+
+func TestOSCacheDirsWindowsIncludesAppCachesWhenLocalAppDataIsSet(t *testing.T) {
+	t.Setenv("TEMP", "")
+	t.Setenv("TMP", "")
+	t.Setenv("LOCALAPPDATA", `C:\Users\x\AppData\Local`)
+	got := osCacheDirs("windows", `C:\Users\x`)
+	if len(got) < 5 {
+		t.Fatalf("osCacheDirs(windows, LOCALAPPDATA set) = %v, want the Chrome/Edge/INetCache/Explorer/Temp entries", got)
+	}
+	joined := strings.Join(got, "|")
+	for _, want := range []string{"Chrome", "Edge", "INetCache", "Explorer"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("osCacheDirs(windows, LOCALAPPDATA set) missing %q entry, got: %v", want, got)
+		}
+	}
+}
+
+func TestOSCacheDirsWindowsWithNoEnvVarsSetIsEmpty(t *testing.T) {
+	t.Setenv("TEMP", "")
+	t.Setenv("TMP", "")
+	t.Setenv("LOCALAPPDATA", "")
+	if got := osCacheDirs("windows", `C:\Users\x`); got != nil {
+		t.Errorf("osCacheDirs(windows, no env vars) = %v, want nil", got)
+	}
+}
+
+func TestFreeSpaceRootIsSlashOnUnix(t *testing.T) {
+	if got := freeSpaceRoot("linux", ""); got != "/" {
+		t.Errorf("freeSpaceRoot(linux) = %q, want /", got)
+	}
+	if got := freeSpaceRoot("darwin", ""); got != "/" {
+		t.Errorf("freeSpaceRoot(darwin) = %q, want /", got)
+	}
+}
+
+// There is deliberately no test asserting freeSpaceRoot("windows",
+// `D:\Windows`) == `D:\` — filepath.VolumeName is itself platform-aware
+// in the Go standard library (it only parses a drive letter when actually
+// running on Windows; elsewhere it always returns ""), so that specific
+// branch can only be verified running on a real Windows host, not on the
+// Linux CI job the coverage gate runs on. The two branches below don't
+// depend on that OS-specific stdlib behavior and are fully portable.
+
+func TestFreeSpaceRootOnWindowsFallsBackToCWhenSystemRootUnset(t *testing.T) {
+	if got := freeSpaceRoot("windows", ""); got != `C:\` {
+		t.Errorf("freeSpaceRoot(windows, \"\") = %q, want C:\\ as a fallback", got)
+	}
 }
 
 func TestTreeStat(t *testing.T) {
