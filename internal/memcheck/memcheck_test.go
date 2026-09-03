@@ -66,6 +66,15 @@ func TestVerdictPrintsEachSeverityLine(t *testing.T) {
 			sw:      &mem.SwapMemoryStat{Total: 8 << 30, UsedPercent: 91},
 			wantAll: []string{"RAM near capacity", "Swap nearly exhausted", "vitals memhogs", "sudo purge"},
 		},
+		{
+			// The healthy and critical cases above never exercise
+			// verdict's diag.Warn branch (ui.Warnf) — only OK and
+			// Critical severities were hit.
+			name:    "warning prints its fixes too",
+			vm:      &mem.VirtualMemoryStat{UsedPercent: 80},
+			sw:      &mem.SwapMemoryStat{Total: 8 << 30, UsedPercent: 20},
+			wantAll: []string{"RAM elevated", "Swap in use", "close idle apps"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

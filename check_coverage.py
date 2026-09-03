@@ -42,7 +42,12 @@ FLOORS = {
     "vitals/internal/help": 86,
     "vitals/internal/llm": 53,
     "vitals/internal/mcp": 55,
-    "vitals/internal/memcheck": 32,
+    # memcheck: Run is the only untested function — four live gopsutil
+    # calls (host.Info, mem.VirtualMemory/SwapMemory/SwapDevices) feeding
+    # already-100%-covered pure functions (memVerdict, verdict, printIf),
+    # the same Collect-then-Analyze shape as internal/doctor. Nothing left
+    # to extract without testing gopsutil itself.
+    "vitals/internal/memcheck": 33,
     "vitals/internal/memhogs": 53,
     "vitals/internal/metrics": 73,
     "vitals/internal/monitor": 34,

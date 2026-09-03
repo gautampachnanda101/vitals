@@ -23,9 +23,13 @@ expected.
       (`Installed`, `detectManager`, `Run`, `List`, `Install`, `Launch`,
       `confirm`) are genuinely live (subprocess exec, real PATH/stdin) —
       documented inline in `check_coverage.py`.
-- [ ] `internal/memcheck` (32.3%) — `Run`'s live gopsutil calls stay
-      exempt; check whether more of its formatting can follow the
-      `internal/monitor` pattern from item 001.
+- [x] `internal/memcheck` (32.3% -> 33.3%) — small bump: added the
+      missing `diag.Warn`-severity case to `TestVerdictPrintsEachSeverityLine`
+      (only OK and Critical were exercised before), bringing `verdict` to
+      100%. `printIf`/`memVerdict` were already 100%. `Run` (0%) is
+      genuinely all live gopsutil calls feeding already-tested pure
+      functions — the same Collect-then-Analyze shape as `internal/doctor`,
+      nothing left to extract.
 - [ ] `internal/monitor` (34.2%) — already raised once this session
       (15.5%→34.2%); `sample`/`topProcesses`/`readDiskCounters`/
       `readNetCounters` are the live core and likely stay exempt, but
