@@ -3,11 +3,13 @@
 [docs](../../../index.md) / [Roadmap](../../index.md) / **005 — Dashboard write actions**
 
 **Implementation plan**: [what's left →](implementation-plan.md)
+**Design**: [same-origin/CSRF model + WriteAction shape →](design.md) —
+drafted, pending its own review-panel pass before implementation starts
 
-**Status**: Not started
+**Status**: Not started — design drafted, awaiting review
 **Depends on**: [001](../001-dashboard-foundation/), [002](../002-dashboard-mvp/), [004](../004-native-launcher/)
 **Target release**: v0.7.0+
-**Architecture**: [design doc](../../../architecture/design.md) §6.5, §6.7
+**Architecture**: [design doc](../../../architecture/design.md) §6.5, §6.7; this item's own [design.md](design.md)
 
 ## What
 
