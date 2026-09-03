@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest a new command, flag, or piece of diagnostic insight
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to diagnose or fix that vitals can't help with today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A new command, a flag on an existing one, a new `doctor` finding, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing tools or workarounds you've tried instead
