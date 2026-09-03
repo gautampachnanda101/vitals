@@ -60,6 +60,12 @@ func TestDashboardSmoke(t *testing.T) {
 	// asserting on the LLM-unreachable note specifically.
 	assertRoute(t, url, "advice", http.StatusOK, "rule-based checks found")
 	assertRoute(t, url, "nope-does-not-exist", http.StatusNotFound, "")
+	// Exercises the actual write-action HTTP path end to end, not just
+	// routeWrite in isolation: a real bug shipped where Serve's handler
+	// never dispatched POST to routeWrite at all (every POST silently
+	// fell through to the GET route and 404'd), invisible to any test
+	// that only called routeWrite directly.
+	assertPostRoute(t, url, "clean/preview", http.StatusOK, "Would reclaim")
 	assertHistoryWasRecorded(t, scratch)
 
 	assertGracefulShutdown(t, cmd)
@@ -144,6 +150,26 @@ func assertRoute(t *testing.T, base, path string, wantStatus int, wantBodyContai
 	}
 	if wantBodyContains != "" && !strings.Contains(string(body), wantBodyContains) {
 		t.Errorf("GET %s%s body missing %q:\n%s", base, path, wantBodyContains, body)
+	}
+}
+
+// assertPostRoute mirrors assertRoute for a write action — no Origin
+// header set, matching a same-machine caller (e.g. curl), which
+// guide.ServeLocal's sameOriginOnly middleware allows through.
+func assertPostRoute(t *testing.T, base, path string, wantStatus int, wantBodyContains string) {
+	t.Helper()
+	resp, err := http.Post(base+path, "application/json", nil)
+	if err != nil {
+		t.Errorf("POST %s%s: %v", base, path, err)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Errorf("POST %s%s = %d, want %d:\n%s", base, path, resp.StatusCode, wantStatus, body)
+	}
+	if wantBodyContains != "" && !strings.Contains(string(body), wantBodyContains) {
+		t.Errorf("POST %s%s body missing %q:\n%s", base, path, wantBodyContains, body)
 	}
 }
 

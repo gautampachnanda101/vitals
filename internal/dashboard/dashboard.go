@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -17,6 +18,12 @@ type Options struct {
 	OllamaURL string
 	Version   string // main.version, shown in the page footer
 }
+
+// maxWriteActionBody caps how much of a POST body Serve reads before
+// handing it to routeWrite — a write action's own body is a small JSON
+// confirmation, never a file upload, so there's no reason to let a
+// caller hand this an unbounded read.
+const maxWriteActionBody = 1 << 20 // 1 MiB
 
 // Serve starts `vitals dashboard`: a shared, TTL-cached snapshot (see
 // snapshot_cache.go) feeds every request's PageContext, routed by URL path
@@ -43,7 +50,18 @@ func Serve(opts Options) error {
 			LLMOpts:   llmOpts,
 			Version:   opts.Version,
 		}
-		status, body := route(r.URL.Path, ctx)
+
+		var status int
+		var body string
+		if r.Method == http.MethodPost {
+			// guide.ServeLocal's sameOriginOnly middleware has already
+			// rejected any cross-origin POST before this handler ever
+			// runs — see internal/guide/serve.go.
+			b, _ := io.ReadAll(io.LimitReader(r.Body, maxWriteActionBody))
+			status, body = routeWrite(r.URL.Path, b, ctx)
+		} else {
+			status, body = route(r.URL.Path, ctx)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
