@@ -8,6 +8,28 @@ import (
 	"vitals/internal/doctor"
 )
 
+func TestRenderIncludesStealWhenPresentAndLabelsAnUnnamedGPU(t *testing.T) {
+	s := doctor.Snapshot{
+		CPU:  doctor.CPU{Cores: 4, UsedPct: 10, StealPct: 5},
+		GPUs: []doctor.GPU{{Name: "", UtilPct: 10}}, // no Name: exercises the gpu%d fallback label
+	}
+	out := Render(s, diag.Report{})
+	if !strings.Contains(out, "system_cpu_steal_ratio") {
+		t.Errorf("Render should emit steal ratio when StealPct > 0, got:\n%s", out)
+	}
+	if !strings.Contains(out, `gpu="gpu0"`) {
+		t.Errorf("Render should fall back to gpu0 for an unnamed GPU, got:\n%s", out)
+	}
+}
+
+func TestRenderOmitsStealWhenZero(t *testing.T) {
+	s := doctor.Snapshot{CPU: doctor.CPU{Cores: 4, UsedPct: 10, StealPct: 0}}
+	out := Render(s, diag.Report{})
+	if strings.Contains(out, "system_cpu_steal_ratio") {
+		t.Errorf("Render should omit steal ratio when StealPct is 0, got:\n%s", out)
+	}
+}
+
 func TestRenderShape(t *testing.T) {
 	s := doctor.Snapshot{
 		CPU:    doctor.CPU{Cores: 8, UsedPct: 50, IOWaitPct: 10, Load1: 2.0},

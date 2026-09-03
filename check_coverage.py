@@ -94,7 +94,12 @@ FLOORS = {
     # tested via isolateConfigDir the same way internal/doctor's history
     # tests are) are now fully covered.
     "vitals/internal/memhogs": 59,
-    "vitals/internal/metrics": 73,
+    # metrics: collect/RunOnce/Serve are live (real Collect + HTTP
+    # server). trimFloat's "s == \"\" || s == \"-\"" guard looks
+    # unreachable for any real float64 via %.6f formatting (the leading
+    # digit before the decimal point is never trimmed) — left
+    # undisturbed rather than forcing a test for dead defensive code.
+    "vitals/internal/metrics": 75,
     # monitor: Run/sample/readDiskCounters/readNetCounters/topProcesses
     # are all live gopsutil/process calls (the Collect side of this
     # package); every pure formatting function (emit, bar, rate,

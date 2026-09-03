@@ -110,8 +110,12 @@ expected.
 - [ ] `internal/guide` (73.4%) — `Serve`/`ServeHTML`/`ServeLocal`/
       `openBrowser` are exempt (documented in `check_coverage.py`); verify
       nothing else is dragging the number down.
-- [ ] `internal/metrics` (73.7%) — `Render` should be pure/near-100%; the
-      HTTP server (`Serve`/`RunOnce`) is the exempt live part.
+- [x] `internal/metrics` (73.7% -> 75.2%) — covered the CPU-steal metric
+      (only emitted when `StealPct > 0`, a hypervisor-only signal) and
+      the unnamed-GPU `gpu%d` label fallback, both untested. `trimFloat`'s
+      defensive empty-string guard looks unreachable for real float64
+      input and was left alone rather than forced. `collect`/`RunOnce`/
+      `Serve` remain live.
 - [ ] `internal/ui` (76.0%) — small formatting-helper package; should be
       easy to push close to 100% since almost none of it is live.
 - [ ] `internal/config` (80.6%) — a flat-file parser; should be easy to
