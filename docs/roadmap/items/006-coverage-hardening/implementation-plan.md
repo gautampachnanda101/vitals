@@ -81,9 +81,16 @@ expected.
       (no-groups-found, top-N cap, "and N more" counter). `Run`/
       `applyHardlinksWithConfirmation`/`confirmHardlink` are genuinely
       live (stdin prompts, real hardlinking).
-- [ ] `internal/memhogs` (53.2%) — `appFamily`/`bucketFamilies` (per
-      memory of this package) should already be well-tested; audit
-      `stopCommand` and the rest.
+- [x] `internal/memhogs` (53.2% -> 59.7%) — `describe` (a pure Chrome/VS
+      Code helper-process name simplifier) was fully untested; `userFamilies`
+      (config-file read/parse — missing file, malformed file, valid file)
+      was only 45.5% covered, now 90.9%, tested via a local
+      `isolateConfigDir` helper matching `internal/doctor`'s. One real
+      test bug caught along the way: writing the fixture families.json
+      under the raw temp dir instead of the *resolved* `os.UserConfigDir()`
+      path (which is `$HOME/Library/Application Support` on macOS, not
+      `$HOME` itself) silently tested the wrong file. `Run`/`once`/
+      `readCgroup` are genuinely live.
 - [ ] `internal/llm` (53.6%) — provider probing/completion HTTP calls are
       exempt; parsing (`parseOllamaChatResponse` etc.) and decision logic
       (`ollamaModelChoice`, `defaultModelFor`) should be near-100%.

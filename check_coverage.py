@@ -78,7 +78,11 @@ FLOORS = {
     # the same Collect-then-Analyze shape as internal/doctor. Nothing left
     # to extract without testing gopsutil itself.
     "vitals/internal/memcheck": 33,
-    "vitals/internal/memhogs": 53,
+    # memhogs: Run/once/readCgroup are live (real process scanning,
+    # /proc reads). describe and userFamilies (config-file read/parse,
+    # tested via isolateConfigDir the same way internal/doctor's history
+    # tests are) are now fully covered.
+    "vitals/internal/memhogs": 59,
     "vitals/internal/metrics": 73,
     # monitor: Run/sample/readDiskCounters/readNetCounters/topProcesses
     # are all live gopsutil/process calls (the Collect side of this

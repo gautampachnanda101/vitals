@@ -1,6 +1,98 @@
 package memhogs
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// isolateConfigDir points os.UserConfigDir() at a fresh temp directory,
+// matching the pattern used across this codebase (see
+// internal/doctor/run_test.go's isolateConfigDir) — Windows reads
+// %AppData%, not $HOME, so both must be set. Returns the resolved config
+// dir itself (macOS puts it at $HOME/Library/Application Support, not
+// $HOME directly — a test that joins paths off the raw tempdir instead of
+// this resolved value silently writes to a path userFamilies never reads).
+func isolateConfigDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	resolved, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("os.UserConfigDir: %v", err)
+	}
+	return resolved
+}
+
+func TestDescribeRecognizesKnownHelperProcesses(t *testing.T) {
+	cases := []struct{ cmd, want string }{
+		{"/Applications/Google Chrome.app/.../Chrome Helper (Renderer)", "Chrome tab (renderer)"},
+		{"/Applications/Google Chrome.app/.../Chrome Helper (GPU)", "Chrome GPU process"},
+		{"/Applications/Visual Studio Code.app/.../Code Helper (Plugin)", "VS Code extension host"},
+		{"/Applications/Visual Studio Code.app/.../Code Helper", "VS Code helper"},
+	}
+	for _, c := range cases {
+		if got := describe(procInfo{cmd: c.cmd}); got != c.want {
+			t.Errorf("describe(cmd=%q) = %q, want %q", c.cmd, got, c.want)
+		}
+	}
+}
+
+func TestDescribeFallsBackToName(t *testing.T) {
+	if got := describe(procInfo{name: "firefox"}); got != "firefox" {
+		t.Errorf("describe(unrecognized) = %q, want the plain name", got)
+	}
+	if got := describe(procInfo{}); got != "(unknown)" {
+		t.Errorf("describe(empty) = %q, want (unknown)", got)
+	}
+}
+
+func TestUserFamiliesMissingFileReturnsNil(t *testing.T) {
+	isolateConfigDir(t)
+	if got := userFamilies(); got != nil {
+		t.Errorf("userFamilies() with no families.json = %v, want nil", got)
+	}
+}
+
+func TestUserFamiliesMalformedFileWarnsAndReturnsNil(t *testing.T) {
+	dir := isolateConfigDir(t)
+	path := filepath.Join(dir, "vitals", "families.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := userFamilies(); got != nil {
+		t.Errorf("userFamilies() with a malformed file = %v, want nil (ignored, not fatal)", got)
+	}
+}
+
+func TestUserFamiliesValidFileIsParsed(t *testing.T) {
+	dir := isolateConfigDir(t)
+	path := filepath.Join(dir, "vitals", "families.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `[{"name":"My Tool","pattern":"(?i)my-daemon","stop":"kill"}]`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := userFamilies()
+	if len(got) != 1 || got[0].name != "My Tool" {
+		t.Errorf("userFamilies() = %+v, want the one parsed family", got)
+	}
+}
+
+func TestFamiliesMergesUserFamiliesWithEmbedded(t *testing.T) {
+	isolateConfigDir(t) // no user families.json — families() should still return the embedded base set
+	fams := families()
+	if len(fams) == 0 {
+		t.Fatal("families() with no user override should still return the embedded set")
+	}
+}
 
 func TestStopCommand(t *testing.T) {
 	cases := []struct {
