@@ -41,29 +41,27 @@ type runner struct {
 	records   []PurgeRecord // one entry per non-empty purgeContents call, for the audit log
 }
 
-// Run executes the cleanup and prints a report.
-func Run(opts Options) error {
-	if opts.ShowHistory {
-		ui.Header("CLEAN HISTORY")
-		fmt.Print(renderCleanHistory(History()))
-		return nil
-	}
+// Result is what a cleanup run actually did — the structured form Run
+// prints, and what a future dashboard write action can return as JSON
+// instead of vitals clean's own stdout. FreeBefore/FreeAfter are 0 when
+// unavailable (freeSpace can't determine it), not a sentinel error.
+type Result struct {
+	FreedBytes int64
+	FreeBefore int64
+	FreeAfter  int64
+	Records    []PurgeRecord
+	DryRun     bool
+}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("cannot determine home directory: %w", err)
-	}
-
+// Apply runs the real (or, with opts.DryRun, a measure-only) cleanup and
+// returns what happened — no printing, no confirmation prompt, both of
+// which are Run's own CLI-only concerns below. This is what Run's own
+// internals do after its prompt already passed; a future dashboard
+// write action calls this directly instead of duplicating the cleanup
+// logic, the same relationship doctor.Assess has to doctor.Collect+
+// Analyze.
+func Apply(home string, opts Options) Result {
 	r := &runner{opts: opts, home: home}
-
-	ui.Header("CROSS-PLATFORM DISK CLEANER")
-	fmt.Printf("  OS: %s/%s   Home: %s\n", runtime.GOOS, runtime.GOARCH, home)
-	if opts.DryRun {
-		ui.Warnf("dry-run: nothing will be deleted")
-	} else if !opts.Assume && !confirm() {
-		ui.Infof("aborted")
-		return nil
-	}
 
 	freeBefore := freeSpace()
 
@@ -91,8 +89,41 @@ func Run(opts Options) error {
 		recordRun(RunRecord{Time: time.Now(), TotalBytes: r.freedByRM.Load(), Purges: r.records})
 	}
 
+	return Result{
+		FreedBytes: r.freedByRM.Load(),
+		FreeBefore: freeBefore,
+		FreeAfter:  freeAfter,
+		Records:    r.records,
+		DryRun:     opts.DryRun,
+	}
+}
+
+// Run executes the cleanup and prints a report.
+func Run(opts Options) error {
+	if opts.ShowHistory {
+		ui.Header("CLEAN HISTORY")
+		fmt.Print(renderCleanHistory(History()))
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	ui.Header("CROSS-PLATFORM DISK CLEANER")
+	fmt.Printf("  OS: %s/%s   Home: %s\n", runtime.GOOS, runtime.GOARCH, home)
+	if opts.DryRun {
+		ui.Warnf("dry-run: nothing will be deleted")
+	} else if !opts.Assume && !confirm() {
+		ui.Infof("aborted")
+		return nil
+	}
+
+	result := Apply(home, opts)
+
 	ui.Header("SUMMARY")
-	measured := ui.HumanBytes(r.freedByRM.Load())
+	measured := ui.HumanBytes(result.FreedBytes)
 	if opts.DryRun {
 		fmt.Printf("  Would remove (measured)      : %s\n", measured)
 	} else {
@@ -102,9 +133,9 @@ func Run(opts Options) error {
 	// figure: other processes write to the disk concurrently, so the delta is
 	// not attributable to this run. The measured byte count above is the
 	// honest number.
-	if !opts.DryRun && freeBefore > 0 && freeAfter > 0 {
+	if !opts.DryRun && result.FreeBefore > 0 && result.FreeAfter > 0 {
 		fmt.Printf("  Root filesystem free space   : %s -> %s\n",
-			ui.HumanBytes(freeBefore), ui.HumanBytes(freeAfter))
+			ui.HumanBytes(result.FreeBefore), ui.HumanBytes(result.FreeAfter))
 	}
 	if opts.DryRun {
 		ui.Okf("dry-run complete — re-run without --dry-run to apply")

@@ -308,3 +308,31 @@ func TestMeasureDirsRespectsBudget(t *testing.T) {
 		t.Errorf("a zero budget should not be able to reach every directory")
 	}
 }
+
+func TestApplyDryRunNeverMutatesAndReturnsAStructuredResult(t *testing.T) {
+	// Apply(home, Options{DryRun: true}) is safe to call directly on every
+	// OS in this test: DryRun short-circuits actual deletion inside
+	// purgeContents/removeTree regardless of which directories get
+	// measured — including cleanLinux's hardcoded /var/tmp and /tmp,
+	// which don't depend on the home parameter at all. Only DryRun makes
+	// that safe; a real (non-dry-run) Apply call must never run against
+	// the real filesystem from a unit test.
+	home := t.TempDir()
+	cacheDir := filepath.Join(home, ".cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(cacheDir, "marker")
+	if err := os.WriteFile(marker, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Apply(home, Options{DryRun: true})
+
+	if !result.DryRun {
+		t.Error("Result.DryRun should be true when Options.DryRun is true")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("a dry-run Apply must not delete anything, got: %v", err)
+	}
+}
