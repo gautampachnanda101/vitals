@@ -37,26 +37,32 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       (`html/template`); `TestRenderCleanPreviewEscapesACraftedPath`
       proves a `<script>`-bearing cache path renders escaped.
 - [x] Wire `clean --dry-run`-equivalent to a dashboard `POST
-      /clean/preview` write action — commit `7265006`. Backend half
-      only: `POST /clean/preview` calls `clean.ReclaimableSummary`
-      directly and returns the rendered result, verified end to end
-      against a real running dashboard (curl, and
-      `dashboard_smoke_test.go`'s `assertPostRoute` case) — no
-      filesystem mutation. **The button/page half is intentionally
-      still open**: the dashboard has zero client-side JS anywhere
-      today, so wiring an actual "Preview" button would be the first
-      fetch()-driven interactivity in the whole product — worth its own
-      quick check-in on approach before landing, not something to
-      improvise alongside a backend commit.
+      /clean/preview` write action and a button — commits `7265006`,
+      `c2dd226`. `POST /clean/preview` calls `clean.ReclaimableSummary`
+      directly and returns the rendered result; a new "Clean" nav page
+      (`/clean`) has a Preview button that fetch()es it and injects the
+      response — the dashboard's first client-side JS, vanilla, no
+      framework. Verified end to end against a real running dashboard
+      (curl, and `dashboard_smoke_test.go`'s `assertRoute("clean", ...)`
+      / `assertPostRoute("clean/preview", ...)` cases) — no filesystem
+      mutation.
 
-      Wiring the backend also surfaced and fixed a real, previously
-      invisible bug (same commit): `dashboard.Serve`'s own
+      Wiring the backend surfaced and fixed a real, previously
+      invisible bug (commit `7265006`): `dashboard.Serve`'s own
       `http.HandlerFunc` never dispatched `POST` requests to
       `routeWrite` at all — every POST silently 404'd through the GET
       `route` path instead, even though `routeWrite` itself was fully,
       correctly unit tested. No unit test of `routeWrite` in isolation
       could have caught this; only a real request against the live
-      server could, and now does.
+      server could, and now does — see
+      `feedback-verify-write-actions-live` in project memory.
+
+      Wiring the button surfaced a real accessibility bug before it
+      shipped too (commit `c2dd226`): the first `.btn:hover` style used
+      `--ok-bg` as background with accent-colored text, which
+      `TestPaletteMeetsWCAGAAAForNormalText` proved only reaches
+      6.32:1/6.83:1 contrast, below the required 7:1 — fixed by
+      switching to `--bg`, an already-verified-AAA combination.
 - [ ] A single-flight guard against concurrent `/clean/apply` calls
       (same shape as `prepareAdviceCache`'s single-flight pattern in
       `internal/dashboard/modules_advice.go`).

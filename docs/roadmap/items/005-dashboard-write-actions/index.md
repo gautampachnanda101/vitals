@@ -8,10 +8,10 @@ reviewed (seven-persona panel, go-with-changes) and implemented, see
 its own "As built" section for what shipped and what didn't
 
 **Status**: In progress — `sameOriginOnly`, the `WriteAction` registry,
-and `POST /clean/preview` (backend only — reclaimable-space measurement,
-`html/template`-rendered, verified end to end against a live dashboard)
-are done and in `main`. Still open: a page/button to trigger the
-preview (the dashboard's first client-side JS), `/clean/apply`, and
+and a full `clean` preview flow (`POST /clean/preview` +
+a `/clean` nav page with a Preview button, the dashboard's first
+client-side JS) are done and in `main`, verified end to end against a
+live dashboard. Still open: a single-flight guard, `/clean/apply`, and
 everything after it in `implementation-plan.md`
 **Depends on**: [001](../001-dashboard-foundation/), [002](../002-dashboard-mvp/), [004](../004-native-launcher/)
 **Target release**: v0.7.0+
