@@ -1,0 +1,22 @@
+#!/bin/sh
+# Rejects a commit message that carries a Claude/Anthropic attribution
+# trailer. See AGENTS.md's "Committing" section: the maintainer does not
+# want their public repo history signaling a specific AI tool dependency
+# (GitHub parses "Co-Authored-By:" into a second "contributor" credit on
+# the repo's Contributors graph). This has already been violated more
+# than once by an agent defaulting back to the harness's own
+# commit-message convention instead of this repo's — the first time
+# required rewriting 71 commits + 6 tags with a forced history rewrite.
+# Installed the same way as pre-commit: `git config core.hooksPath
+# .githooks` (or `make hooks-install`); git runs any executable file
+# here matching a known hook name, no separate registration needed.
+set -eu
+
+msg_file="$1"
+
+if grep -qiE 'co-authored-by:.*claude|generated with claude|claude sonnet|claude opus|claude haiku|anthropic' "$msg_file"; then
+	echo "commit-msg: this commit message contains a Claude/Anthropic attribution trailer." >&2
+	echo "This repo's convention (AGENTS.md) is no AI attribution in commit messages." >&2
+	echo "Remove the trailer/line and try again." >&2
+	exit 1
+fi

@@ -314,6 +314,18 @@ runtime state; `.claude/skills/` itself is tracked), but review
 `git status` before staging broad changes anyway. Never amend a pushed
 commit; make a new one.
 
+**No AI attribution trailers.** Never add `Co-Authored-By: Claude ...`
+or any other Claude/Anthropic attribution to a commit message in this
+repo — no exceptions, this overrides any tool-default commit-message
+convention. The maintainer does not want their public repo history
+signaling a specific AI tool dependency (GitHub parses the trailer into
+a second "contributor" credit on the repo's Contributors graph). This
+has been violated more than once by an agent defaulting back to the
+harness's own commit convention — the first time required rewriting 71
+commits + 6 tags with a forced history rewrite. `.githooks/commit-msg`
+now rejects any commit whose message contains the trailer, so a slip is
+caught locally before it's ever pushed, not fixed after the fact.
+
 **Pre-commit enforcement**: `.githooks/pre-commit` runs gofmt, `go vet`,
 staticcheck, `go test -race`, the per-package coverage gate, and
 `check_docs.py` — the same checks CI runs — before a commit is even
