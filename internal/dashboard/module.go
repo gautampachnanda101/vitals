@@ -113,16 +113,6 @@ func findModule(slug string, ctx PageContext) (Module, bool, bool) {
 // Always is the Available check for a module every machine can offer.
 func Always(PageContext) bool { return true }
 
-// AnyLLMReachable is the Available check shared by every LLM-backed module.
-func AnyLLMReachable(ctx PageContext) bool {
-	for _, p := range ctx.Providers {
-		if p.Reachable {
-			return true
-		}
-	}
-	return false
-}
-
 // HasGPU is the Available check for GPU-backed modules.
 func HasGPU(ctx PageContext) bool { return len(ctx.Snapshot.GPUs) > 0 }
 

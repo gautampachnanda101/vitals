@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"vitals/internal/diag"
 	"vitals/internal/llm"
 )
 
@@ -113,5 +114,36 @@ func TestBuildPromptAsksNotToInventProblemsWhenHealthy(t *testing.T) {
 	prompt := BuildPrompt([]byte(`{"verdict":"ok","findings":[]}`))
 	if !strings.Contains(strings.ToLower(prompt), "healthy") {
 		t.Errorf("prompt should tell the model not to invent problems on a healthy report:\n%s", prompt)
+	}
+}
+
+func TestHeuristicRendersEveryFindingWithItsFixes(t *testing.T) {
+	report := diag.Report{Findings: []diag.Finding{
+		{Severity: diag.Critical, Title: "Swap heavily used", Detail: "swap 91% full", Fixes: []string{"restart Chrome", "reboot"}},
+		{Severity: diag.Warn, Title: "Disk nearly full", Fixes: []string{"run vitals clean"}},
+	}}
+	out := Heuristic(report)
+	for _, want := range []string{"Swap heavily used", "swap 91% full", "restart Chrome", "reboot", "Disk nearly full", "run vitals clean"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Heuristic missing %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestHeuristicOnAHealthyReportSaysSo(t *testing.T) {
+	out := Heuristic(diag.Report{})
+	if !strings.Contains(strings.ToLower(out), "healthy") {
+		t.Errorf("Heuristic on an empty report should say healthy, got:\n%s", out)
+	}
+}
+
+func TestHeuristicOrdersMostSevereFirst(t *testing.T) {
+	report := diag.Report{Findings: []diag.Finding{
+		{Severity: diag.Warn, Title: "warn finding"},
+		{Severity: diag.Critical, Title: "critical finding"},
+	}}
+	out := Heuristic(report)
+	if strings.Index(out, "critical finding") > strings.Index(out, "warn finding") {
+		t.Errorf("Heuristic should list the most severe finding first, got:\n%s", out)
 	}
 }

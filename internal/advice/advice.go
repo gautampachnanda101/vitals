@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"vitals/internal/diag"
 	"vitals/internal/doctor"
 	"vitals/internal/guide"
 	"vitals/internal/llm"
@@ -87,16 +88,34 @@ func Generate(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
 	return stripFabricatedSources(reply), nil
 }
 
-// Run gathers the current doctor report, asks a local or cloud LLM for
-// advice on it, and prints the reply.
+// Run gathers the current doctor report and prints its rule-based
+// findings and fixes immediately — doctor.Analyze's correlation engine,
+// already computed above, the same "well-established troubleshooting
+// technique" vitals doctor itself prints, needing no network call and no
+// LLM to be useful. An LLM is then asked, if one is reachable, to add
+// synthesis on top: shared root causes across findings, what matters
+// most when there's more than one issue — a complement to the heuristic
+// baseline, never a replacement for it, since the heuristic answer is
+// what still works with no LLM configured at all. A local model can
+// genuinely take a while to load and generate on a memory-constrained
+// machine, so a status line prints before that (potentially slow) call,
+// not just silence until it returns or times out at completeTimeout.
 func Run(opts Options) error {
 	snap, report := doctor.Assess(doctor.RunOptions{OllamaURL: opts.OllamaURL})
 	reportJSON, err := json.Marshal(doctor.JSONReport(snap, report))
 	if err != nil {
 		return fmt.Errorf("build report: %w", err)
 	}
+	heuristic := Heuristic(report)
 
-	reply, err := Generate(reportJSON, llm.CompleteOptions{
+	if !opts.JSON {
+		ui.Header("ADVICE")
+		fmt.Println()
+		fmt.Print(heuristic)
+		ui.Infof("checking for a local or cloud LLM to add further commentary — this can take a while on a local model, especially the first response after it loads...")
+	}
+
+	reply, genErr := Generate(reportJSON, llm.CompleteOptions{
 		OllamaURL:   opts.OllamaURL,
 		LMStudioURL: opts.LMStudioURL,
 		LlamaCppURL: opts.LlamaCppURL,
@@ -104,19 +123,54 @@ func Run(opts Options) error {
 		Provider:    opts.Provider,
 		Model:       opts.Model,
 	})
-	if err != nil {
-		return err
-	}
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(struct {
-			Advice string `json:"advice"`
-		}{reply})
+		out := struct {
+			HeuristicAdvice string `json:"heuristic_advice"`
+			LLMAdvice       string `json:"llm_advice,omitempty"`
+			LLMError        string `json:"llm_error,omitempty"`
+			Source          string `json:"source"`
+		}{HeuristicAdvice: heuristic, Source: "heuristic"}
+		if genErr != nil {
+			out.LLMError = genErr.Error()
+		} else {
+			out.LLMAdvice = reply
+			out.Source = "heuristic+llm"
+		}
+		return enc.Encode(out)
 	}
 
-	ui.Header("ADVICE")
+	if genErr != nil {
+		ui.Warnf("no LLM reachable (%v) — showing the rule-based findings above only", genErr)
+		return nil
+	}
+	fmt.Println()
+	ui.Header("AI COMMENTARY")
 	fmt.Println(guide.RenderTerminal(reply))
 	return nil
+}
+
+// Heuristic renders report's findings and fixes as plain text — the same
+// rule-based correlation `vitals doctor` already prints, the immediate,
+// always-available half of `vitals advice`'s two-part answer (see Run)
+// that needs no LLM at all. Most severe first, matching every other
+// findings list in this codebase.
+func Heuristic(report diag.Report) string {
+	findings := report.SortedBySeverity()
+	if len(findings) == 0 {
+		return "Healthy — nothing needs attention.\n"
+	}
+	var b strings.Builder
+	for _, f := range findings {
+		fmt.Fprintf(&b, "- %s\n", f.Title)
+		if f.Detail != "" {
+			fmt.Fprintf(&b, "    %s\n", f.Detail)
+		}
+		for _, fix := range f.Fixes {
+			fmt.Fprintf(&b, "    -> %s\n", fix)
+		}
+	}
+	return b.String()
 }

@@ -54,11 +54,11 @@ func TestDashboardSmoke(t *testing.T) {
 	}
 
 	assertRoute(t, url, "", http.StatusOK, "vitals")
-	// advice is registered but gated on AnyLLMReachable — CI has no
-	// Ollama running and no cloud API key env vars set, so this
-	// specifically exercises the unavailable-page path (200, not a bare
-	// 404) that findModule/route exist to produce instead.
-	assertRoute(t, url, "advice", http.StatusOK, "")
+	// advice is always available (its heuristic half needs no LLM at
+	// all), so assert on that heuristic content — present whether or not
+	// this machine happens to have a real local LLM answering, unlike
+	// asserting on the LLM-unreachable note specifically.
+	assertRoute(t, url, "advice", http.StatusOK, "rule-based checks found")
 	assertRoute(t, url, "nope-does-not-exist", http.StatusNotFound, "")
 	assertHistoryWasRecorded(t, scratch)
 

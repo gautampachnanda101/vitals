@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"vitals/internal/doctor"
-	"vitals/internal/llm"
 )
 
 // withRegistry replaces the package-level registry for the duration of a
@@ -84,18 +83,6 @@ func TestFindModuleDistinguishesMissingFromUnavailable(t *testing.T) {
 	}
 	if m.Slug != "advice" {
 		t.Errorf("returned module slug = %q, want \"advice\"", m.Slug)
-	}
-}
-
-func TestAnyLLMReachable(t *testing.T) {
-	if AnyLLMReachable(PageContext{}) {
-		t.Error("no providers at all should not be reachable")
-	}
-	if AnyLLMReachable(PageContext{Providers: []llm.Provider{{Name: "ollama", Reachable: false}}}) {
-		t.Error("an unreachable provider should not count")
-	}
-	if !AnyLLMReachable(PageContext{Providers: []llm.Provider{{Name: "ollama", Reachable: false}, {Name: "openai", Reachable: true}}}) {
-		t.Error("one reachable provider among several should be enough")
 	}
 }
 

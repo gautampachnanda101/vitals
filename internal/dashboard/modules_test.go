@@ -193,6 +193,26 @@ func TestRenderAdviceShowsTheErrorInstead(t *testing.T) {
 	}
 }
 
+func TestRenderAdviceAlwaysShowsHeuristicFindingsRegardlessOfLLMState(t *testing.T) {
+	// The heuristic half needs no LLM at all — it must render identically
+	// whether the LLM answered, failed, or was never asked (Prepare not
+	// yet run), so a machine with no LLM configured still gets a useful
+	// advice page instead of an empty one.
+	report := diag.Report{Findings: []diag.Finding{{Severity: diag.Critical, Title: "disk nearly full", Fixes: []string{"run vitals clean"}}}}
+	for name, ctx := range map[string]PageContext{
+		"LLM answered":    {Report: report, AdviceReply: "some commentary"},
+		"LLM failed":      {Report: report, AdviceErr: errors.New("no reachable model")},
+		"LLM never asked": {Report: report},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := renderAdvice(ctx)
+			if !strings.Contains(out, "disk nearly full") || !strings.Contains(out, "run vitals clean") {
+				t.Errorf("renderAdvice(%s) should always include the heuristic finding and fix, got: %s", name, out)
+			}
+		})
+	}
+}
+
 func TestRenderAdviceEscapesTheErrorMessage(t *testing.T) {
 	// An error's message can embed arbitrary provider/network detail —
 	// this was a raw string-concat + manual html.EscapeString call before
@@ -313,13 +333,16 @@ func TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt(t *testin
 	}
 }
 
-func TestAdviceModuleAvailabilityFollowsProviders(t *testing.T) {
+func TestAdviceModuleIsAlwaysAvailable(t *testing.T) {
+	// The heuristic half of the advice page needs no LLM at all (see
+	// renderAdvice), so unlike the old provider-gated behavior, the page
+	// itself must stay available with no providers reachable at all.
 	_, _, available := findModule("advice", PageContext{})
-	if available {
-		t.Error("advice module should not be available with no providers")
+	if !available {
+		t.Error("advice module should be available with no providers reachable — its heuristic half needs no LLM")
 	}
 	_, _, available = findModule("advice", PageContext{Providers: []llm.Provider{{Reachable: true}}})
 	if !available {
-		t.Error("advice module should be available once a provider is reachable")
+		t.Error("advice module should also be available with a provider reachable")
 	}
 }

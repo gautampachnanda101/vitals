@@ -7,13 +7,16 @@ import (
 	"time"
 
 	"vitals/internal/advice"
-	"vitals/internal/diag"
 	"vitals/internal/doctor"
 	"vitals/internal/guide"
 )
 
 func init() {
-	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: AnyLLMReachable, UnavailableReason: "no local or cloud LLM is reachable", Render: renderAdvice})
+	// Available: Always — the heuristic half of this page (see renderAdvice)
+	// needs no LLM at all, so the page itself shouldn't disappear from the
+	// nav just because none is reachable; only the LLM commentary section
+	// is conditional on that.
+	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: Always, Render: renderAdvice})
 }
 
 // prepareAdviceCacheTTL bounds how stale a synthesized advice reply can
@@ -122,18 +125,30 @@ func prepareAdvice(ctx *PageContext) error {
 // adviceErrorTmpl renders ctx.AdviceErr's message — an error string that
 // can embed arbitrary provider/network detail, so it goes through
 // html/template's auto-escaping like every other render function in this
-// package, not a manual html.EscapeString call.
+// package, not a manual html.EscapeString call. It's shown alongside the
+// heuristic findings, not instead of them: the LLM is a complement, so
+// its being unreachable is a quiet note here, not a page-level failure.
 var adviceErrorTmpl = template.Must(template.New("adviceError").Parse(
-	`<div class="card"><p class="unavailable">Could not reach a model: {{.}}</p></div>`))
+	`<div class="card"><p class="unavailable">No LLM reachable for further AI commentary: {{.}}</p></div>`))
 
-// renderAdvice shows the LLM's synthesis, fetched via Prepare above —
-// Render itself stays pure over whatever ctx.AdviceReply/AdviceErr it's
-// handed, consistent with every other module, and testable the same way.
+// renderAdvice shows this machine's rule-based findings first — the same
+// data and layout the overview page uses (reportHeadline/verdictBanner/
+// findingsList), needing no LLM at all — then, when Prepare above managed
+// to reach one, an LLM commentary section underneath adding whatever a
+// per-finding list can't: shared root causes, what matters most when
+// there's more than one issue. Render itself stays pure over whatever
+// ctx.Report/AdviceReply/AdviceErr it's handed, consistent with every
+// other module, and testable the same way.
 func renderAdvice(ctx PageContext) string {
-	if ctx.AdviceErr != nil {
-		return mustExecute(adviceErrorTmpl, ctx.AdviceErr.Error())
+	headline := reportHeadline(ctx.Report, "Healthy — nothing needs attention")
+	body := verdictBanner(headline, "What vitals doctor's own rule-based checks found", ctx.Report.Worst())
+	body += `<div class="card">` + findingsList(ctx.Report.SortedBySeverity()) + `</div>`
+
+	switch {
+	case ctx.AdviceReply != "":
+		body += `<div class="card"><h3>AI commentary</h3>` + guide.RenderFragment(ctx.AdviceReply) + `</div>`
+	case ctx.AdviceErr != nil:
+		body += mustExecute(adviceErrorTmpl, ctx.AdviceErr.Error())
 	}
-	body := verdictBanner("Synthesized advice", "", diag.OK)
-	body += `<div class="card">` + guide.RenderFragment(ctx.AdviceReply) + `</div>`
 	return body
 }
