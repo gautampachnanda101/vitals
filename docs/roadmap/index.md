@@ -39,7 +39,7 @@ depends on.
 | [002](items/002-dashboard-mvp/) | `vitals dashboard` MVP | Done | 001 | v0.5.0 |
 | [003](items/003-product-site/) | Public product site | Done | — (parallel) | v0.5.0 |
 | [004](items/004-native-launcher/) | Native double-click launcher | Mostly done (macOS verified; Linux/Windows unverified) | 002 | v0.6.0 |
-| [005](items/005-dashboard-write-actions/) | Dashboard write actions | Not started | 001, 002, 004 | v0.7.0+ |
+| [005](items/005-dashboard-write-actions/) | Dashboard write actions | In progress — CSRF model + WriteAction registry done, no write action wired up yet | 001, 002, 004 | v0.7.0+ |
 | [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | Done | — (cross-cutting, ongoing) | ongoing |
 | [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Not started — unscheduled, see its Trigger | 002 | not yet |
 | [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Not started — captured as a followup, not yet designed | diag findings/fixes model | not yet |

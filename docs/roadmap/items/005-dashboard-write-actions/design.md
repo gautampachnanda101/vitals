@@ -2,14 +2,19 @@
 
 [docs](../../../index.md) / [Roadmap](../../index.md) / [005 — Dashboard write actions](index.md) / **Design**
 
-**Status: draft, pending review-panel pass.** This is the design
+**Status: reviewed (seven-persona panel, all seven go-with-changes) and
+implemented, with deviations from the draft below — see "As built"
+at the end of this document.** This was the design
 `docs/architecture/design.md` §6.5 requires before any write/mutating
 dashboard endpoint ships: "no write/mutating endpoint ships without a
 same-origin check (Origin/Sec-Fetch-Site header validation) in addition
 to the Host-header fix. This is now a named gate on that future phase,
 not an open question." This document is that gate being closed —
 reviewed on its own, not improvised alongside the first button, per
-item 004's own "Why" section.
+item 004's own "Why" section. The sections below are kept as originally
+drafted (the pre-review proposal), not edited in place, so the record of
+what the panel actually reviewed stays intact; "As built" is where this
+document says what's different in `main` today.
 
 ## 1. Threat model (inherited, not re-litigated)
 
@@ -191,3 +196,51 @@ multi-step handshake.
 3. Does `WriteAction` as a wholly separate registry from `Module` hold up,
    or should it be a field on `Module` after all once there's a second
    real write action to generalize from?
+
+## As built
+
+The panel converged on "go-with-changes" from all seven reviewers, with
+three findings that changed the shape of what actually shipped
+(commits `170e08e`, `9da3dd5`) from §2–§3 above:
+
+- **§2's `sameOriginOnly` signature was unimplementable as drafted.**
+  `func sameOriginOnly(next http.Handler, origin string) http.Handler`
+  assumed `dashboard.Serve` could compute the real bound address and
+  pass it in — but the actual bound address (needed for the ephemeral
+  `--addr 127.0.0.1:0` case) is only known inside `guide.ServeLocal`,
+  after `net.Listen` runs, never surfaced back out to `dashboard.Serve`.
+  Fixed by moving `sameOriginOnly` into `internal/guide/serve.go`
+  itself, applied generically inside `ServeLocal` right after the
+  existing `allowedHostsOnly` call, reusing the same `addr`/`port`
+  variables `ServeLocal` already computes. This one relocation also
+  closed two more findings at once: it accepts **both**
+  `127.0.0.1:<port>` and `localhost:<port>` as valid origins (the draft
+  only checked one — a real regression the review caught, since
+  `allowedHostsOnly` already accepts both), and it now protects *any*
+  current or future `ServeLocal`-backed handler uniformly, not just the
+  dashboard's write actions specifically.
+- **§3's `Handler func(PageContext, *http.Request)` became
+  `Handler func(PageContext, []byte)`.** A raw, already-read body
+  instead of a live request — so a `WriteAction`'s handler is
+  constructed and called directly in tests the same way `Module.Render`
+  already is, with no `httptest.NewRequest` boilerplate needed. `Path`
+  and `Available func(PageContext) bool` (mirroring `Module.Available`,
+  present from day one per review even though nothing needs it yet)
+  round out the actual `WriteAction` struct — see
+  `internal/dashboard/module.go`.
+- `RegisterWriteAction` shipped as `RegisterWrite`, matching `Register`'s
+  own naming instead of a longer, inconsistent name.
+
+Findings from the panel not yet acted on — these are the actual
+remaining scope of this item, tracked in
+[`implementation-plan.md`](implementation-plan.md):
+rewriting `clean.go` to reuse `ReclaimableSummary(budget)` for
+`/clean/preview` and a proper `Apply`-style function returning
+structured data instead of only `error`; mandating `html/template` for
+the new write-action render functions with a crafted-filename
+regression test; a single-flight guard against concurrent apply calls;
+`/clean/apply`'s non-blocking/progress-feedback story; the actual UX
+spec (what preview shows, per-category exclusion, partial-failure
+display); a preview→apply single-use token as defense-in-depth
+(recommended by the security reviewer, not required — the same-origin
+check is the real boundary here, per §4 above).

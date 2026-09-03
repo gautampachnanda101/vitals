@@ -4,9 +4,12 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 **Design**: [same-origin/CSRF model + WriteAction shape →](design.md) —
-drafted, pending its own review-panel pass before implementation starts
+reviewed (seven-persona panel, go-with-changes) and implemented, see
+its own "As built" section for what shipped and what didn't
 
-**Status**: Not started — design drafted, awaiting review
+**Status**: In progress — `sameOriginOnly` (guide.ServeLocal) and the
+`WriteAction` registry (`internal/dashboard`) are done and in `main`;
+no write action itself (e.g. `clean` preview/apply) is wired up yet
 **Depends on**: [001](../001-dashboard-foundation/), [002](../002-dashboard-mvp/), [004](../004-native-launcher/)
 **Target release**: v0.7.0+
 **Architecture**: [design doc](../../../architecture/design.md) §6.5, §6.7; this item's own [design.md](design.md)
