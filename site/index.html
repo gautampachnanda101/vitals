@@ -2,17 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>document.documentElement.classList.add('js')</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vitals — names the one thing slowing your machine down</title>
 <meta name="description" content="A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM diagnostics into one ranked verdict and the exact fix — for macOS, Linux and Windows.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#fbfaf7; --surface:#fff; --surface-2:#f3f1ea; --ink:#1b1f23; --muted:#4b4e53; --line:#e3e1db;
   --accent:#2b5d53; --accent-soft:#e2eeea;
   --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3;
+  --term-bg:#14171a; --term-ink:#e9eaea; --term-accent:#6fbfa8; --term-crit:#e2694a; --term-warn:#d9a441; --term-muted:#8a8f95;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#14171a; --surface:#1b1f23; --surface-2:#1f242a; --ink:#e9eaea; --muted:#b4b9bd; --line:#2a2e33;
@@ -25,47 +27,95 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Inter,-apple-s
 code,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 a{color:var(--accent)}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.wrap{max-width:880px;margin:0 auto;padding:0 1.5rem}
-h1,h2,h3{text-wrap:balance;font-weight:800;letter-spacing:-0.02em}
-h2{font-size:1.7rem;margin:0 0 .3rem}
+.wrap{max-width:1040px;margin:0 auto;padding:0 1.5rem}
+h1,h2,h3{text-wrap:balance;margin:0}
+h2{font:800 1.7rem/1.2 "JetBrains Mono",monospace;letter-spacing:-0.01em;margin:0 0 .3rem}
 p{max-width:65ch}
-.eyebrow{font:600 .8rem/1 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.eyebrow{display:inline-flex;align-items:center;gap:.4rem;font:600 .8rem/1 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.eyebrow::before{content:"//"}
 
-header.hero{padding:4.5rem 0 3.5rem;border-bottom:1px solid var(--line)}
-header.hero .wrap{display:flex;flex-direction:column;gap:1.1rem}
-header.hero h1{font-size:2.6rem;line-height:1.15;margin:0}
-header.hero p.lede{font-size:1.15rem;color:var(--muted);max-width:52ch;margin:0}
-.cta-row{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:.6rem}
-.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.95rem;border:1px solid transparent}
+/* ---------- hero ---------- */
+header.hero{
+  padding:5rem 0 4rem;border-bottom:1px solid var(--line);position:relative;overflow:hidden;
+  background-image:radial-gradient(var(--line) 1px, transparent 1px);background-size:22px 22px;background-position:-11px -11px;
+}
+header.hero .inner{
+  display:grid;grid-template-columns:1.1fr 1fr;gap:2.5rem;align-items:center;position:relative;
+}
+@media (max-width:860px){ header.hero .inner{grid-template-columns:1fr} }
+header.hero .copy{display:flex;flex-direction:column;gap:1.2rem}
+header.hero h1{font:800 2.5rem/1.18 "JetBrains Mono",monospace;letter-spacing:-0.015em}
+header.hero p.lede{font-size:1.1rem;color:var(--muted);max-width:48ch;margin:0}
+.cta-row{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:.4rem}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.95rem;border:1px solid transparent;transition:transform .15s ease, opacity .15s ease, border-color .15s ease, color .15s ease}
 .btn.primary{background:var(--accent);color:var(--surface)}
 .btn.secondary{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn:hover{transform:translateY(-1px)}
 .btn.primary:hover{opacity:.9}
 .btn.secondary:hover{border-color:var(--accent);color:var(--accent)}
 
-.term{background:#14171a;color:#e9eaea;border-radius:10px;padding:1.1rem 1.3rem;font:.9rem/1.6 "JetBrains Mono",monospace;overflow-x:auto;margin-top:.5rem}
-.term .prompt{color:#6fbfa8}
-.term .crit{color:#e2694a;font-weight:700}
-.term .muted{color:#8a8f95}
-.term .warn-arrow{color:#d9a441}
+/* ---------- terminal window ---------- */
+.term-window{background:var(--term-bg);border-radius:12px;box-shadow:0 20px 50px -20px rgba(0,0,0,.45);overflow:hidden}
+.term-titlebar{display:flex;align-items:center;gap:.4rem;padding:.6rem .8rem;background:rgba(255,255,255,.04)}
+.term-titlebar .dot{width:.6rem;height:.6rem;border-radius:50%}
+.term-titlebar .dot:nth-child(1){background:#e2694a}
+.term-titlebar .dot:nth-child(2){background:#d9a441}
+.term-titlebar .dot:nth-child(3){background:#6fbfa8}
+.term-titlebar span.label{margin-left:.5rem;font:500 .75rem/1 "JetBrains Mono",monospace;color:var(--term-muted)}
+.term{color:var(--term-ink);padding:1.2rem 1.3rem 1.4rem;font:.88rem/1.65 "JetBrains Mono",monospace;overflow-x:auto}
+.term .line{opacity:1}
+.term .prompt{color:var(--term-accent)}
+.term .crit{color:var(--term-crit);font-weight:700}
+.term .muted{color:var(--term-muted)}
+.term .warn-arrow{color:var(--term-warn)}
+.term .cursor{display:inline-block;width:.55em;height:1em;background:var(--term-accent);vertical-align:text-bottom;margin-left:2px}
 
-section{padding:3.2rem 0;border-bottom:1px solid var(--line)}
+@media (prefers-reduced-motion: no-preference){
+  .term .line{opacity:0;transform:translateY(4px);animation:term-reveal .35s ease forwards}
+  .term .line:nth-child(1){animation-delay:.15s}
+  .term .line:nth-child(2){animation-delay:.5s}
+  .term .line:nth-child(3){animation-delay:.75s}
+  .term .line:nth-child(4){animation-delay:1.05s}
+  .term .line:nth-child(5){animation-delay:1.3s}
+  .term .line:nth-child(6){animation-delay:1.5s}
+  @keyframes term-reveal{ to{ opacity:1; transform:none } }
+  .term .cursor{animation:blink 1s step-end infinite}
+  @keyframes blink{ 50%{ opacity:0 } }
+}
+
+/* ---------- sections ---------- */
+section{padding:3.4rem 0;border-bottom:1px solid var(--line)}
 section:last-of-type{border-bottom:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1.1rem;margin-top:1.6rem}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1.3rem}
-.card h3{font-size:1.02rem;margin:0 0 .4rem}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1.3rem;
+  transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.card h3{font:700 1.02rem/1.3 "JetBrains Mono",monospace;margin:0 0 .4rem}
 .card p{margin:0;color:var(--muted);font-size:.92rem}
 .card .cmd{display:block;margin-top:.6rem;font-size:.82rem;color:var(--accent)}
+
+/* .js is only set by the inline script in <head> once it actually runs
+   — so a card only ever starts hidden when JS is confirmed working AND
+   IntersectionObserver will be there to reveal it. No JS, JS disabled,
+   or reduced motion: cards are visible from the start, no fallback
+   needed. */
+@media (prefers-reduced-motion: no-preference){
+  html.js .card{opacity:0;transform:translateY(10px)}
+  html.js .card.in-view{opacity:1;transform:none;transition:opacity .45s ease, transform .45s ease}
+}
+.card:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:0 12px 24px -16px rgba(0,0,0,.25)}
 
 table{width:100%;border-collapse:collapse;margin-top:1.6rem;font-size:.92rem}
 th,td{text-align:left;padding:.65rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
 th{font:600 .78rem/1 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 td.yes{color:var(--ok)}
-td.tool{font-weight:700;white-space:nowrap}
+td.tool{font-weight:700;white-space:nowrap;font-family:"JetBrains Mono",monospace}
 .table-wrap{overflow-x:auto}
 .note{font-size:.85rem;color:var(--muted);margin-top:1rem}
 
 .install pre{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:.9rem 1.1rem;overflow-x:auto;font-size:.85rem;margin:.6rem 0 0}
-.install h3{font-size:1rem;margin:1.4rem 0 0}
+.install h3{font:700 1rem/1.3 "JetBrains Mono",monospace;margin:1.4rem 0 0}
 .install h3:first-of-type{margin-top:0}
 
 footer{padding:2.5rem 0 3.5rem;color:var(--muted);font-size:.88rem}
@@ -77,21 +127,31 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">vitals · v0.4.0 · macOS · Linux · Windows</span>
-    <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
-    <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
-    <div class="term" aria-label="Example output of vitals doctor">
-<span class="prompt">$</span> vitals doctor
-<span class="crit">● CRITICAL</span>   Memory is your bottleneck — not CPU
-             swap 91% full, paging out at 40 MB/s   <span class="muted">→ the machine is stalling on disk</span>
-  <span class="warn-arrow">→</span> free RAM now: <code>vitals memhogs</code> then quit the top consumers
-  <span class="warn-arrow">→</span> macOS: <code>sudo purge</code>
-  <span class="muted">exit 2</span>
-    </div>
-    <div class="cta-row">
-      <a class="btn primary" href="#install">Install vitals</a>
-      <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals">View on GitHub</a>
-      <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals/blob/main/docs/user-guide.md">Read the user guide</a>
+    <div class="inner">
+      <div class="copy">
+        <span class="eyebrow">vitals · v0.4.0 · macOS · Linux · Windows</span>
+        <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
+        <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
+        <div class="cta-row">
+          <a class="btn primary" href="#install">Install vitals</a>
+          <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals">View on GitHub</a>
+          <a class="btn secondary" href="https://github.com/gautampachnanda101/vitals/blob/main/docs/user-guide.md">Read the user guide</a>
+        </div>
+      </div>
+      <div class="term-window" aria-label="Example output of vitals doctor">
+        <div class="term-titlebar">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="label">zsh — vitals doctor</span>
+        </div>
+        <div class="term">
+<div class="line"><span class="prompt">$</span> vitals doctor</div>
+<div class="line"><span class="crit">● CRITICAL</span>   Memory is your bottleneck — not CPU</div>
+<div class="line">             swap 91% full, paging out at 40 MB/s   <span class="muted">→ the machine is stalling on disk</span></div>
+<div class="line">  <span class="warn-arrow">→</span> free RAM now: <code>vitals memhogs</code> then quit the top consumers</div>
+<div class="line">  <span class="warn-arrow">→</span> macOS: <code>sudo purge</code></div>
+<div class="line">  <span class="muted">exit 2</span><span class="cursor"></span></div>
+        </div>
+      </div>
     </div>
   </div>
 </header>
@@ -101,7 +161,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
     <span class="eyebrow">What it does</span>
     <h2>One binary. Every resource. One verdict.</h2>
     <p>vitals reads the same system data <code>htop</code>/<code>btop</code>, <code>ncdu</code> and <code>nvtop</code> already read — it doesn't replace them. What it adds is the layer above: correlating CPU, memory, swap, disk, network, power and GPU into a single ranked list of what's actually wrong, with a concrete fix for each finding, not just a number.</p>
-    <div class="grid">
+    <div class="grid" id="feature-grid">
       <div class="card">
         <h3>Cross-resource correlation</h3>
         <p>High CPU that's really disk I/O wait. Swap thrashing vs. reclaimable cache. A single-threaded bottleneck vs. one that needs more cores.</p>
@@ -207,6 +267,28 @@ scoop install vitals</code></pre>
     </div>
   </div>
 </footer>
+
+<script>
+// Scroll-reveal for feature cards — progressive enhancement only; cards
+// are fully visible without JS (see the plain .card rule) and the
+// opacity:0 starting state only applies under prefers-reduced-motion:
+// no-preference, so a failed script or reduced-motion setting never
+// hides real content.
+var cards = document.querySelectorAll('#feature-grid .card');
+if ('IntersectionObserver' in window) {
+  var obs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in-view'); obs.unobserve(e.target); }
+    });
+  }, { threshold: 0.15 });
+  cards.forEach(function (c) { obs.observe(c); });
+} else {
+  // No IntersectionObserver support: reveal immediately rather than
+  // leaving cards permanently hidden (they only start hidden at all
+  // once html.js is set, i.e. this script is already running).
+  cards.forEach(function (c) { c.classList.add('in-view'); });
+}
+</script>
 
 </body>
 </html>
