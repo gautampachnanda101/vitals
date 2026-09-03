@@ -12,6 +12,93 @@ func env(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
+func TestClassify(t *testing.T) {
+	cases := []struct{ name, cmd, want string }{
+		{"ollama", "", "ollama"},
+		{"", "/usr/local/bin/ollama serve", "ollama"},
+		{"LM Studio", "", "lmstudio"},
+		{"", "llama-server --model x.gguf", "llamacpp"},
+		{"vllm", "", "vllm"},
+		{"local-ai", "", "localai"},
+		{"firefox", "firefox --new-window", ""},
+	}
+	for _, c := range cases {
+		if got := classify(c.name, c.cmd); got != c.want {
+			t.Errorf("classify(%q, %q) = %q, want %q", c.name, c.cmd, got, c.want)
+		}
+	}
+}
+
+func TestCapitalize(t *testing.T) {
+	if got := capitalize(""); got != "" {
+		t.Errorf("capitalize(\"\") = %q, want empty", got)
+	}
+	if got := capitalize("ollama"); got != "Ollama" {
+		t.Errorf("capitalize(\"ollama\") = %q, want Ollama", got)
+	}
+}
+
+func TestPluralLLM(t *testing.T) {
+	if got := plural(1); got != "" {
+		t.Errorf("plural(1) = %q, want empty", got)
+	}
+	if got := plural(2); got != "s" {
+		t.Errorf("plural(2) = %q, want s", got)
+	}
+}
+
+func TestNzLLM(t *testing.T) {
+	if got := nz(""); got != "?" {
+		t.Errorf("nz(\"\") = %q, want ?", got)
+	}
+	if got := nz("qwen"); got != "qwen" {
+		t.Errorf("nz(\"qwen\") = %q, want it unchanged", got)
+	}
+}
+
+func TestShortLocalName(t *testing.T) {
+	cases := map[string]string{
+		"LM Studio": "lmstudio",
+		"llama.cpp": "llamacpp",
+		"vLLM":      "vllm",
+		"Ollama":    "Ollama", // unchanged — already short
+	}
+	for in, want := range cases {
+		if got := shortLocalName(in); got != want {
+			t.Errorf("shortLocalName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestModelOrDefault(t *testing.T) {
+	if got := modelOrDefault("custom-model", "OpenAI"); got != "custom-model" {
+		t.Errorf("modelOrDefault(explicit) = %q, want the explicit model", got)
+	}
+	if got := modelOrDefault("", "OpenAI"); got != defaultModelFor("OpenAI") {
+		t.Errorf("modelOrDefault(empty) = %q, want the provider default", got)
+	}
+}
+
+func TestOllamaModelChoicePrefersOverrideThenResident(t *testing.T) {
+	got, err := ollamaModelChoice("http://unreachable", "explicit-model", []ModelState{{Name: "resident-model"}})
+	if err != nil || got != "explicit-model" {
+		t.Errorf("ollamaModelChoice(override set) = %q, %v, want the override with no error", got, err)
+	}
+	got, err = ollamaModelChoice("http://unreachable", "", []ModelState{{Name: "resident-model"}})
+	if err != nil || got != "resident-model" {
+		t.Errorf("ollamaModelChoice(no override, resident present) = %q, %v, want the resident model", got, err)
+	}
+}
+
+func TestOllamaModelChoiceErrorsWithNothingAvailable(t *testing.T) {
+	// Port 1 refuses connections immediately — stands in for "no models
+	// pulled and Ollama unreachable for the /api/tags fallback either".
+	_, err := ollamaModelChoice("http://127.0.0.1:1", "", nil)
+	if err == nil {
+		t.Error("ollamaModelChoice with nothing available should error, not silently return empty")
+	}
+}
+
 func TestParseModels(t *testing.T) {
 	t.Run("openai-compatible /v1/models", func(t *testing.T) {
 		body := []byte(`{"object":"list","data":[{"id":"gpt-4o"},{"id":"gpt-4o-mini"}]}`)

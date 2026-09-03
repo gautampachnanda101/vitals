@@ -70,7 +70,13 @@ FLOORS = {
     # testable logic" — this is that exemption showing up in the number.
     "vitals/internal/guide": 73,
     "vitals/internal/help": 86,
-    "vitals/internal/llm": 53,
+    # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
+    # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
+    # exec), and render (a print function, like internal/dupes' — not yet
+    # covered via the stdout-capture pattern, a good next step) remain
+    # low/live. classify/capitalize/plural/nz/shortLocalName/
+    # modelOrDefault/ollamaModelChoice's pure branches are now covered.
+    "vitals/internal/llm": 57,
     "vitals/internal/mcp": 55,
     # memcheck: Run is the only untested function — four live gopsutil
     # calls (host.Info, mem.VirtualMemory/SwapMemory/SwapDevices) feeding

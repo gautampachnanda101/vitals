@@ -91,9 +91,15 @@ expected.
       path (which is `$HOME/Library/Application Support` on macOS, not
       `$HOME` itself) silently tested the wrong file. `Run`/`once`/
       `readCgroup` are genuinely live.
-- [ ] `internal/llm` (53.6%) — provider probing/completion HTTP calls are
-      exempt; parsing (`parseOllamaChatResponse` etc.) and decision logic
-      (`ollamaModelChoice`, `defaultModelFor`) should be near-100%.
+- [x] `internal/llm` (53.6% -> 57.7%) — covered `classify`, `capitalize`,
+      `plural`, `nz`, `shortLocalName`, `modelOrDefault`, and
+      `ollamaModelChoice`'s two pure branches (override/resident-model,
+      before its live `/api/tags` fallback) — all previously untested.
+      **Follow-up left for a future pass**: `render` (llm.go:497) is a
+      large print function, same shape as `internal/dupes`' `render` —
+      worth the same stdout-capture treatment, not done here for time.
+      `Run`/`once`/`scanProcesses`/`checkGPUDriver`/`runsCleanly`/`RunFit`
+      remain live (process scanning, subprocess exec).
 - [ ] `internal/mcp` (55.2%) — the JSON-RPC `handle()` function should
       already be well-tested per its own design (pure + tested per
       memory); audit the rest of the dispatch surface.
