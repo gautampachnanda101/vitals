@@ -18,11 +18,18 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       (`internal/dashboard/module.go`, `routeWrite` in `dashboard.go`) —
       commits `170e08e`, `9da3dd5`. See `design.md`'s "As built" section
       for exactly what shipped versus the original draft.
-- [ ] Rewrite `internal/clean` to expose what a `/clean/preview` write
-      action needs: reuse `ReclaimableSummary(budget)` for the preview
-      (no new cleanup logic), and a proper `Apply`-style function
-      returning structured data (bytes freed, per-category breakdown,
-      partial failures) instead of only `error`.
+- [x] Rewrite `internal/clean` to expose what a `/clean/preview` write
+      action needs — commit `a9c8efb`. `ReclaimableSummary(budget)`
+      already measured without deleting (no new function needed for
+      preview, per `design.md` §4). Added `Apply(home, opts) Result`
+      (`FreedBytes`, `FreeBefore`/`FreeAfter`, `Records
+      []PurgeRecord` — one entry per non-empty purge location, the
+      per-category breakdown; a failed removal simply isn't credited,
+      rather than a separate error list, matching the existing
+      `purgeContents`/`removeTree` accounting already verified this
+      session not to over-count on partial failure) instead of only
+      `error`. `Run` is now a thin CLI wrapper over it — no behavior
+      change, confirmed by the existing test suite.
 - [ ] Mandate `html/template` for the new write-action render
       functions, with a crafted-filename regression test (matching the
       migration already done for every read-only render function in
