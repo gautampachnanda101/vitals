@@ -324,3 +324,18 @@ since `.git/hooks/` itself is never tracked). It fails closed on
 gofmt/vet/test/coverage; it warns rather than blocks if staticcheck isn't
 installed locally (CI still catches that), so a missing dev tool never
 makes `git commit` unusable outright.
+
+**Push regularly — a local commit that never reaches `origin` isn't
+protecting anyone.** CI only runs on push; committing on a regular basis
+locally (above) and then leaving those commits unpushed for hours or
+days means CI is validating a stale HEAD while real work accumulates
+untested by the matrix (Windows/macOS builds, the CLI smoke test,
+cross-compile) that the local pre-commit hook doesn't cover. Concretely:
+after finishing a roadmap checklist item (or a small standalone fix like
+a wording change), push it once it's committed and green locally, rather
+than batching a long run of commits before the first push — that's what
+let 29 commits go unpushed for 12+ hours in this repo and made the next
+CI run fail against a stale base rather than the fixes already sitting
+in those commits. Still ask before pushing when the user hasn't already
+signaled they want that (per the executing-actions-with-care norm), but
+don't let "only commit when asked" quietly turn into "never push either."
