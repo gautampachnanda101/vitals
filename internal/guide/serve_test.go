@@ -75,3 +75,84 @@ func TestAllowedHostsOnlyRejectsTheRightPortWrongHost(t *testing.T) {
 		t.Error("matching port with a different host must still be rejected")
 	}
 }
+
+// callSameOriginOnly builds a sameOriginOnly handler with the same
+// allowed-hosts set allowedHostsOnly's own tests use, and runs one
+// request through it, returning whether the inner handler was reached.
+func callSameOriginOnly(t *testing.T, method, origin, secFetchSite string) (called bool, status int) {
+	t.Helper()
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })
+	h := sameOriginOnly(inner, "127.0.0.1:9999", "localhost:9999")
+
+	req := httptest.NewRequest(method, "http://127.0.0.1:9999/clean/apply", nil)
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	if secFetchSite != "" {
+		req.Header.Set("Sec-Fetch-Site", secFetchSite)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return called, rec.Code
+}
+
+func TestSameOriginOnlyIgnoresGETAndHEADEntirely(t *testing.T) {
+	// Read-only routes are already covered by allowedHostsOnly alone —
+	// sameOriginOnly only guards mutating requests, so a cross-origin GET
+	// (which allowedHostsOnly's own Host check already handles) must not
+	// be rejected here even with attacker-shaped headers.
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		called, status := callSameOriginOnly(t, method, "https://evil.example", "cross-site")
+		if !called || status != http.StatusOK {
+			t.Errorf("%s: called=%v status=%d, want called=true status=200 — sameOriginOnly must not touch GET/HEAD", method, called, status)
+		}
+	}
+}
+
+func TestSameOriginOnlyAcceptsAMatchingOriginOnEitherAllowedHost(t *testing.T) {
+	for _, origin := range []string{"http://127.0.0.1:9999", "http://localhost:9999"} {
+		called, status := callSameOriginOnly(t, http.MethodPost, origin, "same-origin")
+		if !called || status != http.StatusOK {
+			t.Errorf("origin %q: called=%v status=%d, want called=true status=200 — this is the exact bug found by review (only 127.0.0.1 was checked, not localhost)", origin, called, status)
+		}
+	}
+}
+
+func TestSameOriginOnlyRejectsAMismatchedOrigin(t *testing.T) {
+	called, status := callSameOriginOnly(t, http.MethodPost, "https://evil.example", "")
+	if called {
+		t.Error("a mismatched Origin reached the wrapped handler")
+	}
+	if status != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", status)
+	}
+}
+
+func TestSameOriginOnlyRejectsCrossSiteSecFetchSiteEvenWithNoOrigin(t *testing.T) {
+	// Sec-Fetch-Site is browser-controlled and cannot be forged by page
+	// script — reject on it alone even if Origin happens to be absent.
+	called, _ := callSameOriginOnly(t, http.MethodPost, "", "cross-site")
+	if called {
+		t.Error("Sec-Fetch-Site: cross-site reached the wrapped handler")
+	}
+}
+
+func TestSameOriginOnlyAllowsSecFetchSiteNone(t *testing.T) {
+	// "none" means the browser has no initiating document at all (typed
+	// URL, bookmark) — not something a hostile page can produce.
+	called, status := callSameOriginOnly(t, http.MethodPost, "", "none")
+	if !called || status != http.StatusOK {
+		t.Errorf("called=%v status=%d, want called=true status=200 for Sec-Fetch-Site: none", called, status)
+	}
+}
+
+func TestSameOriginOnlyAllowsBothHeadersAbsent(t *testing.T) {
+	// A non-browser same-machine caller (e.g. curl) sends neither header
+	// — already the same privilege tier as running `vitals clean`
+	// directly, per this design's own threat model (see
+	// docs/roadmap/items/005-dashboard-write-actions/design.md §1).
+	called, status := callSameOriginOnly(t, http.MethodPost, "", "")
+	if !called || status != http.StatusOK {
+		t.Errorf("called=%v status=%d, want called=true status=200 when both headers are absent", called, status)
+	}
+}

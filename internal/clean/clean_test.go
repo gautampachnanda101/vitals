@@ -3,6 +3,7 @@ package clean
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -239,6 +240,47 @@ func TestPurgeContentsRefusesAFile(t *testing.T) {
 	}
 	if _, err := os.Stat(f); err != nil {
 		t.Errorf("the file itself should have been left alone: %v", err)
+	}
+}
+
+func TestPurgeContentsDoesNotCreditBytesWhenRemovalActuallyFails(t *testing.T) {
+	// Raised by review while designing roadmap item 005 (dashboard write
+	// actions): removeTree accumulates a file's size into its return value
+	// before attempting os.Remove, and discards that call's error — read in
+	// isolation, that looks like it could inflate the reported freed-bytes
+	// count on a permission-denied file. It doesn't, in the one path that
+	// actually calls it (purgeContents): removeTree deletes deepest-first,
+	// so a file os.Remove can't delete leaves its parent directory
+	// non-empty, which makes the directory's own os.Remove fail too — all
+	// the way up to the top-level entry purgeContents just tried to purge.
+	// purgeContents re-checks that top-level entry with its own os.Lstat
+	// afterward and only credits freedByRM if it's actually gone. This
+	// pins that real behavior with a genuine permission failure, not just
+	// reasoning about the code.
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits don't apply the same way on Windows")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked-file")
+	if err := os.WriteFile(locked, make([]byte, 100), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Removing a file needs write+exec on its *parent* directory, not the
+	// file's own mode — lock the parent to force the real os.Remove call
+	// inside removeTree to fail with a permission error.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	r := &runner{opts: Options{}}
+	r.purgeContents(dir)
+
+	if got := r.freedByRM.Load(); got != 0 {
+		t.Errorf("freedByRM = %d, want 0 — removal genuinely failed and must not be credited", got)
+	}
+	if _, err := os.Stat(locked); err != nil {
+		t.Errorf("the locked file should still exist (removal should have failed), but os.Stat: %v", err)
 	}
 }
 

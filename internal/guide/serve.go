@@ -74,6 +74,13 @@ func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
 	// address alone.
 	_, port, _ := net.SplitHostPort(addr)
 	handler = allowedHostsOnly(handler, addr, "localhost:"+port)
+	// sameOriginOnly is CSRF defense for anything that mutates state
+	// (vitals dashboard's write actions, roadmap item 005) — applied
+	// here, not by each caller, since this is the one place that already
+	// knows the real bound address/port allowedHostsOnly also needs.
+	// GET/HEAD are exempt (read-only routes are already covered by the
+	// Host check above); every other method is checked.
+	handler = sameOriginOnly(handler, addr, "localhost:"+port)
 
 	// ReadHeaderTimeout guards against a client that opens a connection
 	// and trickles headers in slowly (a slowloris-style hang) — the same
@@ -117,6 +124,51 @@ func allowedHostsOnly(next http.Handler, allowed ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !ok[r.Host] {
 			http.Error(w, "invalid host", http.StatusBadRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sameOriginOnly rejects any mutating (non-GET/HEAD) request that doesn't
+// look like it originated from a page this server itself served — CSRF
+// defense for the dashboard's write actions (roadmap item 005), designed
+// and reviewed on its own per docs/architecture/design.md §6.5 before any
+// such route shipped. Full rationale in
+// docs/roadmap/items/005-dashboard-write-actions/design.md §1-2.
+//
+// Two independent, browser-controlled signals, either one sufficient to
+// reject:
+//   - Origin: if present, must be "http://" + one of allowedHosts. A
+//     cross-origin fetch()/XHR/form-POST always sets this.
+//   - Sec-Fetch-Site: if present, must be "same-origin" or "none". This
+//     header cannot be set or suppressed by page script — it's the
+//     modern, spec'd (Fetch Metadata) replacement for a CSRF token, which
+//     matters here since the dashboard has no session/cookie mechanism a
+//     token could even attach to.
+//
+// A request with NEITHER header present (a non-browser same-machine
+// caller, e.g. curl) is allowed through: that caller already has the same
+// privilege tier as the user running `vitals clean` directly. This
+// defends against a remote page weaponizing the user's own browser, not
+// against the user's own machine — the same threat model every other
+// security decision in this codebase judges severity against.
+func sameOriginOnly(next http.Handler, allowedHosts ...string) http.Handler {
+	origins := make(map[string]bool, len(allowedHosts))
+	for _, h := range allowedHosts {
+		origins["http://"+h] = true
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if o := r.Header.Get("Origin"); o != "" && !origins[o] {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+		if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

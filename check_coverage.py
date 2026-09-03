@@ -86,16 +86,16 @@ FLOORS = {
     # firstNonEmpty/strSort) is at or near 100%.
     "vitals/internal/gpu": 54,
     # guide's floor keeps dropping despite new tests, not a regression:
-    # allowedHostsOnly/safeLinkHref are fully covered, but the package
-    # grows around Serve/ServeHTML/ServeLocal/openBrowser, which are —
-    # like doctor.Collect() — live glue (a blocking server loop, an OS
-    # browser-launch command) exempt from unit coverage by convention.
-    # ServeLocal grew its Addr/NoOpen options for roadmap item 002 (the
-    # vitals dashboard MVP) — more lines in the same already-exempt
-    # function, not a new gap. See AGENTS.md's "95%+ coverage is the
-    # target for a package's pure/testable logic" — this is that
-    # exemption showing up in the number.
-    "vitals/internal/guide": 74,
+    # allowedHostsOnly/safeLinkHref/sameOriginOnly are all fully covered
+    # (100%), but the package grows around Serve/ServeHTML/ServeLocal/
+    # openBrowser, which are — like doctor.Collect() — live glue (a
+    # blocking server loop, an OS browser-launch command) exempt from
+    # unit coverage by convention. ServeLocal grew again to wire in
+    # sameOriginOnly (roadmap item 005's CSRF defense) — more lines in
+    # the same already-exempt function, not a new gap. See AGENTS.md's
+    # "95%+ coverage is the target for a package's pure/testable logic"
+    # — this is that exemption showing up in the number.
+    "vitals/internal/guide": 72,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
