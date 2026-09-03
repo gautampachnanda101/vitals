@@ -120,12 +120,14 @@ FLOORS = {
     # deliberately avoid (would touch live system state). toolText/
     # jsonString/ToolNames are now fully covered.
     "vitals/internal/mcp": 68,
-    # memcheck: Run is the only untested function — four live gopsutil
-    # calls (host.Info, mem.VirtualMemory/SwapMemory/SwapDevices) feeding
-    # already-100%-covered pure functions (memVerdict, verdict, printIf),
-    # the same Collect-then-Analyze shape as internal/doctor. Nothing left
-    # to extract without testing gopsutil itself.
-    "vitals/internal/memcheck": 33,
+    # memcheck: the four gopsutil calls (host.Info, mem.VirtualMemory/
+    # SwapMemory/SwapDevices) are now injected via a `source` struct (item
+    # 009) — Run() is a one-line pass-through to run(defaultSource), and
+    # run() itself is exercised with fakes for the hostInfo-fails,
+    # virtualMemory-fails, swapMemory-fails, and swap-device-lines cases,
+    # plus one real end-to-end call through Run()/defaultSource. 100.0%
+    # measured raw coverage.
+    "vitals/internal/memcheck": 99,
     # memhogs: Run/once/readCgroup are live (real process scanning,
     # /proc reads). describe and userFamilies (config-file read/parse,
     # tested via isolateConfigDir the same way internal/doctor's history

@@ -14,16 +14,38 @@ import (
 	"vitals/internal/ui"
 )
 
+// source is the live gopsutil surface Run reads from, pulled out so a test
+// can substitute fakes and exercise Run's formatting/branching logic without
+// touching the real host. defaultSource wires the real gopsutil calls;
+// production code always goes through it via Run.
+type source struct {
+	hostInfo      func() (*host.InfoStat, error)
+	virtualMemory func() (*mem.VirtualMemoryStat, error)
+	swapMemory    func() (*mem.SwapMemoryStat, error)
+	swapDevices   func() ([]*mem.SwapDevice, error)
+}
+
+var defaultSource = source{
+	hostInfo:      host.Info,
+	virtualMemory: mem.VirtualMemory,
+	swapMemory:    mem.SwapMemory,
+	swapDevices:   mem.SwapDevices,
+}
+
 // Run prints the report.
 func Run() error {
+	return run(defaultSource)
+}
+
+func run(src source) error {
 	ui.Header("1. MEMORY & PRESSURE OVERVIEW")
 
-	if hi, err := host.Info(); err == nil {
+	if hi, err := src.hostInfo(); err == nil {
 		fmt.Printf("  Host      : %s (%s %s, %s)\n", hi.Hostname, hi.Platform, hi.PlatformVersion, hi.KernelArch)
 		fmt.Printf("  Uptime    : %s\n", (time.Duration(hi.Uptime) * time.Second).Round(time.Minute))
 	}
 
-	vm, err := mem.VirtualMemory()
+	vm, err := src.virtualMemory()
 	if err != nil {
 		return fmt.Errorf("read virtual memory: %w", err)
 	}
@@ -44,7 +66,7 @@ func Run() error {
 	printIf("Slab", vm.Slab)
 
 	ui.Header("2. SWAP / COMPRESSION")
-	sw, err := mem.SwapMemory()
+	sw, err := src.swapMemory()
 	if err != nil {
 		ui.Warnf("swap stats unavailable: %v", err)
 	} else {
@@ -56,7 +78,7 @@ func Run() error {
 			fmt.Printf("  %-28s %12s\n", "Cumulative swap-out:", ui.HumanBytes(int64(sw.Sout)))
 		}
 	}
-	if sd, err := mem.SwapDevices(); err == nil && len(sd) > 0 {
+	if sd, err := src.swapDevices(); err == nil && len(sd) > 0 {
 		for _, d := range sd {
 			fmt.Printf("  device %s: %s used of %s\n", d.Name,
 				ui.HumanBytes(int64(d.UsedBytes)), ui.HumanBytes(int64(d.UsedBytes+d.FreeBytes)))

@@ -13,14 +13,15 @@ existing per-package comments — read those comments in full before
 starting a package, they're the fastest way to know exactly which
 functions need an injectable seam.
 
-- [ ] `internal/memcheck` (33.3%, floor 33) — smallest package, good
-      first one to establish the pattern on. `Run` calls `host.Info`,
-      `mem.VirtualMemory`, `mem.SwapMemory`, `mem.SwapDevices` (all
-      gopsutil) feeding already-100%-covered `memVerdict`/`verdict`/
-      `printIf`. Inject these four as function values (or a small
-      `type source struct{ hostInfo func()...; virtualMemory
-      func()...; ... }`) with real gopsutil calls as the production
-      default, fakes in the test.
+- [x] `internal/memcheck` (33.3% → 100.0%, floor 33 → 99) — extracted a
+      `source` struct (`hostInfo`/`virtualMemory`/`swapMemory`/
+      `swapDevices` function values) with `defaultSource` wiring the real
+      gopsutil calls; `Run()` is now a one-line `run(defaultSource)`
+      pass-through. New tests cover `run()`'s hostInfo-fails (Host line
+      skipped, not fatal), virtualMemory-fails (fatal, wrapped error),
+      swapMemory-fails (non-fatal warning), and swap-device/cumulative
+      line branches via fakes, plus one real end-to-end call through
+      `Run()` itself against the live host.
 - [ ] `internal/monitor` (41.2%, floor 41) — `Run`/`sample`/
       `readDiskCounters`/`readNetCounters`/`topProcesses` are the live
       gopsutil/process side; `emit`/`bar`/`rate`/`memBreakdownLine`/
