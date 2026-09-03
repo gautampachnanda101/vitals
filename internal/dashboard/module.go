@@ -34,9 +34,18 @@ type PageContext struct {
 
 // Module is one self-contained dashboard page.
 type Module struct {
-	Slug      string // URL path segment; "" is the root/overview page
-	NavLabel  string
-	Order     int // nav position, lowest first; ties keep registration order
+	Slug     string // URL path segment; "" is the root/overview page
+	NavLabel string
+	Order    int // nav position, lowest first; ties keep registration order
+	// Prepare does whatever request-scoped, module-specific work Render
+	// needs but PageContext doesn't carry by default (the advice module
+	// uses this to call the LLM only when its own route is hit, not on
+	// every request). Called once, uniformly, by the router for whichever
+	// module matched — nil means there's nothing to do, not an error.
+	// This exists specifically so a module needing extra setup never
+	// requires the router to special-case its slug: see
+	// docs/architecture/design.md §6.2.
+	Prepare   func(*PageContext) error
 	Available func(PageContext) bool
 	Render    func(PageContext) string
 }

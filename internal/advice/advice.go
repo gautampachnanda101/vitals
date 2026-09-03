@@ -74,6 +74,19 @@ func stripFabricatedSources(reply string) string {
 	return strings.TrimRight(reply[:loc[0]], "\n ")
 }
 
+// Generate turns a `vitals doctor --json` envelope into a prompt, asks a
+// local or cloud LLM for advice on it, and strips any fabricated
+// "Sources" section from the reply. Shared by the CLI (Run, below) and
+// `vitals dashboard`'s advice page — one place for the prompt and the
+// strip-fabricated-sources backstop, not two copies that could drift.
+func Generate(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+	reply, err := llm.Complete(BuildPrompt(reportJSON), opts)
+	if err != nil {
+		return "", err
+	}
+	return stripFabricatedSources(reply), nil
+}
+
 // Run gathers the current doctor report, asks a local or cloud LLM for
 // advice on it, and prints the reply.
 func Run(opts Options) error {
@@ -83,7 +96,7 @@ func Run(opts Options) error {
 		return fmt.Errorf("build report: %w", err)
 	}
 
-	reply, err := llm.Complete(BuildPrompt(reportJSON), llm.CompleteOptions{
+	reply, err := Generate(reportJSON, llm.CompleteOptions{
 		OllamaURL:   opts.OllamaURL,
 		LMStudioURL: opts.LMStudioURL,
 		LlamaCppURL: opts.LlamaCppURL,
@@ -94,7 +107,6 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
-	reply = stripFabricatedSources(reply)
 
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)

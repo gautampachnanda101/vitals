@@ -12,10 +12,18 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       Done when: a test registering two modules with the same slug asserts
       a panic, matching `http.ServeMux.Handle`'s own behavior for a
       duplicate pattern.
-- [ ] **Add `Prepare func(*PageContext) error` to `Module`**; route the
+- [x] **Add `Prepare func(*PageContext) error` to `Module`**; route the
       advice module's `llm.Complete` call through it instead of a
-      handler-level special case. Done when: nothing in item 002's handler
-      dispatch code branches on a specific slug string.
+      handler-level special case. Also extracted `advice.Generate`
+      (report JSON -> prompt -> LLM -> strip-fabricated-sources) as a
+      shared function so `vitals advice` (CLI) and the dashboard's advice
+      page use the exact same path instead of two copies. Failure is
+      absorbed into `ctx.AdviceErr` rather than returned, so the page
+      still renders a friendly message when no provider answers. Done
+      when: nothing in item 002's handler dispatch code branches on a
+      specific slug string — item 002 still needs to actually call
+      `m.Prepare(&ctx)` uniformly for whichever module matched; this task
+      only adds the mechanism and wires the one module that needs it.
 - [ ] **Cache `Collect()`/`probeProviders()` behind a short TTL +
       single-flight guard**, shared across concurrent requests
       (`internal/dashboard`, e.g. a new `snapshot_cache.go`). Done when: a

@@ -1,8 +1,12 @@
 package advice
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"vitals/internal/llm"
 )
 
 func TestBuildPromptIncludesTheReportAndAsksForPrioritizedAdvice(t *testing.T) {
@@ -26,6 +30,35 @@ func TestBuildPromptForbidsFabricatedSourcesOrCitations(t *testing.T) {
 	prompt := BuildPrompt([]byte(`{"verdict":"ok"}`))
 	if !strings.Contains(strings.ToLower(prompt), "no external sources") && !strings.Contains(strings.ToLower(prompt), "cite") {
 		t.Errorf("prompt should tell the model not to fabricate sources/citations, got:\n%s", prompt)
+	}
+}
+
+func TestGenerateBuildsPromptCallsLLMAndStripsFabricatedSources(t *testing.T) {
+	// Generate is the shared "report -> prompt -> reply, cleaned up" path
+	// both `vitals advice` and the dashboard's advice page use — one
+	// place for the strip-fabricated-sources backstop, not two.
+	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Write([]byte(`{"models":[{"name":"llama3.1:8b"}]}`))
+		case "/api/chat":
+			w.Write([]byte(`{"message":{"content":"Restart the app.\n\n## Sources\n(source: https://example.com/fake)\n"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ollama.Close()
+
+	reportJSON := []byte(`{"verdict":"warning","findings":[{"title":"disk nearly full"}]}`)
+	reply, err := Generate(reportJSON, llm.CompleteOptions{OllamaURL: ollama.URL})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !strings.Contains(reply, "Restart the app.") {
+		t.Errorf("Generate reply = %q, missing the real answer", reply)
+	}
+	if strings.Contains(strings.ToLower(reply), "source") {
+		t.Errorf("Generate reply = %q, fabricated sources were not stripped", reply)
 	}
 }
 

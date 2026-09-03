@@ -2,6 +2,8 @@ package dashboard
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -134,6 +136,60 @@ func TestPowerAndGPUModulesAreConditionallyAvailable(t *testing.T) {
 	_, _, gpuAvailable = findModule("gpu", PageContext{Snapshot: doctor.Snapshot{GPUs: []doctor.GPU{{Name: "x"}}}})
 	if !gpuAvailable {
 		t.Error("gpu module should be available once a GPU is reported")
+	}
+}
+
+func TestOnlyAdviceModuleHasAPrepareHook(t *testing.T) {
+	// The router (item 002) calls every matched module's Prepare
+	// uniformly, nil or not — modules with nothing request-scoped to do
+	// (everything except advice today) must leave it nil rather than a
+	// no-op func, so "does this module need extra setup" stays a cheap
+	// nil check instead of always calling through an empty closure.
+	for _, m := range sortedModules() {
+		hasPrepare := m.Prepare != nil
+		want := m.Slug == "advice"
+		if hasPrepare != want {
+			t.Errorf("module %q: Prepare != nil is %v, want %v", m.Slug, hasPrepare, want)
+		}
+	}
+}
+
+func TestPrepareAdviceCallsTheLLMAndPopulatesTheReply(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Write([]byte(`{"models":[{"name":"llama3.1:8b"}]}`))
+		case "/api/chat":
+			w.Write([]byte(`{"message":{"content":"Restart the app."}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx := PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: srv.URL}}
+	if err := prepareAdvice(&ctx); err != nil {
+		t.Fatalf("prepareAdvice: %v", err)
+	}
+	if ctx.AdviceReply != "Restart the app." {
+		t.Errorf("AdviceReply = %q, want the model's reply", ctx.AdviceReply)
+	}
+	if ctx.AdviceErr != nil {
+		t.Errorf("AdviceErr = %v, want nil on success", ctx.AdviceErr)
+	}
+}
+
+func TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt(t *testing.T) {
+	// No reachable provider at all — Generate fails. prepareAdvice must
+	// still return nil and let renderAdvice show the friendly message via
+	// ctx.AdviceErr, the same graceful-degradation shape every other
+	// "no X available" case in this codebase uses.
+	ctx := PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: "http://127.0.0.1:1"}}
+	if err := prepareAdvice(&ctx); err != nil {
+		t.Fatalf("prepareAdvice should absorb the LLM error into ctx.AdviceErr, not return it, got: %v", err)
+	}
+	if ctx.AdviceErr == nil {
+		t.Error("AdviceErr should be set when no provider is reachable")
 	}
 }
 
