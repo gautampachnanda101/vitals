@@ -52,8 +52,30 @@ jobs:
             local bin="vitals"; [ "$goos" = windows ] && bin="vitals.exe"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$ldflags" -o "dist/$bin" .
             local name="vitals_${oslabel}_${archlabel}.${ext}"
-            if [ "$ext" = zip ]; then (cd dist && zip -q "$name" "$bin"); else tar -C dist -czf "dist/$name" "$bin"; fi
+            # extra is a plain string, not a bash array: with set -u, an
+            # empty array's "${arr[@]}" is an unbound-variable error on
+            # older bash (e.g. macOS's stock bash 3.2) — deliberately
+            # avoiding that pitfall here even though this step runs on
+            # ubuntu-latest, since it's cheap to just not depend on the
+            # runner's bash version at all.
+            local extra=""
+            # macOS release archives also carry Vitals.app (roadmap item
+            # 004): a double-clickable launcher that just execs the
+            # bundled binary with `dashboard`. Unsigned/not notarized —
+            # Gatekeeper will block a first open; documented honestly in
+            # the item's implementation plan rather than silently
+            # assumed away.
+            if [ "$goos" = darwin ]; then
+              rm -rf dist/Vitals.app
+              mkdir -p dist/Vitals.app/Contents/MacOS dist/Vitals.app/Contents/Resources
+              sed "s/__VERSION__/${bare}/" packaging/macos/Info.plist > dist/Vitals.app/Contents/Info.plist
+              install -m 0755 packaging/macos/vitals-launcher dist/Vitals.app/Contents/MacOS/vitals-launcher
+              cp "dist/$bin" dist/Vitals.app/Contents/Resources/vitals
+              extra="Vitals.app"
+            fi
+            if [ "$ext" = zip ]; then (cd dist && zip -qr "$name" "$bin" $extra); else tar -C dist -czf "dist/$name" "$bin" $extra; fi
             rm -f "dist/$bin"
+            rm -rf dist/Vitals.app
           }
           build darwin  amd64 Darwin  x86_64 tar.gz
           build darwin  arm64 Darwin  arm64  tar.gz

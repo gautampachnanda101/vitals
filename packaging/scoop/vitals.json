@@ -15,10 +15,14 @@
       "bin": "vitals.exe"
     }
   },
+  "shortcuts": [
+    ["vitals.exe", "Vitals Dashboard", "dashboard"]
+  ],
   "post_install": [
     "Write-Host ''",
     "Write-Host 'Get a verdict for this machine:  vitals doctor'",
     "Write-Host 'Full guide:  vitals guide'",
+    "Write-Host 'A Start Menu shortcut (\"Vitals Dashboard\") launches the browser dashboard without a terminal.'",
     "Write-Host ''"
   ],
   "checkver": {

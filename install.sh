@@ -44,4 +44,22 @@ case ":$PATH:" in
   *":$bindir:"*) ;;
   *) echo "Add $bindir to your PATH." ;;
 esac
+
+# Linux desktop entry so `vitals dashboard` is reachable from an app
+# launcher/menu without a terminal (roadmap item 004) — best effort,
+# never fails the install: no icon/menu on a headless box or an
+# unwritable ~/.local/share is a shrug, not an error.
+if [ "$os" = "Linux" ]; then
+  apps_dir="$HOME/.local/share/applications"
+  if mkdir -p "$apps_dir" 2>/dev/null; then
+    desktop_url="https://raw.githubusercontent.com/${repo}/main/packaging/linux/vitals.desktop"
+    if curl -fsSL "$desktop_url" 2>/dev/null | sed "s|__BIN_PATH__|$bindir/vitals|" > "$apps_dir/vitals.desktop.tmp" 2>/dev/null; then
+      mv "$apps_dir/vitals.desktop.tmp" "$apps_dir/vitals.desktop"
+      echo "Added a Vitals launcher to your applications menu."
+    else
+      rm -f "$apps_dir/vitals.desktop.tmp"
+    fi
+  fi
+fi
+
 echo "Try: vitals doctor"

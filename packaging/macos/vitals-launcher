@@ -1,0 +1,39 @@
+#!/bin/sh
+# The .app's CFBundleExecutable. A double-clicked app has no terminal for
+# `vitals dashboard`'s own ui.Warnf browser-open-failure message to reach
+# — so this launcher (not vitals itself) owns opening the browser, and
+# falls back to a native notification if it can't. "Must not fail
+# silently" per docs/roadmap/items/004-native-launcher/implementation-plan.md.
+set -u
+DIR="$(cd "$(dirname "$0")" && pwd)"
+BIN="$DIR/../Resources/vitals"
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+
+notify() {
+  osascript -e "display notification \"$1\" with title \"Vitals\"" >/dev/null 2>&1
+}
+
+# --no-open: vitals must not also race us to open its own browser tab.
+"$BIN" dashboard --no-open >"$LOG" 2>&1 &
+PID=$!
+
+url=""
+i=0
+while [ "$i" -lt 50 ]; do
+  url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+/' "$LOG" 2>/dev/null | head -1)"
+  [ -n "$url" ] && break
+  kill -0 "$PID" 2>/dev/null || break
+  i=$((i + 1))
+  sleep 0.1
+done
+
+if [ -n "$url" ]; then
+  if ! open "$url" 2>/dev/null; then
+    notify "The dashboard is running at $url, but no browser could be opened automatically."
+  fi
+else
+  notify "vitals dashboard did not start. Run it from a terminal for the full error."
+fi
+
+wait "$PID"

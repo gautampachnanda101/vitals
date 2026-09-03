@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Vitals
+Comment=Names the one resource constraining your machine right now
+Exec=__BIN_PATH__ dashboard
+Terminal=false
+Categories=System;Monitor;
+Icon=utilities-system-monitor
+StartupNotify=true

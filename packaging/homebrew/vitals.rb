@@ -34,6 +34,10 @@ class Vitals < Formula
   def install
     bin.install "vitals"
     generate_completions_from_executable(bin/"vitals", "completion")
+    # Vitals.app (roadmap item 004, macOS archives only) isn't installed
+    # to /Applications — that's a Homebrew Cask's job, not a Formula's;
+    # dropped in the keg's prefix instead, see caveats for how to use it.
+    prefix.install "Vitals.app" if File.directory?("Vitals.app")
   end
 
   def caveats
@@ -42,6 +46,12 @@ class Vitals < Formula
         vitals doctor
 
       Full guide:  vitals guide   |   per-command help:  vitals help <cmd>
+
+      A double-clickable dashboard launcher is at:
+        #{opt_prefix}/Vitals.app
+      Copy it to /Applications if you want it there — Homebrew Formulae
+      don't install GUI apps to /Applications themselves. It's unsigned;
+      the first open needs right-click -> Open to get past Gatekeeper.
     EOS
   end
 
