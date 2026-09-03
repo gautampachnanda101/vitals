@@ -29,11 +29,24 @@ jobs:
       - name: Test
         shell: bash
         run: |
+          set -o pipefail
           if [ "${{ runner.os }}" = "Windows" ]; then
-            go test -coverprofile=coverage.out ./...
+            go test -coverprofile=coverage.out ./... | tee test.log
           else
-            go test -race -coverprofile=coverage.out ./...
+            go test -race -coverprofile=coverage.out ./... | tee test.log
           fi
+
+      - name: Test report (per package) — ${{ runner.os }}
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Unit test report — ${{ runner.os }}"
+            echo "One line per package (ok/FAIL) plus any individual failing or skipped test, from the Test step above."
+            echo '```'
+            grep -E '^(ok|FAIL)[[:space:]]|^--- (FAIL|SKIP):' test.log || echo "(Test step produced no per-package result lines — it may have failed before running any tests; see its log.)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: CLI smoke test (every read-only command, via the real binary)
         shell: bash
