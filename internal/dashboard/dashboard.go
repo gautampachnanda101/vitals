@@ -95,3 +95,17 @@ func route(path string, ctx PageContext) (int, string) {
 	}
 	return http.StatusOK, layout(m.NavLabel, m.Slug, ctx.Version, nav, m.Render(ctx))
 }
+
+// routeWrite computes the HTTP status and response body for a POST to
+// path against ctx — the write-side counterpart to route, kept just as
+// pure (raw bytes in, no *http.Request) so it's tested the same way.
+// Same-origin protection is not this function's concern: guide.ServeLocal
+// already rejects any non-GET/HEAD request that fails the Origin/
+// Sec-Fetch-Site check before it ever reaches here.
+func routeWrite(path string, body []byte, ctx PageContext) (int, string) {
+	a, exists, available := findWriteAction(path, ctx)
+	if !exists || !available {
+		return http.StatusNotFound, `{"error":"not found"}`
+	}
+	return a.Handler(ctx, body)
+}

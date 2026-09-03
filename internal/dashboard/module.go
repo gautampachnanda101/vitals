@@ -131,3 +131,57 @@ func HasGPU(ctx PageContext) bool { return len(ctx.Snapshot.GPUs) > 0 }
 func HasBattery(ctx PageContext) bool {
 	return ctx.Snapshot.Power.Percent > 0 || ctx.Snapshot.Power.OnBattery
 }
+
+// WriteAction is one POST-only, mutating dashboard endpoint (roadmap item
+// 005) — a deliberately different shape from Module, not an optional
+// field on it: a write action's Handler produces a status+body for a
+// client-side script to consume, not a full navigable page wrapped in
+// layout(), so folding it into Module would give every purely-read-only
+// page (still all of them but this one) a field it never uses. See
+// docs/roadmap/items/005-dashboard-write-actions/design.md. Same-origin
+// protection is not this type's concern at all — guide.ServeLocal already
+// rejects any non-GET/HEAD request that fails the Origin/Sec-Fetch-Site
+// check before it reaches here, for every route, uniformly.
+type WriteAction struct {
+	Path string // URL path, always POST-only, e.g. "/clean/preview"
+	// Available mirrors Module.Available. nil means always available,
+	// matching every write action shipping today. Present from day one,
+	// per review, even though nothing needs it yet — so a future write
+	// action gated by machine capability doesn't require reworking this
+	// registry after real callers already depend on its absence.
+	Available func(PageContext) bool
+	// Handler receives the request body as raw, already-read bytes —
+	// never a live *http.Request — so it's constructed and called
+	// directly in tests the same way Module.Render is, no
+	// httptest.NewRequest boilerplate needed to exercise it.
+	Handler func(PageContext, []byte) (status int, body string)
+}
+
+var writeActions []WriteAction
+
+// RegisterWrite adds a write action to the dashboard, mirroring Register
+// — same duplicate-path panic, for the same reason (a silently-shadowed
+// second registration would be permanently unreachable dead code).
+func RegisterWrite(a WriteAction) {
+	for _, existing := range writeActions {
+		if existing.Path == a.Path {
+			panic(fmt.Sprintf("dashboard: duplicate write action path %q", a.Path))
+		}
+	}
+	writeActions = append(writeActions, a)
+}
+
+// findWriteAction returns the registered write action for path and
+// whether it's available on ctx, mirroring findModule.
+func findWriteAction(path string, ctx PageContext) (action WriteAction, exists, available bool) {
+	for _, a := range writeActions {
+		if a.Path == path {
+			ok := true
+			if a.Available != nil {
+				ok = a.Available(ctx)
+			}
+			return a, true, ok
+		}
+	}
+	return WriteAction{}, false, false
+}

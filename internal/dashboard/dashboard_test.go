@@ -122,3 +122,83 @@ func TestRoutePrepareErrorRendersAnErrorPageInsteadOfPanicking(t *testing.T) {
 		t.Errorf("body should surface the Prepare error: %s", body)
 	}
 }
+
+// withWriteRegistry swaps the package-level write-action registry for the
+// duration of a test, mirroring withRegistry's swap-and-restore of the
+// read-only Module registry (module_test.go).
+func withWriteRegistry(t *testing.T, actions []WriteAction) {
+	t.Helper()
+	old := writeActions
+	writeActions = append([]WriteAction(nil), actions...)
+	t.Cleanup(func() { writeActions = old })
+}
+
+func TestRegisterWritePanicsOnDuplicatePath(t *testing.T) {
+	withWriteRegistry(t, nil)
+	RegisterWrite(WriteAction{Path: "/clean/apply"})
+
+	defer func() {
+		if recover() == nil {
+			t.Error("RegisterWrite should panic on a duplicate path, it did not")
+		}
+	}()
+	RegisterWrite(WriteAction{Path: "/clean/apply"})
+}
+
+func TestRouteWriteReturns404ForAnUnregisteredPath(t *testing.T) {
+	withWriteRegistry(t, nil)
+	status, _ := routeWrite("/nope", nil, PageContext{})
+	if status != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", status)
+	}
+}
+
+func TestRouteWriteReturns404WhenUnavailable(t *testing.T) {
+	// 404, not some other status: an unavailable write action shouldn't
+	// leak whether the path exists at all — same posture as a module a
+	// machine doesn't offer being indistinguishable from one that was
+	// never registered, from a strict security standpoint, though route
+	// (the read side) is more forgiving since it explains why. Write
+	// actions have no page to explain on, so 404 is simplest and safest.
+	withWriteRegistry(t, []WriteAction{{
+		Path:      "/gpu-only-action",
+		Available: func(PageContext) bool { return false },
+		Handler:   func(PageContext, []byte) (int, string) { return http.StatusOK, "should not run" },
+	}})
+	status, body := routeWrite("/gpu-only-action", nil, PageContext{})
+	if status != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", status)
+	}
+	if strings.Contains(body, "should not run") {
+		t.Error("Handler must not be called when Available returns false")
+	}
+}
+
+func TestRouteWriteNilAvailableMeansAlwaysAvailable(t *testing.T) {
+	withWriteRegistry(t, []WriteAction{{
+		Path:    "/clean/preview",
+		Handler: func(PageContext, []byte) (int, string) { return http.StatusOK, "ran" },
+	}})
+	status, body := routeWrite("/clean/preview", nil, PageContext{})
+	if status != http.StatusOK || body != "ran" {
+		t.Errorf("status=%d body=%q, want 200/\"ran\" — nil Available should mean always-available", status, body)
+	}
+}
+
+func TestRouteWriteCallsHandlerWithTheRawBody(t *testing.T) {
+	var gotBody []byte
+	withWriteRegistry(t, []WriteAction{{
+		Path: "/clean/apply",
+		Handler: func(_ PageContext, body []byte) (int, string) {
+			gotBody = body
+			return http.StatusOK, "applied"
+		},
+	}})
+	status, body := routeWrite("/clean/apply", []byte(`{"confirm":true}`), PageContext{})
+	if status != http.StatusOK || body != "applied" {
+		t.Errorf("status=%d body=%q, want 200/\"applied\"", status, body)
+	}
+	if string(gotBody) != `{"confirm":true}` {
+		t.Errorf("Handler received body %q, want the raw request body verbatim", gotBody)
+	}
+}
