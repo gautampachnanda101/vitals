@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in vitals is broken or behaving unexpectedly
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: vitals version
+      description: Output of `vitals version`
+      placeholder: "vitals 0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command that triggered it
+      placeholder: "vitals doctor --json"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Full output if possible — redact anything sensitive (hostnames, process names, etc.)
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: This is not a security vulnerability (if it is, please use [Report a vulnerability](https://github.com/gautampachnanda101/vitals/security/advisories/new) instead)
+          required: true
