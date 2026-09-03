@@ -116,8 +116,13 @@ expected.
       defensive empty-string guard looks unreachable for real float64
       input and was left alone rather than forced. `collect`/`RunOnce`/
       `Serve` remain live.
-- [ ] `internal/ui` (76.0%) — small formatting-helper package; should be
-      easy to push close to 100% since almost none of it is live.
+- [x] `internal/ui` (76.0% -> 96.0%, **clears the 95% hard rule**) —
+      `Header`/`Rule`/`Infof`/`Okf`/`Warnf`/`Errf`/`Key`/`Emph` were all
+      completely untested despite being used by every other package in
+      this codebase; covered via the same stdout/stderr-capture pattern
+      used elsewhere. `colorEnabled`'s NO_COLOR branch is now covered
+      too; its TTY-detection branch is environment-dependent and left as
+      the only real gap.
 - [ ] `internal/config` (80.6%) — a flat-file parser; should be easy to
       push higher, it's almost entirely pure.
 - [ ] `internal/help` (86.5%) — static command-doc data + rendering;

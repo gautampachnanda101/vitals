@@ -1,9 +1,76 @@
 package ui
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
+
+// captureStdout swaps both os.Stdout and os.Stderr for the duration of f
+// and returns everything written to either — Errf specifically writes to
+// stderr. Matches the pattern used across this codebase's other
+// print-directly packages (internal/monitor, internal/memcheck, ...).
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	oldOut, oldErr := os.Stdout, os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = w, w
+	f()
+	w.Close()
+	os.Stdout, os.Stderr = oldOut, oldErr
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
+
+func TestHeaderPrintsTheTitleWithARuleUnderIt(t *testing.T) {
+	out := StripANSI(captureStdout(t, func() { Header("DISK") }))
+	if !strings.Contains(out, "DISK") || !strings.Contains(out, "────") {
+		t.Errorf("Header(\"DISK\") = %q, want the title and a matching-length rule", out)
+	}
+}
+
+func TestRulePrintsAnEightyCharLine(t *testing.T) {
+	out := strings.TrimSpace(captureStdout(t, func() { Rule() }))
+	if len(out) != 80 {
+		t.Errorf("Rule() printed a %d-char line, want 80", len(out))
+	}
+}
+
+func TestInfofOkfWarnfPrintToStdout(t *testing.T) {
+	for _, f := range []func(string, ...any){Infof, Okf, Warnf} {
+		out := StripANSI(captureStdout(t, func() { f("value=%d", 42) }))
+		if !strings.Contains(out, "value=42") {
+			t.Errorf("printer did not include the formatted message, got %q", out)
+		}
+	}
+}
+
+func TestErrfPrintsToStderr(t *testing.T) {
+	out := StripANSI(captureStdout(t, func() { Errf("boom %s", "now") }))
+	if !strings.Contains(out, "boom now") {
+		t.Errorf("Errf message missing, got %q", out)
+	}
+}
+
+func TestColorEnabledRespectsNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	if colorEnabled() {
+		t.Error("colorEnabled() should be false whenever NO_COLOR is set, regardless of value or TTY state")
+	}
+}
+
+func TestKeyAndEmphWrapWithoutChangingTheText(t *testing.T) {
+	if got := StripANSI(Key("hello")); got != "hello" {
+		t.Errorf("Key(\"hello\") stripped = %q, want hello unchanged", got)
+	}
+	if got := StripANSI(Emph("hello")); got != "hello" {
+		t.Errorf("Emph(\"hello\") stripped = %q, want hello unchanged", got)
+	}
+}
 
 func TestHumanBytes(t *testing.T) {
 	cases := []struct {

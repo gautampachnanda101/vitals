@@ -113,7 +113,7 @@ FLOORS = {
     # (installCommand, withSudo, binary, firstOrEmpty, formatToolList) is
     # at 100%.
     "vitals/internal/tools": 44,
-    "vitals/internal/ui": 76,
+    "vitals/internal/ui": 96,
 }
 
 
