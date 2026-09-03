@@ -100,9 +100,13 @@ expected.
       worth the same stdout-capture treatment, not done here for time.
       `Run`/`once`/`scanProcesses`/`checkGPUDriver`/`runsCleanly`/`RunFit`
       remain live (process scanning, subprocess exec).
-- [ ] `internal/mcp` (55.2%) — the JSON-RPC `handle()` function should
-      already be well-tested per its own design (pure + tested per
-      memory); audit the rest of the dispatch surface.
+- [x] `internal/mcp` (55.2% -> 68.7%) — `toolText`, `jsonString`,
+      `ToolNames` were fully untested despite being trivially pure.
+      `tools()` (10%) registers each tool's `Handler` closure, only
+      executed by an actual `tools/call` — the existing tests
+      deliberately avoid that since it would touch live system state
+      (`doctor.Assess`, `gpu.Probe`, etc.), matching this server's own
+      read-only-by-construction design.
 - [ ] `internal/guide` (73.4%) — `Serve`/`ServeHTML`/`ServeLocal`/
       `openBrowser` are exempt (documented in `check_coverage.py`); verify
       nothing else is dragging the number down.

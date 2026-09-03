@@ -77,7 +77,12 @@ FLOORS = {
     # low/live. classify/capitalize/plural/nz/shortLocalName/
     # modelOrDefault/ollamaModelChoice's pure branches are now covered.
     "vitals/internal/llm": 57,
-    "vitals/internal/mcp": 55,
+    # mcp: tools() registers each tool's Handler closure, which calls live
+    # doctor.Assess/llm/gpu functions when actually invoked — only
+    # exercised by a real tools/call, which the existing tests
+    # deliberately avoid (would touch live system state). toolText/
+    # jsonString/ToolNames are now fully covered.
+    "vitals/internal/mcp": 68,
     # memcheck: Run is the only untested function — four live gopsutil
     # calls (host.Info, mem.VirtualMemory/SwapMemory/SwapDevices) feeding
     # already-100%-covered pure functions (memVerdict, verdict, printIf),

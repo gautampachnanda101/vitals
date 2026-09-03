@@ -20,6 +20,48 @@ func call(t *testing.T, method, params string) response {
 	return resp
 }
 
+func TestToolText(t *testing.T) {
+	got := toolText("hello", false)
+	content, _ := got["content"].([]map[string]any)
+	if len(content) != 1 || content[0]["text"] != "hello" || content[0]["type"] != "text" {
+		t.Errorf("toolText content = %+v", content)
+	}
+	if got["isError"] != false {
+		t.Errorf("toolText isError = %v, want false", got["isError"])
+	}
+	if errGot := toolText("boom", true); errGot["isError"] != true {
+		t.Errorf("toolText(isErr=true) isError = %v, want true", errGot["isError"])
+	}
+}
+
+func TestJSONString(t *testing.T) {
+	got, err := jsonString(map[string]int{"a": 1})
+	if err != nil {
+		t.Fatalf("jsonString: %v", err)
+	}
+	if !strings.Contains(got, `"a": 1`) {
+		t.Errorf("jsonString = %q, want indented JSON containing \"a\": 1", got)
+	}
+	if _, err := jsonString(make(chan int)); err == nil {
+		t.Error("jsonString(unmarshalable) should return an error")
+	}
+}
+
+func TestToolNamesListsEveryRegisteredTool(t *testing.T) {
+	names := ToolNames()
+	for _, want := range []string{"system_health", "diagnose_bottleneck", "llm_status", "gpu_status"} {
+		found := false
+		for _, n := range names {
+			if n == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("ToolNames() = %v, missing %q", names, want)
+		}
+	}
+}
+
 func TestInitialize(t *testing.T) {
 	r := call(t, "initialize", "")
 	if r.Error != nil {
