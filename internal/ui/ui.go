@@ -6,6 +6,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/mattn/go-colorable"
+	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 )
 
 // ANSI color codes. Disabled automatically when stdout is not a terminal or
@@ -32,15 +36,28 @@ func DisableColor() {
 	Red, Green, Yellow, Cyan, Bold, Dim, Reset = "", "", "", "", "", "", ""
 }
 
+// colorEnabled decides whether to emit ANSI codes at all. Two real
+// cross-platform gaps this closes over the previous hand-rolled check
+// (a bare os.Stdout.Stat() mode-bit test): (1) that check never
+// recognized a real terminal on Windows, where console handles don't
+// set ModeCharDevice the same way, and isatty.IsTerminal/
+// IsCygwinTerminal are the actual, widely-used way to detect one there
+// (also covers MSYS/Git-Bash's Cygwin-style pty, which IsTerminal alone
+// misses); and (2) even a real Windows terminal needs
+// ENABLE_VIRTUAL_TERMINAL_PROCESSING switched on before it will render
+// raw ANSI escape codes as color instead of printing them literally —
+// EnableColorsStdout does that once, in place, on os.Stdout's existing
+// handle, which is why every existing fmt.Printf(ui.Bold+...+ui.Reset)
+// call site elsewhere in this codebase needed no changes: nothing wraps
+// or replaces os.Stdout, the console's own rendering mode changes
+// instead. Both calls are no-ops on macOS/Linux.
 func colorEnabled() bool {
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
 		return false
 	}
-	fi, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	colorable.EnableColorsStdout(nil)
+	fd := os.Stdout.Fd()
+	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
 
 func code(c string) string {
@@ -62,13 +79,61 @@ func Header(title string) {
 // Rule prints a thin divider.
 func Rule() { fmt.Println(strings.Repeat("-", 80)) }
 
-// Infof / Warnf / Errf / Okf are colored line printers.
-func Infof(format string, a ...any) { fmt.Printf(Cyan+"[*] "+Reset+format+"\n", a...) }
-func Okf(format string, a ...any)   { fmt.Printf(Green+"[+] "+Reset+format+"\n", a...) }
-func Warnf(format string, a ...any) { fmt.Printf(Yellow+"[!] "+Reset+format+"\n", a...) }
-func Errf(format string, a ...any)  { fmt.Fprintf(os.Stderr, Red+"[x] "+Reset+format+"\n", a...) }
+// Infof / Warnf / Errf / Okf are colored line printers. The glyphs
+// (●/✓/⚠/✗) replace an earlier "[*]"/"[+]"/"[!]"/"[x]" bracket-tag
+// convention that read as dated next to the rest of vitals' output
+// (box-drawing rules, →, —); vitals already assumes a UTF-8-capable
+// terminal elsewhere (Header's ─ rule, PrintFindings' →), so this adds
+// no new compatibility risk.
+func Infof(format string, a ...any) { fmt.Printf(Cyan+"● "+Reset+format+"\n", a...) }
+func Okf(format string, a ...any)   { fmt.Printf(Green+"✓ "+Reset+format+"\n", a...) }
+func Warnf(format string, a ...any) { fmt.Printf(Yellow+"⚠ "+Reset+format+"\n", a...) }
+func Errf(format string, a ...any)  { fmt.Fprintf(os.Stderr, Red+"✗ "+Reset+format+"\n", a...) }
 func Actionf(format string, a ...any) string {
 	return Yellow + fmt.Sprintf(format, a...) + Reset
+}
+
+// DefaultWrapWidth is the column width TermWidth falls back to when the
+// real terminal width can't be determined — output is redirected to a
+// file or pipe, or the query itself fails. A moderately conservative
+// guess for exactly those non-interactive cases; TermWidth is what
+// callers should actually use for wrapping.
+const DefaultWrapWidth = 92
+
+// TermWidth returns stdout's current column width, or DefaultWrapWidth
+// when it can't be determined. Call it once per render, not per line —
+// findings/output printed together should wrap consistently even if
+// something changed mid-print, which is unlikely but free to guarantee.
+func TermWidth() int {
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 20 {
+		return w
+	}
+	return DefaultWrapWidth
+}
+
+// Wrap breaks text into lines no wider than width, breaking only at word
+// boundaries — a word longer than width is never split, so it can still
+// overflow on its own. Call it on plain, uncoloured text before applying
+// any ANSI wrapping (Key, Actionf, ...): width counts runes, not a
+// display width adjusted for invisible escape codes.
+func Wrap(text string, width int) []string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	if width <= 0 {
+		return []string{strings.Join(words, " ")}
+	}
+	lines := []string{words[0]}
+	for _, w := range words[1:] {
+		last := lines[len(lines)-1]
+		if len([]rune(last))+1+len([]rune(w)) > width {
+			lines = append(lines, w)
+		} else {
+			lines[len(lines)-1] = last + " " + w
+		}
+	}
+	return lines
 }
 
 // Key renders a field label (dim, so values stand out beside it).

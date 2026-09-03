@@ -7,8 +7,11 @@
 // thresholds are the direct fix for that alert fatigue.
 //
 // The format is intentionally a flat `key = value` list, not TOML/YAML/JSON:
-// vitals has exactly one dependency (gopsutil) and a handful of numeric knobs
-// don't justify a second one. `#` starts a comment; blank lines are ignored.
+// a handful of numeric knobs don't justify a parsing dependency vitals
+// otherwise has no use for (see AGENTS.md's "One dependency" principle —
+// still the default for anything hand-rollable, even though a small,
+// deliberate exception now exists for reliable terminal color/width
+// detection). `#` starts a comment; blank lines are ignored.
 package config
 
 import (

@@ -10,8 +10,11 @@ LLM diagnostics. `vitals tools`, `explore` and `live` can detect, install,
 and hand off to those other tools directly when their specialty view is
 what you actually want.
 
-One static binary, one dependency (gopsutil), no bundled installer, no
-phone-home. Runs the same way on macOS, Linux and Windows.
+One static binary, no bundled installer, no phone-home. gopsutil is the
+one dependency for system data; a small terminal-reliability group
+(cross-platform color and real terminal-width detection) is the one
+deliberate exception to "hand-write it instead." Runs the same way on
+macOS, Linux and Windows.
 
 **On this page** — `vitals guide --web` builds its own navigable table
 of contents from the headings below automatically; this plain list is
@@ -421,11 +424,11 @@ cpu_oversubscribe_multiplier = 4    # default 2.0 — load1 >= this * cores trig
 ollama_url = "http://gpu-box:11434" # default for --ollama-url when the flag is omitted
 ```
 
-The format is a flat `key = value` list on purpose, not TOML or YAML —
-vitals has exactly one dependency (gopsutil), and a handful of numeric
-knobs don't justify a second one. `#` starts a comment. A missing file, an
-unreadable file, or an unrecognized key is never an error; vitals just
-falls back to its built-in default for whatever isn't set.
+The format is a flat `key = value` list on purpose, not TOML or YAML — a
+handful of numeric knobs don't justify a parsing dependency. `#` starts
+a comment. A missing file, an unreadable file, or an unrecognized key is
+never an error; vitals just falls back to its built-in default for
+whatever isn't set.
 
 ### Extending memhogs
 

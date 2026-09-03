@@ -7,8 +7,12 @@ Read this before writing code, not after something breaks.
 
 `vitals` is a single static Go binary: cross-platform system diagnostics that
 correlate resources into a verdict + fix, rather than just drawing gauges.
-One runtime dependency: `github.com/shirou/gopsutil/v4`. No other dependency
-gets added without a real reason — see "Don't add a dependency" below.
+Four dependencies: `github.com/shirou/gopsutil/v4` (system data),
+`github.com/mattn/go-isatty` + `github.com/mattn/go-colorable` +
+`golang.org/x/term` (reliable cross-platform terminal color/width
+detection, added 2026-09-03 — see "One dependency" below for why the
+hand-rolled approach was replaced). No other dependency gets added
+without a real reason — see "One dependency" below.
 
 ## Build, test, lint
 
@@ -155,12 +159,26 @@ to exist *before* implementation starts on anything non-trivial; the
 
 ## Non-negotiable principles
 
-- **One dependency.** gopsutil, and that's it. Before reaching for a library
-  (a config format, a Markdown renderer, a color/terminal package), check
-  whether the actual feature surface used is small enough to hand-write —
-  it usually is. `internal/config`'s flat `key = value` format and
+- **One dependency for data, three for reliable terminal output.**
+  gopsutil for system data — that's the whole "one dependency" claim's
+  original scope, and it still holds there. Before reaching for a
+  library (a config format, a Markdown renderer), check whether the
+  actual feature surface used is small enough to hand-write — it
+  usually is. `internal/config`'s flat `key = value` format and
   `internal/guide`'s Markdown renderers exist because of this rule, not
   because hand-rolling is inherently better.
+
+  The one deliberate exception (2026-09-03, maintainer decision after
+  three rounds of "the CLI's colored output still isn't good enough"):
+  `internal/ui` now depends on `github.com/mattn/go-isatty` +
+  `github.com/mattn/go-colorable` (reliable TTY detection and legacy
+  Windows console ANSI support — the previous hand-rolled
+  `os.Stdout.Stat()` mode-bit check never recognized a real terminal on
+  Windows at all) and `golang.org/x/term` (real terminal-width
+  detection for `ui.Wrap`, replacing a fixed-width guess). These were a
+  real, hand-written approach hitting a real ceiling, not a shortcut —
+  don't treat this as license to reach for a library the next time
+  hand-rolling would work; it's still the default everywhere else.
 - **The `--json` schema is a frozen, additive-only contract.** Adding a
   field: bump the *minor* version in `internal/doctor/schema.go`
   (`SchemaVersion`), add it to `schema.json`, then

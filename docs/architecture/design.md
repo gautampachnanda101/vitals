@@ -13,8 +13,11 @@ why.
 
 ## 1. What vitals is today
 
-A single static Go binary, one direct dependency (`gopsutil`),
-cross-platform (macOS/Linux/Windows), no phone-home. It complements — does
+A single static Go binary, `gopsutil` for system data plus a small
+terminal-reliability group (`go-isatty`/`go-colorable`/`golang.org/x/term`,
+added 2026-09-03 for genuine cross-platform color/width detection — see
+AGENTS.md's "One dependency" principle for why this specific exception
+exists), cross-platform (macOS/Linux/Windows), no phone-home. It complements — does
 not replace — btop/glances/ncdu/nvtop by adding cross-resource
 correlation, remediation, and local/cloud LLM diagnostics on top of the
 same underlying data.

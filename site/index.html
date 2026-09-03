@@ -188,8 +188,8 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         <span class="cmd">vitals doctor --json | jq</span>
       </div>
       <div class="card">
-        <h3>No phone-home, one dependency</h3>
-        <p>A single Go module dependency (gopsutil) in the whole build. No telemetry, no accounts, no network calls unless you point it at an LLM endpoint yourself.</p>
+        <h3>No phone-home, minimal dependencies</h3>
+        <p>gopsutil for system data, plus a small terminal-reliability group for cross-platform color and width detection. No telemetry, no accounts, no network calls unless you point it at an LLM endpoint yourself.</p>
         <span class="cmd">go build -o vitals .</span>
       </div>
     </div>

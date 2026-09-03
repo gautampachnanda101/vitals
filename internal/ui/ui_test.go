@@ -233,3 +233,50 @@ func TestStripANSI(t *testing.T) {
 		}
 	}
 }
+
+func TestWrapBreaksOnlyAtWordBoundaries(t *testing.T) {
+	// The exact real-world case this fixes: a long fix/detail line that
+	// used to overflow the terminal edge entirely unwrapped.
+	text := "quit or restart Google Chrome Helper (Renderer) (pid 17751) — the largest consumer, or run `vitals memhogs` for the full list"
+	lines := Wrap(text, 40)
+	for _, l := range lines {
+		if n := len([]rune(l)); n > 40 {
+			t.Errorf("line %q is %d runes, want <= 40", l, n)
+		}
+	}
+	if strings.Join(lines, " ") != text {
+		t.Errorf("Wrap should not drop or reorder words: got %q, want %q", strings.Join(lines, " "), text)
+	}
+}
+
+func TestWrapNeverSplitsAWordLongerThanWidth(t *testing.T) {
+	lines := Wrap("a-word-way-longer-than-the-width short", 5)
+	if lines[0] != "a-word-way-longer-than-the-width" {
+		t.Errorf("Wrap should keep an over-width word whole on its own line, got %q", lines[0])
+	}
+}
+
+func TestWrapHandlesEmptyAndSingleWordInput(t *testing.T) {
+	if got := Wrap("", 40); got != nil {
+		t.Errorf("Wrap(\"\") = %v, want nil", got)
+	}
+	if got := Wrap("one", 40); len(got) != 1 || got[0] != "one" {
+		t.Errorf("Wrap(single word) = %v, want [\"one\"]", got)
+	}
+}
+
+func TestWrapWithNonPositiveWidthReturnsOneLine(t *testing.T) {
+	got := Wrap("some words here", 0)
+	if len(got) != 1 || got[0] != "some words here" {
+		t.Errorf("Wrap(width<=0) = %v, want a single unwrapped line", got)
+	}
+}
+
+func TestTermWidthFallsBackWhenNotATerminal(t *testing.T) {
+	// go test's stdout is never a real terminal, so this exercises the
+	// fallback path deterministically — the "real detected width" branch
+	// needs an attached TTY this test environment doesn't have.
+	if got := TermWidth(); got != DefaultWrapWidth {
+		t.Errorf("TermWidth() = %d, want the DefaultWrapWidth fallback %d when stdout isn't a terminal", got, DefaultWrapWidth)
+	}
+}

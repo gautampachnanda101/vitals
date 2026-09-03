@@ -122,8 +122,14 @@ func Run(opts RunOptions) int {
 // dim detail line, and yellow-arrowed fixes. spaced adds a blank line between
 // findings. Exported so `vitals advice` can render the same styled findings
 // list `vitals doctor` uses for its own heuristic section, instead of a
-// plain unstyled text dump.
+// plain unstyled text dump. Detail/fix text wraps to the real terminal
+// width (ui.TermWidth) instead of running past the edge unwrapped — a
+// long process name (a Chrome helper, say) easily pushes a fix line
+// past 100+ columns; the indent each line is printed with (5 columns
+// for a detail line, 7 for a fix, past the arrow) is subtracted from
+// the wrap width so the printed line — indent included — still fits.
 func PrintFindings(findings []diag.Finding, spaced bool) {
+	width := ui.TermWidth()
 	for i, f := range findings {
 		if spaced && i > 0 {
 			fmt.Println()
@@ -137,10 +143,16 @@ func PrintFindings(findings []diag.Finding, spaced bool) {
 			ui.Okf("%s", f.Title)
 		}
 		if f.Detail != "" {
-			fmt.Printf("     %s\n", ui.Key(f.Detail))
+			for _, line := range ui.Wrap(f.Detail, width-5) {
+				fmt.Printf("     %s\n", ui.Key(line))
+			}
 		}
 		for _, fix := range f.Fixes {
-			fmt.Printf("     %s %s\n", ui.Actionf("→"), fix)
+			lines := ui.Wrap(fix, width-7)
+			fmt.Printf("     %s %s\n", ui.Actionf("→"), lines[0])
+			for _, cont := range lines[1:] {
+				fmt.Printf("       %s\n", cont)
+			}
 		}
 	}
 }
