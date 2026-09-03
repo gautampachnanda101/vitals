@@ -309,3 +309,14 @@ Stage specific files, not `git add -A` — this repo's `.gitignore` covers
 runtime state; `.claude/skills/` itself is tracked), but review
 `git status` before staging broad changes anyway. Never amend a pushed
 commit; make a new one.
+
+**Pre-commit enforcement**: `.githooks/pre-commit` runs gofmt, `go vet`,
+staticcheck, `go test -race`, and the per-package coverage gate — the
+same checks CI runs — before a commit is even created, so a violation of
+the 95%+ hard rule (or any other gate) is caught locally, not discovered
+after a push. Install it once per clone with `make hooks-install` (this
+just points `core.hooksPath` at the versioned `.githooks/` directory,
+since `.git/hooks/` itself is never tracked). It fails closed on
+gofmt/vet/test/coverage; it warns rather than blocks if staticcheck isn't
+installed locally (CI still catches that), so a missing dev tool never
+makes `git commit` unusable outright.

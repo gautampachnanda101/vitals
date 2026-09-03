@@ -2,7 +2,7 @@ BINARY  := vitals
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all test race lint vet staticcheck ci run clean install coverage
+.PHONY: build build-all test race lint vet staticcheck ci run clean install coverage hooks-install
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
@@ -30,6 +30,10 @@ coverage:
 	python3 check_coverage.py coverage.out
 
 ci: lint race build-all
+
+hooks-install:
+	git config core.hooksPath .githooks
+	@echo "pre-commit hook installed (runs gofmt/vet/staticcheck/race-test/coverage before every commit)"
 
 run: build
 	./$(BINARY) doctor

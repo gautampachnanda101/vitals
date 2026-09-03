@@ -1,0 +1,46 @@
+#!/bin/sh
+# Pre-commit gate: the same checks CI runs, run locally before a commit is
+# even created, not just discovered after a push. Install once per clone:
+#   git config core.hooksPath .githooks
+# (or `make hooks-install`). See AGENTS.md's "Committing" section.
+#
+# Skips itself gracefully if a required tool isn't installed, other than
+# gofmt/go vet/go test (part of the Go toolchain itself, always assumed
+# present) — staticcheck specifically is a one-time `go install` some
+# clones won't have yet; warn, don't block, so a missing dev tool never
+# becomes "git commit doesn't work at all."
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: gofmt"
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then
+	echo "gofmt found unformatted files:" >&2
+	echo "$unformatted" >&2
+	echo "run: gofmt -w ." >&2
+	exit 1
+fi
+
+echo "pre-commit: go vet"
+go vet ./...
+
+echo "pre-commit: staticcheck"
+if command -v staticcheck >/dev/null 2>&1; then
+	staticcheck ./...
+elif [ -x "$(go env GOPATH)/bin/staticcheck" ]; then
+	"$(go env GOPATH)/bin/staticcheck" ./...
+else
+	echo "staticcheck not installed — skipping (install: go install honnef.co/go/tools/cmd/staticcheck@latest)" >&2
+	echo "CI will still run it; don't rely on this warning long-term." >&2
+fi
+
+echo "pre-commit: go test -race"
+go test -race ./...
+
+echo "pre-commit: coverage floor (per package, see AGENTS.md's 95%+ hard rule)"
+go test -coverprofile=/tmp/vitals-precommit-coverage.out ./... >/dev/null
+python3 check_coverage.py /tmp/vitals-precommit-coverage.out
+rm -f /tmp/vitals-precommit-coverage.out
+
+echo "pre-commit: all checks passed"
