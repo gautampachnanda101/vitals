@@ -39,8 +39,8 @@ clean: ## Remove build artifacts (./vitals, ./dist)
 
 ##@ Test & lint
 
-test: ## Run the unit test suite
-	go test ./...
+test: ## Run the unit test suite, with a per-package coverage line
+	go test -cover ./...
 
 race: ## Run the unit test suite with the race detector
 	go test -race ./...
