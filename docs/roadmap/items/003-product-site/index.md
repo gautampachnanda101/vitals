@@ -4,9 +4,9 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: In progress — page built (`site/index.html`) and the
-deploy workflow is in place; blocked on a one-time repo settings change
-only the maintainer can make (see `implementation-plan.md`)
+**Status**: Done — live at
+[gautampachnanda101.github.io/vitals](https://gautampachnanda101.github.io/vitals/),
+linked from `README.md`'s top
 **Depends on**: — (runs in parallel with 001/002)
 **Target release**: [v0.5.0](../../releases/v0.5.0.md)
 **Architecture**: [design doc](../../../architecture/design.md) §5.3

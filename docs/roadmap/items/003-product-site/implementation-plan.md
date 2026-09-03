@@ -41,16 +41,14 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       Mono), which is fine here since this page is public and
       network-reachable by design, unlike the offline-only
       dashboard/guide.
-- [ ] **Enable GitHub Pages for the repo — a one-time repo settings
-      change only you can make**: Settings → Pages → "Build and
-      deployment" → Source → **GitHub Actions** (not "Deploy from a
-      branch"). Once set, `.github/workflows/pages.yml` runs on every
-      push touching `site/` and publishes automatically; the site's URL
-      will be `https://gautampachnanda101.github.io/vitals/`.
-- [ ] Add the live site URL to `README.md`'s top, once the above setting
-      is flipped and the first deploy has actually succeeded — not
-      before, since an unverified URL would violate this item's own
-      accuracy requirement.
+- [x] Enabled GitHub Pages (Settings → Pages → Source → GitHub Actions).
+      First deploy triggered manually (`gh workflow run pages.yml`) and
+      verified live: `curl -s -o /dev/null -w "%{http_code}"
+      https://gautampachnanda101.github.io/vitals/` → `200`, with the
+      correct `<title>` in the response body — not just a green
+      checkmark on the workflow run.
+- [x] Added the live URL to `README.md`'s top, only after confirming the
+      deploy above actually succeeded.
 
 ## Exit criteria
 

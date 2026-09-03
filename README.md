@@ -1,5 +1,7 @@
 # vitals
 
+**[gautampachnanda101.github.io/vitals](https://gautampachnanda101.github.io/vitals/)**
+
 A single static binary that doesn't just draw gauges — it **names the one
 resource constraining your machine right now and the exact command to fix it**.
 macOS, Linux and Windows; no runtime dependencies.
