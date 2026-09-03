@@ -233,12 +233,36 @@ func insertTOC(body, toc string) string {
 	return toc + body
 }
 
+// safeLinkHref returns url unchanged if it's schemeless (a relative or
+// anchor link — always safe) or uses an allow-listed scheme, and "#"
+// otherwise. This guide's own docs never link with anything else, but
+// RenderFragment renders LLM-generated advice text through this same
+// path, and a model coaxed into echoing a markdown link with a
+// javascript:/data:/vbscript: href would otherwise become a live,
+// clickable exploit inside the dashboard's own origin — html.EscapeString
+// alone (already applied before this runs) blocks tag/attribute breakout
+// but does nothing about URL scheme.
+func safeLinkHref(url string) string {
+	if scheme, _, ok := strings.Cut(url, ":"); ok {
+		switch strings.ToLower(scheme) {
+		case "http", "https", "mailto":
+			return url
+		default:
+			return "#"
+		}
+	}
+	return url // no scheme at all: a relative or #anchor link
+}
+
 // renderInlineHTML escapes text for safe HTML output, then reintroduces the
 // three inline constructs vitals' own docs use as real tags. Escaping runs
 // first so the tags inserted afterward are the only markup in the result.
 func renderInlineHTML(s string) string {
 	s = html.EscapeString(s)
-	s = reLink.ReplaceAllString(s, `<a href="$2">$1</a>`)
+	s = reLink.ReplaceAllStringFunc(s, func(m string) string {
+		g := reLink.FindStringSubmatch(m)
+		return fmt.Sprintf(`<a href="%s">%s</a>`, safeLinkHref(g[2]), g[1])
+	})
 	s = reCode.ReplaceAllString(s, `<code>$1</code>`)
 	s = reBold.ReplaceAllString(s, `<strong>$1</strong>`)
 	return s

@@ -113,6 +113,46 @@ func TestRenderHTMLRendersLinksAsAnchors(t *testing.T) {
 	}
 }
 
+func TestRenderHTMLRendersHTTPSAndMailtoLinks(t *testing.T) {
+	out := RenderHTML("[repo](https://github.com/example/vitals) or [help](mailto:a@b.com)", "t")
+	if !strings.Contains(out, `<a href="https://github.com/example/vitals">repo</a>`) {
+		t.Errorf("https link should pass through unchanged:\n%s", out)
+	}
+	if !strings.Contains(out, `<a href="mailto:a@b.com">help</a>`) {
+		t.Errorf("mailto link should pass through unchanged:\n%s", out)
+	}
+}
+
+func TestRenderHTMLNeutralizesUnsafeLinkSchemes(t *testing.T) {
+	// This is a real XSS path, not a hypothetical: RenderFragment (this
+	// same renderInlineHTML) is used to render vitals dashboard's advice
+	// page, which shows LLM-generated text — a model coaxed into echoing
+	// a markdown link with a javascript: href must not produce a live,
+	// clickable exploit. html.EscapeString alone (already applied first)
+	// blocks tag/attribute breakout but does nothing about URL scheme.
+	cases := []string{
+		"[click me](javascript:alert(document.cookie))",
+		"[x](data:text/html,<script>alert(1)</script>)",
+		"[x](vbscript:msgbox(1))",
+	}
+	for _, md := range cases {
+		out := RenderHTML(md, "t")
+		if strings.Contains(out, `href="javascript:`) || strings.Contains(out, `href="data:`) || strings.Contains(out, `href="vbscript:`) {
+			t.Errorf("unsafe scheme reached a live href for input %q:\n%s", md, out)
+		}
+	}
+}
+
+func TestRenderFragmentNeutralizesUnsafeLinkSchemesInLLMOutput(t *testing.T) {
+	out := RenderFragment("Restart the app. [details](javascript:alert(1))")
+	if strings.Contains(out, `href="javascript:`) {
+		t.Errorf("RenderFragment let a javascript: URL through — this is the path LLM advice output renders through:\n%s", out)
+	}
+	if !strings.Contains(out, "Restart the app.") {
+		t.Errorf("the real text should still render, got:\n%s", out)
+	}
+}
+
 func TestRenderHTMLGroupsBulletsIntoAList(t *testing.T) {
 	out := RenderHTML("- one\n- two\n", "t")
 	if !strings.Contains(out, "<ul>") || !strings.Contains(out, "</ul>") {

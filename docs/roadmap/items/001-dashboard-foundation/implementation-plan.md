@@ -56,12 +56,18 @@ See `AGENTS.md`'s "Roadmap discipline" section for the rule.
       tests `internal/guide` has ever had for its server plumbing
       (`serve_test.go`, previously nonexistent per the QA review). This
       also hardens `guide --web`, not just the future dashboard.
-- [ ] **Scheme allow-list for Markdown links in `renderInlineHTML`**
-      (`internal/guide/html.go`) — allow `http:`/`https:`/`mailto:`, strip
-      or neutralize anything else (`javascript:`/`data:` specifically).
-      Done when: a test feeding `[x](javascript:alert(1))` through
-      `RenderFragment`/`RenderHTML` asserts no `href="javascript:` reaches
-      the output.
+- [x] **Scheme allow-list for Markdown links in `renderInlineHTML`**
+      (`internal/guide/html.go`, `safeLinkHref`) — allows a schemeless
+      (relative/anchor) link or `http:`/`https:`/`mailto:` through
+      unchanged, neutralizes anything else (`javascript:`/`data:`/
+      `vbscript:`) to `#`. This is the path that matters most:
+      `RenderFragment` renders *LLM-generated* advice text on the
+      dashboard, the one place uncontrolled Markdown reaches this
+      renderer live — vitals' own static docs never needed this, but a
+      model coaxed into echoing a `javascript:` link would otherwise
+      produce a live, clickable exploit. Verified with both `RenderHTML`
+      and `RenderFragment` in `guide_test.go`; existing `http`/`https`/
+      `mailto`/anchor-link tests still pass unchanged.
 - [ ] **Fix the dead assertion in `TestRenderAdviceShowsTheReply`**
       (`internal/dashboard/modules_test.go`) — the empty `if` block that
       currently proves nothing.
