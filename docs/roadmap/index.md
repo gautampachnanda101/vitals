@@ -36,7 +36,7 @@ depends on.
 | # | Item | Status | Depends on | Target |
 |---|---|---|---|---|
 | [001](items/001-dashboard-foundation/) | Dashboard foundation fixes | Done | — | v0.5.0 |
-| [002](items/002-dashboard-mvp/) | `vitals dashboard` MVP | Not started | 001 | v0.5.0 |
+| [002](items/002-dashboard-mvp/) | `vitals dashboard` MVP | Done | 001 | v0.5.0 |
 | [003](items/003-product-site/) | Public product site | Not started | — (parallel) | v0.5.0 |
 | [004](items/004-native-launcher/) | Native double-click launcher | Not started | 002 | v0.6.0 |
 | [005](items/005-dashboard-write-actions/) | Dashboard write actions | Not started | 001, 002, 004 | v0.7.0+ |

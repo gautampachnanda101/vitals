@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: AnyLLMReachable, Render: renderAdvice})
+	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: AnyLLMReachable, UnavailableReason: "no local or cloud LLM is reachable", Render: renderAdvice})
 }
 
 // prepareAdvice is the advice module's Prepare hook: the one piece of

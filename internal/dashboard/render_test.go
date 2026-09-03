@@ -91,7 +91,7 @@ func TestWCAGContrastKnownValues(t *testing.T) {
 }
 
 func TestLayoutHighlightsActiveNavItem(t *testing.T) {
-	out := layout("Overview", "cpu", []Module{
+	out := layout("Overview", "cpu", "1.2.3", []Module{
 		{Slug: "", NavLabel: "Overview"},
 		{Slug: "cpu", NavLabel: "CPU"},
 	}, "<p>body</p>")
@@ -108,9 +108,18 @@ func TestLayoutHighlightsActiveNavItem(t *testing.T) {
 }
 
 func TestLayoutEscapesNavLabels(t *testing.T) {
-	out := layout("t", "x", []Module{{Slug: "x", NavLabel: "<script>alert(1)</script>"}}, "")
+	out := layout("t", "x", "1.0", []Module{{Slug: "x", NavLabel: "<script>alert(1)</script>"}}, "")
 	if strings.Contains(out, "<script>alert(1)</script>") {
 		t.Errorf("nav label was not escaped: %s", out)
+	}
+}
+
+func TestLayoutShowsVersionInTheFooterAndFallsBackToDev(t *testing.T) {
+	if out := layout("t", "", "1.2.3", nil, ""); !strings.Contains(out, "vitals 1.2.3") {
+		t.Errorf("footer missing the version, got:\n%s", out)
+	}
+	if out := layout("t", "", "", nil, ""); !strings.Contains(out, "vitals dev") {
+		t.Errorf("empty version should fall back to \"dev\", got:\n%s", out)
 	}
 }
 

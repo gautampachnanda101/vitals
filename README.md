@@ -47,6 +47,7 @@ every platform into `./dist/`.
 | Command | What it does |
 |---|---|
 | `doctor` | Correlates CPU / memory / swap / disk / thermal / GPU / LLM into a ranked verdict — what's wrong and the fix. Exit code **0** healthy, **1** warning, **2** critical. |
+| `dashboard` | Serves the same correlation as browsable pages — one per resource, only the ones this machine actually has. Loopback-only (`127.0.0.1`), opens your browser automatically. |
 | `cpu` `mem` `disk` `net` `power` | Deep dive on one resource: the current numbers plus just that resource's findings. |
 | `gpu` | Per-GPU VRAM / util / temp / power / clocks and the processes holding VRAM, via `nvidia-smi` / `rocm-smi` / `ioreg`. |
 | `top` | Activity-Monitor-style snapshot: system CPU / RAM / load, **per-second** disk & network I/O, top processes. `--watch` for a live redraw. |

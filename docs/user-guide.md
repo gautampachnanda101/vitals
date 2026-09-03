@@ -37,6 +37,7 @@ Everything on one page — command groups, universal flags, exit codes, and
 where config lives.
 
 - **Diagnose** — `vitals doctor` · `vitals cpu`/`mem`/`disk`/`net`/`power` · `vitals doctor --compare a.json b.json`
+- **Browse** — `vitals dashboard` — the same correlation as browsable pages, loopback-only
 - **Understand (LLM)** — `vitals advice` · `vitals llm` · `vitals llm fit <model>` · `vitals gpu`
 - **Fix & reclaim** — `vitals clean --dry-run` · `vitals dupes --hardlink` · `vitals tools --install btop` · `vitals explore` · `vitals live`
 - **Watch live** — `vitals top --watch --sort mem` · `vitals memhogs --watch` · `vitals memcheck`
@@ -125,6 +126,24 @@ getting worse" — the memory-leak finding above depends on it. It only
 records on an actual `vitals doctor` run, never during a `vitals
 serve`/`export` Prometheus scrape, and if the history file can't be written
 for any reason, `doctor` just skips it rather than failing the command.
+
+## vitals dashboard
+
+`dashboard` serves the same correlation `doctor` prints in a terminal as
+browsable pages instead — an overview plus one page per resource. It binds
+`127.0.0.1` only and opens your default browser automatically; nothing
+leaves this machine, the same promise `vitals guide --web` makes.
+
+```bash
+vitals dashboard                # random port, opens your browser
+vitals dashboard --addr :8080   # a stable port to bookmark — still 127.0.0.1 only
+vitals dashboard --no-open      # print the URL instead of launching a browser
+```
+
+Each page only appears in the nav when this machine can actually offer it:
+no GPU page without a GPU, no power page without a battery, no advice page
+without a reachable local or cloud LLM. Press Ctrl+C in the terminal that
+launched it to stop.
 
 ## Resource deep dives: cpu, mem, disk, net, power
 

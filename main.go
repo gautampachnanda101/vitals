@@ -15,6 +15,7 @@
 //
 // Commands:
 //
+//	dashboard  Serve vitals as a local, loopback-only web app
 //	advice     Ask a local or cloud LLM for advice on the current doctor report
 //	clean      Cross-platform disk cleanup (caches, logs, temp, trash)
 //	dupes      Find byte-identical duplicate files (report only, never deletes)
@@ -37,6 +38,7 @@ import (
 	"vitals/internal/advice"
 	"vitals/internal/clean"
 	"vitals/internal/config"
+	"vitals/internal/dashboard"
 	"vitals/internal/doctor"
 	"vitals/internal/dupes"
 	"vitals/internal/gpu"
@@ -315,6 +317,14 @@ func run(argv []string, version string) int {
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
 		return 0
+
+	case "dashboard":
+		fs := newFlagSet("dashboard")
+		addr := fs.String("addr", "", "loopback host:port to serve on (only the port is used — vitals dashboard never binds beyond 127.0.0.1); empty picks a random port")
+		noOpen := fs.Bool("no-open", false, "don't open a browser automatically")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
+		_ = fs.Parse(args)
+		return must(dashboard.Serve(dashboard.Options{Addr: *addr, NoOpen: *noOpen, OllamaURL: *url, Version: version}))
 
 	case "guide":
 		fs := newFlagSet("guide")

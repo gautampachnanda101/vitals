@@ -72,15 +72,17 @@ footer{color:var(--muted);font-size:.78rem;margin-top:2rem;text-align:center}
 <header class="top"><b>vitals</b><span class="mono" style="color:var(--muted)">local dashboard — nothing leaves this machine</span></header>
 <nav aria-label="Primary">%s</nav>
 <main>%s</main>
-<footer>Served locally by the vitals binary — press Ctrl+C in the terminal that launched it to stop.</footer>
+<footer>vitals %s — served locally, nothing leaves this machine. Press Ctrl+C in the terminal that launched it to stop.<br>Issues or feedback: <a href="https://github.com/gautampachnanda101/vitals">github.com/gautampachnanda101/vitals</a></footer>
 </div>
 </body>
 </html>`
 
 // layout wraps body in the shared page shell with a nav bar built from
 // available — the plugin list this PageContext can actually offer — with
-// activeSlug highlighted.
-func layout(title, activeSlug string, available []Module, body string) string {
+// activeSlug highlighted. version is whatever main.version holds ("dev"
+// outside a tagged release build); shown in the footer so a bug report
+// can include it without the reporter having to also run `vitals version`.
+func layout(title, activeSlug, version string, available []Module, body string) string {
 	var nav strings.Builder
 	for _, m := range available {
 		attrs := ""
@@ -95,7 +97,10 @@ func layout(title, activeSlug string, available []Module, body string) string {
 		href := "/" + m.Slug
 		fmt.Fprintf(&nav, `<a href="%s"%s>%s</a>`, href, attrs, html.EscapeString(m.NavLabel))
 	}
-	return fmt.Sprintf(pageShell, html.EscapeString(title), nav.String(), body)
+	if version == "" {
+		version = "dev"
+	}
+	return fmt.Sprintf(pageShell, html.EscapeString(title), nav.String(), body, html.EscapeString(version))
 }
 
 // verdictBanner renders the overall or per-resource verdict as a colored

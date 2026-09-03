@@ -91,6 +91,22 @@ var commands = []Command{
 		},
 	},
 	{
+		Name:     "dashboard",
+		Synopsis: "serve vitals as a local, loopback-only web app",
+		Long: "The same correlation `doctor` and the resource commands print in a terminal,\n" +
+			"as browsable pages: an overview plus one page per resource, each only shown\n" +
+			"when this machine actually has it (no GPU page without a GPU, no advice page\n" +
+			"without a reachable LLM). Binds 127.0.0.1 only — nothing leaves this machine,\n" +
+			"the same promise `vitals guide --web` makes. Opens your default browser\n" +
+			"automatically; press Ctrl+C in the terminal that launched it to stop.",
+		Flags: []Flag{
+			{"addr", "HOST:PORT", "loopback address to serve on — only the port is used, the host is always 127.0.0.1; empty picks a random port"},
+			{"no-open", "", "don't open a browser automatically"},
+			{"ollama-url", "URL", "base URL of the Ollama server"},
+		},
+		Examples: []string{"vitals dashboard", "vitals dashboard --addr :8080", "vitals dashboard --no-open"},
+	},
+	{
 		Name:     "top",
 		Synopsis: "Activity-Monitor-style snapshot of the whole system",
 		Long: "System CPU / RAM / load, per-second disk and network I/O rates, and the top\n" +

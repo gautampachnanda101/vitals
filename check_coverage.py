@@ -28,10 +28,12 @@ FLOORS = {
     # completion output) is now unit tested directly; the remaining
     # uncovered lines in run() are each subcommand's live Run/RunFocus call
     # (doctor, clean, dupes, tools, memhogs, memcheck, gpu, monitor, advice,
-    # llm, metrics.Serve/RunOnce, mcp.Serve, guide --web) — real subprocess/
-    # network/filesystem work, validated by cli_smoke_test.go exec'ing the
-    # real binary instead.
-    "vitals": 42,
+    # llm, metrics.Serve/RunOnce, mcp.Serve, guide --web, dashboard.Serve) —
+    # real subprocess/network/filesystem/server work, validated by
+    # cli_smoke_test.go and (for dashboard specifically, since it never
+    # exits on its own) dashboard_smoke_test.go exec'ing the real binary
+    # instead.
+    "vitals": 40,
     # advice: Run is thin live glue (doctor.Assess, then the
     # already-100%-covered Generate, then print/JSON-encode) — nothing
     # left to extract without testing doctor.Assess itself.
@@ -47,7 +49,13 @@ FLOORS = {
     # is at or near 100%.
     "vitals/internal/clean": 50,
     "vitals/internal/config": 99,  # 100.0% measured; 99 for float-rounding margin
-    "vitals/internal/dashboard": 98,
+    # dashboard: floor dropped from 98 with roadmap item 002 (the vitals
+    # dashboard MVP), not a regression — Serve (dashboard.go) is new,
+    # genuinely live glue (wires the snapshot cache + route into an
+    # http.Handler, then calls guide.ServeLocal, a blocking server), the
+    # same shape as every other Serve function in this codebase. route
+    # and loopbackAddr, the pure logic Serve wraps, are both 100%.
+    "vitals/internal/dashboard": 89,
     "vitals/internal/diag": 96,
     # doctor: Collect and its OS-level helpers (firstTimes, percoreTimes,
     # topProcs, swapCounters, diskCounters, netCounters, collectPower,
@@ -59,7 +67,7 @@ FLOORS = {
     # small pure helpers (pct, throttleNote, fullestDisk, summaryLine,
     # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
     # or near 100%.
-    "vitals/internal/doctor": 55,
+    "vitals/internal/doctor": 54,
     # dupes: Run/applyHardlinksWithConfirmation/confirmHardlink are live
     # (os.Stdin prompts, real hardlinking); render (a print function
     # despite its name) is now fully tested via the same stdout-capture
@@ -70,14 +78,17 @@ FLOORS = {
     # Apps, attachNvidiaApps, parseRocmSMIJSON, atoiOr/numOr/
     # firstNonEmpty/strSort) is at or near 100%.
     "vitals/internal/gpu": 54,
-    # guide's floor is lower than its earlier 77 despite new tests, not a
-    # regression: allowedHostsOnly/safeLinkHref are fully covered, but the
-    # package grew around Serve/ServeHTML/ServeLocal/openBrowser, which
-    # are — like doctor.Collect() — live glue (a blocking server loop, an
-    # OS browser-launch command) exempt from unit coverage by convention.
-    # See AGENTS.md's "95%+ coverage is the target for a package's pure/
-    # testable logic" — this is that exemption showing up in the number.
-    "vitals/internal/guide": 75,
+    # guide's floor keeps dropping despite new tests, not a regression:
+    # allowedHostsOnly/safeLinkHref are fully covered, but the package
+    # grows around Serve/ServeHTML/ServeLocal/openBrowser, which are —
+    # like doctor.Collect() — live glue (a blocking server loop, an OS
+    # browser-launch command) exempt from unit coverage by convention.
+    # ServeLocal grew its Addr/NoOpen options for roadmap item 002 (the
+    # vitals dashboard MVP) — more lines in the same already-exempt
+    # function, not a new gap. See AGENTS.md's "95%+ coverage is the
+    # target for a package's pure/testable logic" — this is that
+    # exemption showing up in the number.
+    "vitals/internal/guide": 74,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess

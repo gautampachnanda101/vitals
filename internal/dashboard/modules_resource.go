@@ -12,8 +12,8 @@ func init() {
 	Register(Module{Slug: "mem", NavLabel: "Memory", Order: 20, Available: Always, Render: resourcePage("mem", renderMem)})
 	Register(Module{Slug: "disk", NavLabel: "Disk", Order: 30, Available: Always, Render: resourcePage("disk", renderDisk)})
 	Register(Module{Slug: "net", NavLabel: "Network", Order: 40, Available: Always, Render: resourcePage("net", renderNet)})
-	Register(Module{Slug: "power", NavLabel: "Power", Order: 50, Available: HasBattery, Render: resourcePage("power", renderPower)})
-	Register(Module{Slug: "gpu", NavLabel: "GPU", Order: 60, Available: HasGPU, Render: resourcePage("gpu", renderGPU)})
+	Register(Module{Slug: "power", NavLabel: "Power", Order: 50, Available: HasBattery, UnavailableReason: "no battery detected", Render: resourcePage("power", renderPower)})
+	Register(Module{Slug: "gpu", NavLabel: "GPU", Order: 60, Available: HasGPU, UnavailableReason: "no GPU detected", Render: resourcePage("gpu", renderGPU)})
 }
 
 // resourcePage wraps a resource-specific renderer with the verdict banner

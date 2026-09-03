@@ -4,7 +4,9 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Not started
+**Status**: Done — see `implementation-plan.md` for what shipped and a
+noted follow-up (richer overview visuals/machine detail) raised after,
+not yet scoped as its own item.
 **Depends on**: [001](../001-dashboard-foundation/)
 **Target release**: [v0.5.0](../../releases/v0.5.0.md)
 **Architecture**: [design doc](../../../architecture/design.md) §5.1, §6

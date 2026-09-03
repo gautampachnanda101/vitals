@@ -13,8 +13,11 @@ func init() {
 // renderOverview is the cross-resource verdict — the same correlation
 // `vitals doctor` prints in a terminal, as a page.
 func renderOverview(ctx PageContext) string {
+	body := `<p class="unavailable">The same correlation as ` +
+		`<code>vitals doctor</code> — a ranked verdict below, one page per ` +
+		`resource in the nav above.</p>`
 	headline := reportHeadline(ctx.Report, "Healthy — nothing needs attention")
-	body := verdictBanner(headline, summaryLine(ctx.Snapshot), ctx.Report.Worst())
+	body += verdictBanner(headline, summaryLine(ctx.Snapshot), ctx.Report.Worst())
 	body += `<div class="card">` + findingsList(ctx.Report.SortedBySeverity()) + `</div>`
 	return body
 }

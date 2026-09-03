@@ -30,6 +30,9 @@ type PageContext struct {
 	LLMOpts     llm.CompleteOptions
 	AdviceReply string
 	AdviceErr   error
+	// Version is main.version, threaded through so the footer can show it
+	// without this package importing package main.
+	Version string
 }
 
 // Module is one self-contained dashboard page.
@@ -37,6 +40,11 @@ type Module struct {
 	Slug     string // URL path segment; "" is the root/overview page
 	NavLabel string
 	Order    int // nav position, lowest first; ties keep registration order
+	// UnavailableReason is shown (via unavailablePage) when Available
+	// returns false — a short, specific reason ("no GPU detected"), not a
+	// restatement of "isn't available" itself, which the router already
+	// says. Empty falls back to a generic reason.
+	UnavailableReason string
 	// Prepare does whatever request-scoped, module-specific work Render
 	// needs but PageContext doesn't carry by default (the advice module
 	// uses this to call the LLM only when its own route is hit, not on

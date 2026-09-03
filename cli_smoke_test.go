@@ -24,7 +24,8 @@ import (
 //
 // Deliberately excluded: anything destructive against real user state
 // (`clean` without --dry-run, `tools --install`), anything that blocks
-// forever by design (`serve`, `mcp`, `--watch`, `guide --web`), and
+// forever by design (`serve`, `mcp`, `--watch`, `guide --web`, `dashboard`
+// — see dashboard_smoke_test.go for that one's own dedicated test), and
 // `advice` (needs a real LLM endpoint — network-flaky, not appropriate for
 // a fast deterministic test; its provider-selection logic already has
 // direct unit test coverage in internal/llm). `dupes --hardlink` IS
@@ -147,20 +148,31 @@ var (
 )
 
 // buildCLIOnce compiles the binary once per test run and reuses it across
-// every subtest, so the smoke test suite doesn't pay a full build per case.
+// every subtest and every test function in this package (TestCLISmoke,
+// TestDashboardSmoke) that needs it, so the smoke test suite doesn't pay a
+// full build more than once. Deliberately uses os.MkdirTemp, not
+// t.TempDir(): the latter is torn down when the specific *testing.T that
+// created it finishes, which broke the very first time a second test
+// function reused this helper after TestCLISmoke completed and deleted
+// the binary out from under it. TestMain below removes this directory
+// once the whole test binary exits, so it isn't left behind either.
 func buildCLIOnce(t *testing.T) string {
 	t.Helper()
 	cliOnce.Do(func() {
-		dir := t.TempDir()
+		dir, err := os.MkdirTemp("", "vitals-smoke-test-")
+		if err != nil {
+			cliBuildE = err
+			return
+		}
 		name := "vitals-smoke-test"
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
 		cliPath = filepath.Join(dir, name)
 		cmd := exec.Command("go", "build", "-o", cliPath, ".")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			cliBuildE = err
+		out, buildErr := cmd.CombinedOutput()
+		if buildErr != nil {
+			cliBuildE = buildErr
 			t.Logf("build output:\n%s", out)
 		}
 	})
@@ -168,4 +180,15 @@ func buildCLIOnce(t *testing.T) string {
 		t.Fatalf("building the CLI for smoke testing: %v", cliBuildE)
 	}
 	return cliPath
+}
+
+// TestMain lets buildCLIOnce's shared binary live in a directory outside
+// any single test's t.TempDir() lifecycle (see buildCLIOnce) while still
+// cleaning it up once, after every test in this package has run.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if cliPath != "" {
+		_ = os.RemoveAll(filepath.Dir(cliPath))
+	}
+	os.Exit(code)
 }

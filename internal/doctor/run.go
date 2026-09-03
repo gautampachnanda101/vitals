@@ -113,6 +113,8 @@ func Run(opts RunOptions) int {
 	default:
 		ui.Okf("verdict: healthy")
 	}
+	fmt.Println()
+	fmt.Println(ui.Key("  browse this and every resource at a glance: vitals dashboard"))
 	return report.ExitCode()
 }
 

@@ -33,21 +33,35 @@ func ServeHTML(page string) error {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(page))
 	})
-	return ServeLocal(mux, "the guide")
+	return ServeLocal(mux, "the guide", ServeOptions{})
 }
 
-// ServeLocal runs handler on a random loopback port (127.0.0.1 — never on
-// the network), opens the user's default browser to it, and blocks until
+// ServeOptions configures ServeLocal's listen address and browser-opening
+// behavior. The zero value is ServeLocal's original behavior: an
+// ephemeral loopback port with the browser opened automatically.
+type ServeOptions struct {
+	Addr   string // "" = ephemeral 127.0.0.1:0, chosen by the OS
+	NoOpen bool   // true = never call openBrowser; the URL is still printed
+}
+
+// ServeLocal runs handler on a loopback port (127.0.0.1 — never on the
+// network; opts.Addr, if set, must already be a loopback address — see
+// dashboard.loopbackAddr for the caller-side enforcement of that), opens
+// the user's default browser to it unless opts.NoOpen, and blocks until
 // interrupted. This is the shared plumbing behind every local web view
 // vitals offers — the guide, `vitals dashboard` — so each one only has to
 // define its own routes; the safe-bind/auto-open/graceful-shutdown behavior
 // is written once and can't drift between them.
-func ServeLocal(handler http.Handler, label string) error {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
+	addr := opts.Addr
+	if addr == "" {
+		addr = "127.0.0.1:0"
+	}
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
-	addr := ln.Addr().String()
+	addr = ln.Addr().String()
 	url := "http://" + addr + "/"
 
 	// Binding to 127.0.0.1 alone does not stop DNS rebinding: an external
@@ -72,12 +86,14 @@ func ServeLocal(handler http.Handler, label string) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	go func() {
-		time.Sleep(150 * time.Millisecond) // let Serve start accepting before we open the browser
-		if err := openBrowser(url); err != nil {
-			ui.Warnf("could not open a browser automatically: %v", err)
-		}
-	}()
+	if !opts.NoOpen {
+		go func() {
+			time.Sleep(150 * time.Millisecond) // let Serve start accepting before we open the browser
+			if err := openBrowser(url); err != nil {
+				ui.Warnf("could not open a browser automatically: %v", err)
+			}
+		}()
+	}
 
 	ui.Okf("serving %s at %s — press Ctrl+C to stop", label, url)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
