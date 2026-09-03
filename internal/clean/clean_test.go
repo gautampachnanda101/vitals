@@ -26,13 +26,23 @@ func mktree(t *testing.T) string {
 	return d
 }
 
+// isUnder reports whether path is logically under root, comparing with
+// forward slashes so the check doesn't depend on which OS actually ran
+// filepath.Join to build path — on Windows, filepath.Join("/home/x",
+// ".cache") normalizes to `\home\x\.cache`, which a literal
+// strings.HasPrefix(d, "/home/x") would miss even though it's still
+// correctly under home.
+func isUnder(path, root string) bool {
+	return strings.HasPrefix(filepath.ToSlash(path), filepath.ToSlash(root))
+}
+
 func TestDevCacheDirsAreUnderHome(t *testing.T) {
 	dirs := devCacheDirs("/home/x")
 	if len(dirs) == 0 {
 		t.Fatal("devCacheDirs returned nothing")
 	}
 	for _, d := range dirs {
-		if !strings.HasPrefix(d, "/home/x") {
+		if !isUnder(d, "/home/x") {
 			t.Errorf("devCacheDirs entry %q is not under the given home", d)
 		}
 	}
@@ -47,7 +57,7 @@ func TestOSCacheDirsPerPlatform(t *testing.T) {
 		t.Fatal("osCacheDirs(darwin, ...) returned nothing")
 	}
 	for _, d := range darwin {
-		if !strings.HasPrefix(d, "/Users/x") {
+		if !isUnder(d, "/Users/x") {
 			t.Errorf("osCacheDirs(darwin) entry %q is not under home", d)
 		}
 	}
