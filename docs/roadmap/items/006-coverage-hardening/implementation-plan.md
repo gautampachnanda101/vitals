@@ -13,9 +13,16 @@ expected.
 
 ## Packages
 
-- [ ] `internal/tools` (27.0%) — install/launch wrappers around external
-      package managers; likely has real extractable logic in whatever
-      decides which command to run for a given OS/tool combination.
+- [x] `internal/tools` (27.0% -> 44.6%) — extracted/fully tested the pure
+      logic: `withSudo` took `runtime.GOOS`/`os.Geteuid()` as parameters
+      instead of reading them directly (the Windows/root branches were
+      otherwise never exercised by the Linux-only coverage gate no matter
+      how many OSes the test matrix covered), `formatToolList` pulled the
+      pure rendering out of `List()`, plus full `installCommand`/`binary`/
+      `firstOrEmpty` branch coverage. Remaining 0%/low functions
+      (`Installed`, `detectManager`, `Run`, `List`, `Install`, `Launch`,
+      `confirm`) are genuinely live (subprocess exec, real PATH/stdin) —
+      documented inline in `check_coverage.py`.
 - [ ] `internal/memcheck` (32.3%) — `Run`'s live gopsutil calls stay
       exempt; check whether more of its formatting can follow the
       `internal/monitor` pattern from item 001.

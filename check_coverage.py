@@ -46,7 +46,14 @@ FLOORS = {
     "vitals/internal/memhogs": 53,
     "vitals/internal/metrics": 73,
     "vitals/internal/monitor": 34,
-    "vitals/internal/tools": 26,
+    # tools: Installed/detectManager (exec.LookPath), Run/List/Install/
+    # Launch/confirm (live subprocess exec, os.Stdin reads, real PATH
+    # checks) are the irreducible live-glue majority of this package — a
+    # package-manager launcher/installer is mostly "shell out and let the
+    # user's terminal take over." The pure logic sitting next to them
+    # (installCommand, withSudo, binary, firstOrEmpty, formatToolList) is
+    # at 100%.
+    "vitals/internal/tools": 44,
     "vitals/internal/ui": 76,
 }
 

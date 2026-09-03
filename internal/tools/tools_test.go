@@ -1,6 +1,9 @@
 package tools
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFindIsCaseInsensitive(t *testing.T) {
 	if _, ok := Find("NCDU"); !ok {
@@ -56,6 +59,100 @@ func TestInstallCommandBrewNeverUsesSudo(t *testing.T) {
 	}
 	if len(args) != 2 || args[0] != "install" || args[1] != "ncdu" {
 		t.Errorf("installCommand(Brew, ncdu) args = %v, want [install ncdu]", args)
+	}
+}
+
+func TestInstallCommandDnfAndPacman(t *testing.T) {
+	if name, args := installCommand(Dnf, "ncdu"); name != "sudo" && name != "dnf" {
+		t.Errorf("installCommand(Dnf, ...) name = %q", name)
+	} else if name == "dnf" && (len(args) < 3 || args[len(args)-1] != "ncdu") {
+		t.Errorf("installCommand(Dnf, ncdu) args = %v", args)
+	}
+	if name, args := installCommand(Pacman, "ncdu"); name != "sudo" && name != "pacman" {
+		t.Errorf("installCommand(Pacman, ...) name = %q", name)
+	} else if name == "pacman" && (len(args) < 3 || args[len(args)-1] != "ncdu") {
+		t.Errorf("installCommand(Pacman, ncdu) args = %v", args)
+	}
+}
+
+func TestInstallCommandWingetAndScoopNeverUseSudo(t *testing.T) {
+	name, args := installCommand(Winget, "jdupes")
+	if name != "winget" || len(args) != 4 || args[len(args)-1] != "jdupes" {
+		t.Errorf("installCommand(Winget, jdupes) = %q %v, want winget install -e --id jdupes", name, args)
+	}
+	name, args = installCommand(Scoop, "gdu")
+	if name != "scoop" || len(args) != 2 || args[1] != "gdu" {
+		t.Errorf("installCommand(Scoop, gdu) = %q %v, want scoop install gdu", name, args)
+	}
+}
+
+func TestInstallCommandUnknownManagerReturnsEmpty(t *testing.T) {
+	name, args := installCommand(Manager("unknown"), "x")
+	if name != "" || args != nil {
+		t.Errorf("installCommand(unknown manager) = %q %v, want empty", name, args)
+	}
+}
+
+func TestWithSudoOnWindowsNeverPrefixesSudo(t *testing.T) {
+	name, args := withSudo("windows", 1000, []string{"choco", "install", "x"})
+	if name != "choco" || len(args) != 2 {
+		t.Errorf("withSudo(windows, non-root) = %q %v, want no sudo prefix regardless of euid", name, args)
+	}
+}
+
+func TestWithSudoAsRootNeverPrefixesSudo(t *testing.T) {
+	name, args := withSudo("linux", 0, []string{"apt-get", "install", "x"})
+	if name != "apt-get" || len(args) != 2 {
+		t.Errorf("withSudo(linux, euid=0) = %q %v, want no sudo prefix — already root", name, args)
+	}
+}
+
+func TestWithSudoPrefixesOnNonWindowsNonRoot(t *testing.T) {
+	name, args := withSudo("linux", 1000, []string{"apt-get", "install", "x"})
+	if name != "sudo" || len(args) != 3 || args[0] != "apt-get" {
+		t.Errorf("withSudo(linux, euid=1000) = %q %v, want sudo apt-get install x", name, args)
+	}
+}
+
+func TestBinaryFallsBackToNameWhenUnset(t *testing.T) {
+	if got := (Tool{Name: "ncdu"}).binary(); got != "ncdu" {
+		t.Errorf("binary() = %q, want the tool's Name when Binary is unset", got)
+	}
+}
+
+func TestBinaryUsesExplicitOverrideWhenSet(t *testing.T) {
+	if got := (Tool{Name: "smartctl", Binary: "smartctl"}).binary(); got != "smartctl" {
+		t.Errorf("binary() = %q, want the explicit Binary field", got)
+	}
+	// The actual registry case this exists for: display name differs from
+	// the on-PATH binary.
+	if got := (Tool{Name: "S.M.A.R.T. tools", Binary: "smartctl"}).binary(); got != "smartctl" {
+		t.Errorf("binary() = %q, want Binary to override a differing Name", got)
+	}
+}
+
+func TestFirstOrEmpty(t *testing.T) {
+	if got := firstOrEmpty(nil); got != "" {
+		t.Errorf("firstOrEmpty(nil) = %q, want empty", got)
+	}
+	if got := firstOrEmpty([]string{"a", "b"}); got != "a" {
+		t.Errorf("firstOrEmpty([a b]) = %q, want a", got)
+	}
+}
+
+func TestFormatToolListShowsInstalledAndMissingStatus(t *testing.T) {
+	tools := []Tool{
+		{Name: "gdu", Category: "disk explorer", Description: "fast"},
+		{Name: "ncdu", Category: "disk explorer", Description: "classic"},
+	}
+	installed := func(t Tool) bool { return t.Name == "gdu" }
+	out := formatToolList(tools, installed)
+
+	if !strings.Contains(out, "gdu") || !strings.Contains(out, "installed") {
+		t.Errorf("formatToolList missing gdu/installed, got: %s", out)
+	}
+	if !strings.Contains(out, "ncdu") || !strings.Contains(out, "not installed") {
+		t.Errorf("formatToolList missing ncdu/not installed, got: %s", out)
 	}
 }
 

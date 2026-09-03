@@ -126,11 +126,11 @@ func installCommand(mgr Manager, pkg string) (string, []string) {
 	case Brew:
 		return "brew", []string{"install", pkg}
 	case Apt:
-		return withSudo([]string{"apt-get", "install", "-y", pkg})
+		return withSudo(runtime.GOOS, os.Geteuid(), []string{"apt-get", "install", "-y", pkg})
 	case Dnf:
-		return withSudo([]string{"dnf", "install", "-y", pkg})
+		return withSudo(runtime.GOOS, os.Geteuid(), []string{"dnf", "install", "-y", pkg})
 	case Pacman:
-		return withSudo([]string{"pacman", "-S", "--noconfirm", pkg})
+		return withSudo(runtime.GOOS, os.Geteuid(), []string{"pacman", "-S", "--noconfirm", pkg})
 	case Winget:
 		return "winget", []string{"install", "-e", "--id", pkg}
 	case Scoop:
@@ -140,8 +140,15 @@ func installCommand(mgr Manager, pkg string) (string, []string) {
 	}
 }
 
-func withSudo(args []string) (string, []string) {
-	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+// withSudo prefixes args with "sudo" unless goos is "windows" (sudo doesn't
+// exist there) or euid is already 0 (root doesn't need it). goos/euid are
+// parameters rather than reading runtime.GOOS/os.Geteuid() directly so both
+// branches are testable regardless of which OS or user actually runs the
+// test — the coverage gate only ever runs on the Linux CI job, so a
+// Windows-only or root-only branch would otherwise never be exercised
+// there no matter how many OSes the test matrix itself covers.
+func withSudo(goos string, euid int, args []string) (string, []string) {
+	if goos != "windows" && euid != 0 {
 		return "sudo", args
 	}
 	return args[0], args[1:]
@@ -168,13 +175,24 @@ func List() {
 	ui.Header("COMPANION TOOLS")
 	fmt.Println(ui.Key("  vitals complements these rather than reimplementing them — see `vitals tools install <name>`"))
 	fmt.Println()
-	for _, t := range Registry {
+	fmt.Print(formatToolList(Registry, Installed))
+}
+
+// formatToolList renders one status line per tool. installed is a
+// parameter (rather than calling the package-level Installed directly)
+// so this is testable without touching the real PATH — matching how the
+// rest of this codebase separates a live check from the pure formatting
+// that uses its result.
+func formatToolList(tools []Tool, installed func(Tool) bool) string {
+	var b strings.Builder
+	for _, t := range tools {
 		status := ui.Key("not installed")
-		if Installed(t) {
+		if installed(t) {
 			status = ui.Green + "installed" + ui.Reset
 		}
-		fmt.Printf("  %-10s %-18s %-16s %s\n", t.Name, t.Category, status, t.Description)
+		fmt.Fprintf(&b, "  %-10s %-18s %-16s %s\n", t.Name, t.Category, status, t.Description)
 	}
+	return b.String()
 }
 
 // Install installs the named tool via the host's package manager, printing
