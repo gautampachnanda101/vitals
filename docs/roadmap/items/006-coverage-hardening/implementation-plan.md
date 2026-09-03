@@ -74,8 +74,13 @@ expected.
       Remaining low-coverage functions are `Collect`'s live OS-level
       helpers and the CLI entrypoints' print wrappers, documented inline
       in `check_coverage.py`.
-- [ ] `internal/dupes` (51.1%) — hashing/comparison logic should be pure
-      and testable; the live directory walk is the exempt part.
+- [x] `internal/dupes` (51.1% -> 68.4%) — `render` was a large, entirely
+      untested (0%) print function despite its name suggesting pure
+      string-building; covered via the same stdout-capture pattern used
+      in `internal/monitor`/`internal/memcheck`/`internal/tools`
+      (no-groups-found, top-N cap, "and N more" counter). `Run`/
+      `applyHardlinksWithConfirmation`/`confirmHardlink` are genuinely
+      live (stdin prompts, real hardlinking).
 - [ ] `internal/memhogs` (53.2%) — `appFamily`/`bucketFamilies` (per
       memory of this package) should already be well-tested; audit
       `stopCommand` and the rest.

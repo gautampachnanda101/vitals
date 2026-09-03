@@ -51,7 +51,11 @@ FLOORS = {
     # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
     # or near 100%.
     "vitals/internal/doctor": 55,
-    "vitals/internal/dupes": 51,
+    # dupes: Run/applyHardlinksWithConfirmation/confirmHardlink are live
+    # (os.Stdin prompts, real hardlinking); render (a print function
+    # despite its name) is now fully tested via the same stdout-capture
+    # pattern as internal/monitor/internal/memcheck.
+    "vitals/internal/dupes": 68,
     # gpu: Probe/run (report.go's Run too) shell out to nvidia-smi/
     # rocm-smi/ioreg — genuinely live. Every pure parser (parseNvidiaSMI/
     # Apps, attachNvidiaApps, parseRocmSMIJSON, atoiOr/numOr/
