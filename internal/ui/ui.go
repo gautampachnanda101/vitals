@@ -80,14 +80,17 @@ func Header(title string) {
 func Rule() { fmt.Println(strings.Repeat("-", 80)) }
 
 // Infof / Warnf / Errf / Okf are colored line printers. The glyphs
-// (●/✓/⚠/✗) replace an earlier "[*]"/"[+]"/"[!]"/"[x]" bracket-tag
+// (●/✓/⚠️/✗) replace an earlier "[*]"/"[+]"/"[!]"/"[x]" bracket-tag
 // convention that read as dated next to the rest of vitals' output
 // (box-drawing rules, →, —); vitals already assumes a UTF-8-capable
-// terminal elsewhere (Header's ─ rule, PrintFindings' →), so this adds
-// no new compatibility risk.
+// terminal elsewhere (Header's ─ rule, PrintFindings' →, summaryLine's
+// resource emoji), so this adds no new compatibility risk. Warnf's ⚠️
+// carries the emoji variation selector (unlike the others, plain
+// text-presentation glyphs) specifically because the bare warning sign
+// rendered too faint/unclear to read as a warning at a glance.
 func Infof(format string, a ...any) { fmt.Printf(Cyan+"● "+Reset+format+"\n", a...) }
 func Okf(format string, a ...any)   { fmt.Printf(Green+"✓ "+Reset+format+"\n", a...) }
-func Warnf(format string, a ...any) { fmt.Printf(Yellow+"⚠ "+Reset+format+"\n", a...) }
+func Warnf(format string, a ...any) { fmt.Printf(Yellow+"⚠️ "+Reset+format+"\n", a...) }
 func Errf(format string, a ...any)  { fmt.Fprintf(os.Stderr, Red+"✗ "+Reset+format+"\n", a...) }
 func Actionf(format string, a ...any) string {
 	return Yellow + fmt.Sprintf(format, a...) + Reset
