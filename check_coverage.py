@@ -23,7 +23,10 @@ from collections import defaultdict
 
 FLOORS = {
     "vitals": 3,  # main.go: os.Exit-driven CLI dispatch, validated by cli_smoke_test.go instead
-    "vitals/internal/advice": 34,
+    # advice: Run is thin live glue (doctor.Assess, then the
+    # already-100%-covered Generate, then print/JSON-encode) — nothing
+    # left to extract without testing doctor.Assess itself.
+    "vitals/internal/advice": 39,
     "vitals/internal/clean": 41,
     "vitals/internal/config": 80,
     "vitals/internal/dashboard": 98,

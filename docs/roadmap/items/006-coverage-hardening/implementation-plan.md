@@ -38,8 +38,10 @@ expected.
       (`emit`, `bar`, `rate`, `memBreakdownLine`, `ioDelta`) is now 100%;
       `Run`/`sample`/`readDiskCounters`/`readNetCounters`/`topProcesses`
       are live gopsutil calls, documented as the ceiling.
-- [ ] `internal/advice` (34.8%) — `Run`'s live LLM call is exempt;
-      `Generate` already has good coverage from item 001, check for gaps.
+- [x] `internal/advice` (34.8% -> 39.1%) — `Generate`'s error branch (no
+      provider reachable) was untested; now 100%. `Run` (0%) is thin live
+      glue over `doctor.Assess` + the now-fully-tested `Generate` —
+      nothing left to extract.
 - [ ] `internal/clean` (41.0%) — real filesystem operations dominate;
       look for pure decision logic (what counts as a cache dir, size
       thresholds) separable from the actual `os.Remove` calls.

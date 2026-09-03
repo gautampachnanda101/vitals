@@ -62,6 +62,13 @@ func TestGenerateBuildsPromptCallsLLMAndStripsFabricatedSources(t *testing.T) {
 	}
 }
 
+func TestGenerateReturnsTheErrorWhenNoProviderIsReachable(t *testing.T) {
+	_, err := Generate([]byte(`{"verdict":"ok"}`), llm.CompleteOptions{OllamaURL: "http://127.0.0.1:1"})
+	if err == nil {
+		t.Error("Generate should return an error when no provider answers, not swallow it")
+	}
+}
+
 func TestStripFabricatedSourcesRemovesATrailingHeading(t *testing.T) {
 	cases := []string{
 		"Restart the process.\n\n## Sources\n(source: https://example.com/fake)\n",
