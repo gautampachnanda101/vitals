@@ -116,7 +116,7 @@ func Run(opts Options) error {
 		}{reply})
 	}
 
-	ui.Header("LLM ADVICE")
+	ui.Header("ADVICE")
 	fmt.Println(guide.RenderTerminal(reply))
 	return nil
 }
