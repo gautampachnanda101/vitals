@@ -148,13 +148,27 @@ func Run(opts Options) error {
 	}
 
 	if genErr != nil {
-		ui.Warnf("no LLM reachable (%v) — showing the rule-based findings above only", genErr)
+		ui.Warnf("%s", noLLMMessage(report, genErr))
 		return nil
 	}
 	fmt.Println()
 	ui.Header("AI COMMENTARY")
 	fmt.Println(guide.RenderTerminal(reply))
 	return nil
+}
+
+// noLLMMessage explains why no AI commentary was added, phrased
+// differently for a healthy report than one with real findings — a
+// healthy machine has no "rule-based findings above" to point back to
+// (just a bare "looks healthy" line), so reusing that same wording there
+// left a dangling reference to something that was never shown, which is
+// exactly what made the whole reply read as empty rather than as an
+// actual, if brief, answer.
+func noLLMMessage(report diag.Report, genErr error) string {
+	if len(report.Findings) == 0 {
+		return fmt.Sprintf("no LLM reachable (%v) — this machine looks healthy either way, per the numbers above", genErr)
+	}
+	return fmt.Sprintf("no LLM reachable (%v) — showing the rule-based findings above only", genErr)
 }
 
 // Heuristic renders report's findings and fixes as plain text — the same

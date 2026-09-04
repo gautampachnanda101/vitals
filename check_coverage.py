@@ -33,12 +33,13 @@ FLOORS = {
     # completion output) is now unit tested directly; the remaining
     # uncovered lines in run() are each subcommand's live Run/RunFocus call
     # (doctor, clean, dupes, tools, memhogs, memcheck, gpu, monitor, advice,
-    # llm, metrics.Serve/RunOnce, mcp.Serve, guide --web, dashboard.Serve) —
-    # real subprocess/network/filesystem/server work, validated by
-    # cli_smoke_test.go and (for dashboard specifically, since it never
-    # exits on its own) dashboard_smoke_test.go exec'ing the real binary
-    # instead.
-    "vitals": 40,
+    # llm, metrics.Serve/RunOnce, mcp.Serve, guide --web, dashboard.Serve,
+    # info) — real subprocess/network/filesystem/server work (or, for
+    # info specifically, just flag-parsing dispatch to an already-96.7%-
+    # covered package), validated by cli_smoke_test.go and (for dashboard
+    # specifically, since it never exits on its own) dashboard_smoke_test.go
+    # exec'ing the real binary instead.
+    "vitals": 39,
     # advice: Run is thin live glue (doctor.Assess, then the
     # already-100%-covered Generate, then print/JSON-encode) — nothing
     # left to extract without testing doctor.Assess itself. Dropped from
@@ -107,6 +108,12 @@ FLOORS = {
     # — this is that exemption showing up in the number.
     "vitals/internal/guide": 72,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
+    # info: Collect's two live calls (hostInfoFn, executableFn) are both
+    # injected function values, exercised via fakes for both their
+    # success and failure paths — nothing genuinely irreducible-live
+    # left in this package. 96.7% measured; 96 for float-rounding
+    # margin.
+    "vitals/internal/info": 96,
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
     # exec), and render (a print function, like internal/dupes' — not yet

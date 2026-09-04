@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -112,5 +113,78 @@ func TestLoadWithNoFileReturnsDefaults(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	if got := Load(); got != Default() {
 		t.Errorf("Load() with no file = %+v, want Default() %+v", got, Default())
+	}
+}
+
+func TestWriteDefaultCreatesAParseableCommentedOutTemplate(t *testing.T) {
+	isolateConfigDir(t)
+	path, _ := Path()
+
+	if err := WriteDefault(path); err != nil {
+		t.Fatalf("WriteDefault: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config file should exist after WriteDefault: %v", err)
+	}
+
+	// Every key is commented out, so Load() against the freshly written
+	// file must still report pure defaults — the whole point of writing
+	// it commented is that its mere existence changes nothing.
+	got := Load()
+	want := Default()
+	if got != want {
+		t.Errorf("Load() after WriteDefault = %+v, want unchanged defaults %+v", got, want)
+	}
+}
+
+func TestWriteDefaultCreatesTheParentDirectory(t *testing.T) {
+	isolateConfigDir(t)
+	path, _ := Path()
+	if _, err := os.Stat(filepath.Dir(path)); err == nil {
+		t.Fatal("test setup: parent dir should not already exist")
+	}
+
+	if err := WriteDefault(path); err != nil {
+		t.Fatalf("WriteDefault: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Errorf("WriteDefault should create the parent directory, got: %v", err)
+	}
+}
+
+func TestWriteDefaultRefusesToOverwriteAnExistingFile(t *testing.T) {
+	isolateConfigDir(t)
+	path, _ := Path()
+	if err := WriteDefault(path); err != nil {
+		t.Fatalf("first WriteDefault: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("ram_warn_percent = 55\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteDefault(path); err == nil {
+		t.Error("WriteDefault should refuse to overwrite an existing file")
+	}
+
+	// The user's own edit must survive untouched.
+	got := Load()
+	if got.RAMWarnPercent != 55 {
+		t.Errorf("WriteDefault's refusal should leave the existing file alone, RAMWarnPercent = %v, want 55", got.RAMWarnPercent)
+	}
+}
+
+func TestWriteDefaultFailsWhenTheParentCannotBeCreated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission denial doesn't work the same way on Windows")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o755) // restore so t.TempDir() can clean up
+
+	path := filepath.Join(dir, "vitals", "config.toml")
+	if err := WriteDefault(path); err == nil {
+		t.Error("WriteDefault should fail when its parent directory can't be created")
 	}
 }

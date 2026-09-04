@@ -25,11 +25,13 @@
 //	memhogs    Rank application families & processes by memory use, with actions
 //	memcheck   Advanced memory / swap / pressure overview and verdict
 //	llm        Deep insight for local LLM runtimes (Ollama VRAM offload, etc.)
+//	info       Binary, machine, and config file details
 //	version    Print version information
 package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -44,6 +46,7 @@ import (
 	"vitals/internal/gpu"
 	"vitals/internal/guide"
 	"vitals/internal/help"
+	"vitals/internal/info"
 	"vitals/internal/llm"
 	"vitals/internal/mcp"
 	"vitals/internal/memcheck"
@@ -316,6 +319,18 @@ func run(argv []string, version string) int {
 
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
+		return 0
+
+	case "info":
+		fs := newFlagSet("info")
+		asJSON := fs.Bool("json", false, "emit machine-readable JSON instead of the terminal view")
+		_ = fs.Parse(args)
+		r := info.Collect(version)
+		if *asJSON {
+			return must(json.NewEncoder(os.Stdout).Encode(r))
+		}
+		ui.Header("INFO")
+		fmt.Println(info.Render(r))
 		return 0
 
 	case "dashboard":

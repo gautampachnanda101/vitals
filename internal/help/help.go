@@ -354,6 +354,17 @@ var commands = []Command{
 		Examples: []string{"vitals completion bash", "vitals completion zsh"},
 	},
 	{
+		Name:     "info",
+		Synopsis: "binary, machine, and config file details",
+		Long: "Prints what's actually running: the binary's own version/Go/platform\n" +
+			"details, the machine vitals is on (hostname, OS, uptime, cores), and\n" +
+			"which config file (if any) is in effect and its active values — the\n" +
+			"\"about this install\" answer, distinct from doctor's resource-health\n" +
+			"verdict.",
+		Flags:    []Flag{{"json", "", "emit machine-readable JSON instead of the terminal view"}},
+		Examples: []string{"vitals info", "vitals info --json | jq .config"},
+	},
+	{
 		Name:     "version",
 		Synopsis: "print version information",
 		Long:     "Prints the vitals version the binary was built from.",

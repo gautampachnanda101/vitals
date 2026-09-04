@@ -1,6 +1,7 @@
 package advice
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,5 +146,26 @@ func TestHeuristicOrdersMostSevereFirst(t *testing.T) {
 	out := Heuristic(report)
 	if strings.Index(out, "critical finding") > strings.Index(out, "warn finding") {
 		t.Errorf("Heuristic should list the most severe finding first, got:\n%s", out)
+	}
+}
+
+func TestNoLLMMessageOnAHealthyReportPointsAtTheNumbersNotFindings(t *testing.T) {
+	// The actual bug this fixes: reusing the findings-list wording on a
+	// healthy report left a dangling reference to a "rule-based findings
+	// above" section that was never shown (just a bare "looks healthy"
+	// line), which read as empty/unhelpful rather than as a real answer.
+	msg := noLLMMessage(diag.Report{}, errors.New("connection refused"))
+	if strings.Contains(msg, "findings above") {
+		t.Errorf("noLLMMessage on a healthy report should not reference a findings list that was never shown, got: %q", msg)
+	}
+	if !strings.Contains(msg, "healthy") {
+		t.Errorf("noLLMMessage on a healthy report should say so, got: %q", msg)
+	}
+}
+
+func TestNoLLMMessageWithFindingsPointsBackAtThem(t *testing.T) {
+	msg := noLLMMessage(diag.Report{Findings: []diag.Finding{{Title: "disk nearly full"}}}, errors.New("connection refused"))
+	if !strings.Contains(msg, "findings above") {
+		t.Errorf("noLLMMessage with real findings should point back at them, got: %q", msg)
 	}
 }

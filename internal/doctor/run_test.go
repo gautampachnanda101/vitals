@@ -1,11 +1,14 @@
 package doctor
 
 import (
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"vitals/internal/config"
 	"vitals/internal/diag"
 	"vitals/internal/ui"
 )
@@ -169,4 +172,54 @@ func TestFinishAssessRecordsHistory(t *testing.T) {
 	if got[0].CPUPercent != 55 || got[0].MemPercent != 61 {
 		t.Errorf("recorded point = %+v, want cpu 55 / mem 61", got[0])
 	}
+}
+
+func TestScaffoldConfigIfMissingWritesAFileWithNoExistingOne(t *testing.T) {
+	isolateConfigDir(t)
+	path, _ := config.Path()
+
+	out := captureStdout(t, scaffoldConfigIfMissing)
+
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("scaffoldConfigIfMissing should have written a config file, got: %v", err)
+	}
+	if !strings.Contains(out, "wrote default config") {
+		t.Errorf("scaffoldConfigIfMissing should print a one-time notice, got: %q", out)
+	}
+}
+
+func TestScaffoldConfigIfMissingIsSilentTheSecondTime(t *testing.T) {
+	isolateConfigDir(t)
+	scaffoldConfigIfMissing() // first call: writes it
+
+	out := captureStdout(t, scaffoldConfigIfMissing) // second call: file already exists
+
+	if out != "" {
+		t.Errorf("scaffoldConfigIfMissing should print nothing once the config file already exists, got: %q", out)
+	}
+}
+
+// captureStdout redirects os.Stdout for the duration of f and returns what
+// it wrote — reads on a goroutine so a large write can't deadlock against
+// an unread pipe buffer, matching the pattern used across this codebase
+// (internal/dupes, internal/llm).
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
+
+	f()
+	w.Close()
+	os.Stdout = old
+	return <-done
 }

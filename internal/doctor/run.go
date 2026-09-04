@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"vitals/internal/config"
 	"vitals/internal/diag"
 	"vitals/internal/ui"
 )
@@ -98,6 +99,8 @@ func Run(opts RunOptions) int {
 		return report.ExitCode()
 	}
 
+	scaffoldConfigIfMissing()
+
 	ui.Header("DOCTOR")
 	fmt.Printf("  %s\n\n", ui.Key(time.Now().Format("2006-01-02 15:04:05")))
 	fmt.Printf("  %s\n\n", SummaryLine(snap))
@@ -116,6 +119,29 @@ func Run(opts RunOptions) int {
 	fmt.Println()
 	fmt.Println(ui.Key("  browse this and every resource at a glance: vitals dashboard"))
 	return report.ExitCode()
+}
+
+// scaffoldConfigIfMissing writes a commented-out default config.toml the
+// first time `vitals doctor` runs on a machine with none, so its
+// thresholds are discoverable and editable instead of living invisibly
+// in code — `vitals info` used to just report "not found" with no path
+// forward. Deliberately scoped to the plain interactive terminal path
+// only (not --json/--ci/--quiet): a scripted/automated invocation must
+// never gain a filesystem side effect or extra output nobody asked for.
+// Failure (a read-only config dir, e.g.) is silently ignored — same
+// non-fatal posture Load() already takes on every other config error,
+// and doctor's own verdict doesn't depend on this succeeding.
+func scaffoldConfigIfMissing() {
+	path, ok := config.Path()
+	if !ok {
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	if config.WriteDefault(path) == nil {
+		ui.Infof("wrote default config to %s — edit thresholds there", path)
+	}
 }
 
 // PrintFindings renders a ranked finding list: a severity-coloured title, a

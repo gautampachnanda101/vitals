@@ -51,6 +51,8 @@ func TestCLISmoke(t *testing.T) {
 		args []string
 	}{
 		{"version", []string{"version"}},
+		{"info", []string{"info"}},
+		{"info-json", []string{"info", "--json"}},
 		{"help", []string{"help"}},
 		{"help-doctor", []string{"help", "doctor"}},
 		{"doctor-h", []string{"doctor", "-h"}},
