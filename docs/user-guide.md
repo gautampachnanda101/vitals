@@ -2,6 +2,8 @@
 
 [docs](index.md) / **User guide**
 
+**[gautampachnanda101.github.io/vitals](https://gautampachnanda101.github.io/vitals/)**
+
 `vitals` tells you which resource is slowing your machine down and what to
 do about it. It complements htop/btop, ncdu/gdu/dust, nvtop and glances
 instead of replacing them: same underlying data (gopsutil), plus
