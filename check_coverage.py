@@ -135,11 +135,20 @@ FLOORS = {
     # plus one real end-to-end call through Run()/defaultSource. 100.0%
     # measured raw coverage.
     "vitals/internal/memcheck": 99,
-    # memhogs: Run/once/readCgroup are live (real process scanning,
-    # /proc reads). describe and userFamilies (config-file read/parse,
-    # tested via isolateConfigDir the same way internal/doctor's history
-    # tests are) are now fully covered.
-    "vitals/internal/memhogs": 59,
+    # memhogs: Run/once/watch now go through an injected `source` struct
+    # (processes/readCgroup/virtualMemory/swapMemory/newSignalContext,
+    # item 009), so once()'s three-section rendering, the --watch loop
+    # (driven by an already-expiring context, not a real signal), and the
+    # process-table-enumeration-fails path are all exercised with fakes;
+    # readCgroup is split into readCgroupFor(goos, pid, readFile) so both
+    # the non-Linux short-circuit and the Linux read/error paths are
+    # testable on any host. 96.1% raw — the residual gaps are
+    # OS-partitioned switch arms (the linux/windows section-3 remedy
+    # lines, the Windows System-process branch) and unreachable error
+    # branches (realProcesses' OS-level failure, families()' embedded-file
+    # panic, userFamilies' os.UserConfigDir error), same class as
+    # internal/monitor's documented remainder.
+    "vitals/internal/memhogs": 95,
     # metrics: collect/RunOnce/Serve are live (real Collect + HTTP
     # server). trimFloat's "s == \"\" || s == \"-\"" guard looks
     # unreachable for any real float64 via %.6f formatting (the leading
