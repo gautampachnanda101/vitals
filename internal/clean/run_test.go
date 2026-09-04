@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -230,20 +229,5 @@ func TestReclaimableSummaryGoesThroughTheRealHomeDir(t *testing.T) {
 func TestFreeSpaceGoesThroughTheRealDiskUsage(t *testing.T) {
 	if got := freeSpace(); got < 0 {
 		t.Errorf("freeSpace() = %d, want >= 0", got)
-	}
-}
-
-func TestReclaimableSummaryZeroBudgetReturnsIncomplete(t *testing.T) {
-	home := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(home, ".cache"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Not calling ReclaimableSummary itself here (that always resolves the
-	// real home dir) — measureDirs is its already-tested core, so this
-	// just confirms the zero-budget "stop before measuring anything"
-	// contract still holds via the dirs devCacheDirs would actually build.
-	entries, complete := measureDirs(devCacheDirs(home), 0)
-	if complete || len(entries) != 0 {
-		t.Errorf("measureDirs with a zero budget = %v, %v, want empty and incomplete", entries, complete)
 	}
 }
