@@ -100,8 +100,8 @@ functions need an injectable seam.
       decomposition pass. Also still untouched: the CLI entrypoints
       (`Run`/`Assess`/`RunFocus` and their print helpers). `Analyze`/
       `AnalyzeResource` and the small pure helpers are already ~100%.
-- [ ] `internal/llm` (62.6% → ~86-87%, floor 57 → 85) — **partial, not
-      closed out**. Done: `Run`'s `--watch` loop split into
+- [ ] `internal/llm` (62.6% → ~86-87% → ~92%, floor 57 → 85 → 90) —
+      **two slices, still not fully closed out**. First: `Run`'s `--watch` loop split into
       `watch(ctx, opts)` with an injected `newSignalContext` (same
       pattern as `internal/monitor`/`internal/memhogs`);
       `checkGPUDriver`/`runsCleanly` gained a `gpuPreflightDeps` struct
@@ -110,14 +110,24 @@ functions need an injectable seam.
       thin exported wrappers (`OllamaModels`/`ProbeProviders`/
       `ScanProcesses`/`CloudAPIKeyEnvVars`) and `RunFit`'s two error
       branches now have their own direct tests, not just their unexported
-      counterparts'. **Still open**, and comparable in size to
-      `internal/doctor`'s own "biggest lift" note: `complete.go`'s ~12
-      provider-completion functions (`completeLocal`/`completeCloud`/
-      `completeOllama`/`completeNamed`/`doComplete` and their per-provider
-      response parsers) still have real uncovered branches each — closing
-      them needs several more `httptest` response-shape variations per
-      provider, not a quick pattern application like the rest of this
-      package got this pass.
+      counterparts'. Second slice: `complete.go`'s ~12 provider-completion
+      functions (`completeLocal`/`completeCloud`/`completeOllama`/
+      `completeNamed`/`doComplete` and their per-provider response
+      parsers) are now branch-tested via several `httptest`
+      response-shape variations per provider — bad-URL/unreachable/
+      non-200/unparseable-body/empty-response branches for Ollama,
+      OpenAI-compatible, and Anthropic shapes, plus `completeNamed`'s
+      full provider-resolution matrix (forced ollama found/model-less,
+      forced local non-ollama found/unreachable, forced cloud
+      found/missing-key, unknown provider). `complete.go` itself is now
+      ~100%. **Still open, a smaller remaining slice**: `llm.go`'s
+      `run`/`render` (the CLI entrypoint and its terminal-report
+      printer) and `fit.go`'s `vramBudget`/`RunFit` still have real
+      uncovered branches — `vramBudget` calls `gpu.Probe`/
+      `mem.VirtualMemory` directly (both already ~100% tested in their
+      own packages) rather than through an injected seam, and `render`'s
+      per-field terminal-formatting branches haven't had the same
+      fixture-table treatment `internal/gpu`'s `printReport` got.
 - [x] `internal/clean` (67.9% → 86.2%, floor 50 → 84) — `os.UserHomeDir`/
       the confirm read injected via a `deps` struct; `optional`'s
       package-manager exec injected via `lookPath`/`runCmd` fields added
