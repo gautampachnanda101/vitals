@@ -113,17 +113,26 @@ FLOORS = {
     # 74.8% measured (up from 54.7%); Probe itself is the only remaining
     # gap.
     "vitals/internal/gpu": 74,
-    # guide's floor keeps dropping despite new tests, not a regression:
-    # allowedHostsOnly/safeLinkHref/sameOriginOnly are all fully covered
-    # (100%), but the package grows around Serve/ServeHTML/ServeLocal/
-    # openBrowser, which are — like doctor.Collect() — live glue (a
-    # blocking server loop, an OS browser-launch command) exempt from
-    # unit coverage by convention. ServeLocal grew again to wire in
-    # sameOriginOnly (roadmap item 005's CSRF defense) — more lines in
-    # the same already-exempt function, not a new gap. See AGENTS.md's
-    # "95%+ coverage is the target for a package's pure/testable logic"
-    # — this is that exemption showing up in the number.
-    "vitals/internal/guide": 72,
+    # guide (item 009): signal.NotifyContext and openBrowser are both
+    # injected via a deps struct; ServeLocal's real net.Listen + handler-
+    # wrapping half is split into buildServer(handler, opts), returning
+    # the real listener/URL so a test can drive srv.Serve(ln) itself
+    # against a real ephemeral port and prove the Host-header/CSRF
+    # wiring end to end with real HTTP requests (a cross-origin POST
+    # really gets 403, a foreign Host header really gets 400) — not just
+    # allowedHostsOnly/sameOriginOnly's own unit logic, the same class of
+    # wiring bug as dashboard.Serve's POST-never-reaching-routeWrite
+    # incident this repo already hit once. serveLocal's shutdown-on-
+    # signal and browser-open-unless-NoOpen branches are both covered via
+    # the injected deps; openBrowser itself gets one real exec.Command
+    # call. 95.2% measured. Remaining gaps, left honest: the exported
+    # Serve/ServeHTML/ServeLocal one-liners (calling them for real risks
+    # actually opening a browser during a test run, since they don't
+    # expose NoOpen/deps injection — same class of gap as
+    # internal/metrics' exported Serve()), serveLocal's genuine-
+    # non-ErrServerClosed error branch, and openBrowser's two
+    # not-the-host-OS branches (only one of three runs per CI machine).
+    "vitals/internal/guide": 93,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
     # info: Collect's two live calls (hostInfoFn, executableFn) and
     # abbrevHome's homeDirFn are all injected function values, exercised

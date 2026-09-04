@@ -121,14 +121,22 @@ functions need an injectable seam.
       instead unit-test each `Handler`'s JSON-RPC plumbing against an
       injected fake result. Decide before starting, don't improvise
       mid-implementation.
-- [ ] `internal/guide` (72.0%, floor 72) — `Serve`/`ServeHTML`/
-      `ServeLocal`/`openBrowser` are live (a blocking server loop, an
-      OS browser-launch command). `allowedHostsOnly`/`safeLinkHref`/
-      `sameOriginOnly` already 100%. `ServeLocal`'s own non-blocking
-      setup (listener creation, handler wrapping) may be separable from
-      the actual blocking `Serve()` call it makes at the end — worth
-      checking whether that split is even possible before assuming the
-      whole function is irreducible.
+- [x] `internal/guide` (72.0% → 94.8-95.2%, floor 72 → 93) — the split
+      turned out to be possible: `buildServer(handler, opts)` now does
+      the real `net.Listen` + Host/CSRF handler-wrapping and returns the
+      real listener/URL, so a test drives `srv.Serve(ln)` itself against
+      a real ephemeral port and proves the wiring with real HTTP
+      requests (cross-origin POST → 403, foreign Host header → 400) —
+      catches a dashboard.Serve-POST-never-reaching-routeWrite-class bug,
+      not just `allowedHostsOnly`/`sameOriginOnly`'s own unit logic.
+      `signal.NotifyContext`/`openBrowser` injected via a `deps` struct;
+      `serveLocal`'s shutdown-on-signal and browser-open-unless-`NoOpen`
+      branches both covered; `openBrowser` gets one real `exec.Command`
+      call. Remaining gaps: the exported `Serve`/`ServeHTML`/`ServeLocal`
+      one-liners (calling them for real risks actually opening a browser
+      in a test run — same class of gap as `internal/metrics`' exported
+      `Serve()`), `serveLocal`'s genuine-non-`ErrServerClosed` error
+      branch, `openBrowser`'s two not-the-host-OS branches.
 - [x] `internal/metrics` (75.2% → 97.8-98.5%, floor 75 → 96) — `collect`/
       `signal.NotifyContext` injected via a `deps` struct;
       `newMux(d, ollamaURL)` split out from `serve` so the `/metrics`/`/`
