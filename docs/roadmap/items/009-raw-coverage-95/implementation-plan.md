@@ -22,10 +22,23 @@ functions need an injectable seam.
       swapMemory-fails (non-fatal warning), and swap-device/cumulative
       line branches via fakes, plus one real end-to-end call through
       `Run()` itself against the live host.
-- [ ] `internal/monitor` (41.2%, floor 41) — `Run`/`sample`/
-      `readDiskCounters`/`readNetCounters`/`topProcesses` are the live
-      gopsutil/process side; `emit`/`bar`/`rate`/`memBreakdownLine`/
-      `ioDelta` are already ~100%. Same injection shape as memcheck.
+- [x] `internal/monitor` (41.2% → 98.5%, floor 41 → 98) — extracted a
+      `source` struct (`hostInfo`/`loadAvg`/`cpuCounts`/`cpuPercent`/
+      `virtualMemory`/`swapMemory`/`diskIOCounters`/`netIOCounters`/
+      `processes`/`newSignalContext`) with `defaultSource` wiring the
+      real gopsutil calls (including a `procSource` interface +
+      `procHandle` adapter for `process.Processes()`, since `*process.
+      Process`'s PID is a struct field rather than a method). `Run` is
+      now `run(defaultSource, opts)`; the `--watch` loop is pulled into
+      its own `watch(ctx, src, opts)` so a test can drive it with an
+      already-expiring `context.Context` instead of a real OS signal,
+      with the underlying `signal.NotifyContext` call itself injected as
+      `source.newSignalContext`. The 3 remaining uncovered lines are
+      genuinely unreachable: `sample()` has no path that returns a
+      non-nil error, so the `err != nil` branches in `run()`/`watch()`
+      built to handle a failing `sample()` are dead by construction, and
+      `realProcesses()`'s `process.Processes()`-fails branch would need
+      an actual OS-level process-table failure to exercise honestly.
 - [ ] `internal/tools` (44.6%, floor 44) — `Installed`/`detectManager`
       (`exec.LookPath`), `Run`/`List`/`Install`/`Launch`/`confirm`
       (subprocess exec, `os.Stdin` reads, real PATH checks). `LookPath`

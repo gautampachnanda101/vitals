@@ -138,8 +138,85 @@ type ProcInfo struct {
 	Command  string  `json:"command"`
 }
 
+// procSource is the subset of *process.Process's method set topProcesses
+// needs. procHandle below makes the real gopsutil type satisfy it; tests
+// substitute a fake implementation with canned per-process data instead of
+// scanning the real process table.
+type procSource interface {
+	PID() int32
+	Percent(interval time.Duration) (float64, error)
+	MemoryInfo() (*process.MemoryInfoStat, error)
+	MemoryPercent() (float32, error)
+	Name() (string, error)
+	Username() (string, error)
+	NumThreads() (int32, error)
+	Cmdline() (string, error)
+}
+
+// procHandle adapts a real *process.Process (whose PID is a struct field, not
+// a method) to procSource.
+type procHandle struct{ p *process.Process }
+
+func (h procHandle) PID() int32                                   { return h.p.Pid }
+func (h procHandle) Percent(d time.Duration) (float64, error)     { return h.p.Percent(d) }
+func (h procHandle) MemoryInfo() (*process.MemoryInfoStat, error) { return h.p.MemoryInfo() }
+func (h procHandle) MemoryPercent() (float32, error)              { return h.p.MemoryPercent() }
+func (h procHandle) Name() (string, error)                        { return h.p.Name() }
+func (h procHandle) Username() (string, error)                    { return h.p.Username() }
+func (h procHandle) NumThreads() (int32, error)                   { return h.p.NumThreads() }
+func (h procHandle) Cmdline() (string, error)                     { return h.p.Cmdline() }
+
+func realProcesses() ([]procSource, error) {
+	ps, err := process.Processes()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]procSource, len(ps))
+	for i, p := range ps {
+		out[i] = procHandle{p}
+	}
+	return out, nil
+}
+
+// source is the live gopsutil/OS-signal surface Run reads from, pulled out
+// so a test can substitute fakes and exercise Run/sample/topProcesses'
+// formatting and branching logic without touching the real host.
+// defaultSource wires the real calls; production code always goes through
+// it via Run.
+type source struct {
+	hostInfo         func() (*host.InfoStat, error)
+	loadAvg          func() (*load.AvgStat, error)
+	cpuCounts        func(logical bool) (int, error)
+	cpuPercent       func(interval time.Duration, percpu bool) ([]float64, error)
+	virtualMemory    func() (*mem.VirtualMemoryStat, error)
+	swapMemory       func() (*mem.SwapMemoryStat, error)
+	diskIOCounters   func() (map[string]disk.IOCountersStat, error)
+	netIOCounters    func(pernic bool) ([]net.IOCountersStat, error)
+	processes        func() ([]procSource, error)
+	newSignalContext func() (context.Context, context.CancelFunc)
+}
+
+var defaultSource = source{
+	hostInfo:       host.Info,
+	loadAvg:        load.Avg,
+	cpuCounts:      cpu.Counts,
+	cpuPercent:     cpu.Percent,
+	virtualMemory:  mem.VirtualMemory,
+	swapMemory:     mem.SwapMemory,
+	diskIOCounters: func() (map[string]disk.IOCountersStat, error) { return disk.IOCounters() },
+	netIOCounters:  net.IOCounters,
+	processes:      realProcesses,
+	newSignalContext: func() (context.Context, context.CancelFunc) {
+		return signal.NotifyContext(context.Background(), os.Interrupt)
+	},
+}
+
 // Run produces one snapshot, or loops when Watch is set.
 func Run(opts Options) error {
+	return run(defaultSource, opts)
+}
+
+func run(src source, opts Options) error {
 	if opts.Top <= 0 {
 		opts.Top = 15
 	}
@@ -151,17 +228,23 @@ func Run(opts Options) error {
 	}
 
 	if !opts.Watch {
-		snap, err := sample(opts)
+		snap, err := sample(src, opts)
 		if err != nil {
 			return err
 		}
 		return emit(snap, opts)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := src.newSignalContext()
 	defer stop()
+	return watch(ctx, src, opts)
+}
+
+// watch is Run's --watch loop, pulled out so a test can drive it with an
+// already-expiring context instead of a real OS signal.
+func watch(ctx context.Context, src source, opts Options) error {
 	for {
-		snap, err := sample(opts)
+		snap, err := sample(src, opts)
 		if err != nil {
 			ui.Errf("%v", err)
 		} else {
@@ -179,17 +262,17 @@ func Run(opts Options) error {
 	}
 }
 
-func sample(opts Options) (Snapshot, error) {
+func sample(src source, opts Options) (Snapshot, error) {
 	s := Snapshot{Timestamp: time.Now()}
 
-	if hi, err := host.Info(); err == nil {
+	if hi, err := src.hostInfo(); err == nil {
 		s.Host.Hostname = hi.Hostname
 		s.Host.OS = fmt.Sprintf("%s %s", hi.Platform, hi.PlatformVersion)
 		s.Host.Kernel = hi.KernelArch
 		s.Host.Uptime = hi.Uptime
 		s.Host.Procs = int(hi.Procs)
 	}
-	if la, err := load.Avg(); err == nil {
+	if la, err := src.loadAvg(); err == nil {
 		s.Host.Load1, s.Host.Load5, s.Host.Load15 = la.Load1, la.Load5, la.Load15
 	}
 
@@ -198,36 +281,36 @@ func sample(opts Options) (Snapshot, error) {
 	// per-second rates. Cumulative counters on their own tell you nothing
 	// actionable about what the machine is doing right now.
 	win := opts.sampleWindow()
-	disk0 := readDiskCounters()
-	net0 := readNetCounters()
+	disk0 := readDiskCounters(src)
+	net0 := readNetCounters(src)
 	start := time.Now()
 
-	s.CPU.Cores, _ = cpu.Counts(true)
-	if pct, err := cpu.Percent(win, false); err == nil && len(pct) > 0 {
+	s.CPU.Cores, _ = src.cpuCounts(true)
+	if pct, err := src.cpuPercent(win, false); err == nil && len(pct) > 0 {
 		s.CPU.UsedPct = pct[0]
 	} else {
 		time.Sleep(win) // still let the I/O window elapse
 	}
 	dt := time.Since(start)
 
-	if vm, err := mem.VirtualMemory(); err == nil {
+	if vm, err := src.virtualMemory(); err == nil {
 		s.Memory = MemInfo{TotalBytes: vm.Total, UsedBytes: vm.Used, UsedPct: vm.UsedPercent}
 		s.MemDetail = MemBreakdown{Wired: vm.Wired, Active: vm.Active, Inactive: vm.Inactive, Buffers: vm.Buffers, Cached: vm.Cached}
 	}
-	if sw, err := mem.SwapMemory(); err == nil {
+	if sw, err := src.swapMemory(); err == nil {
 		s.Swap = MemInfo{sw.Total, sw.Used, sw.UsedPercent}
 	}
 
-	s.DiskIO = ioDelta(disk0, readDiskCounters(), dt)
-	s.NetIO = ioDelta(net0, readNetCounters(), dt)
+	s.DiskIO = ioDelta(disk0, readDiskCounters(src), dt)
+	s.NetIO = ioDelta(net0, readNetCounters(src), dt)
 
-	s.Processes = topProcesses(opts)
+	s.Processes = topProcesses(src, opts)
 	return s, nil
 }
 
 // readDiskCounters returns a cumulative I/O reading per physical device.
-func readDiskCounters() []IOStat {
-	io, err := disk.IOCounters()
+func readDiskCounters(src source) []IOStat {
+	io, err := src.diskIOCounters()
 	if err != nil {
 		return nil
 	}
@@ -240,8 +323,8 @@ func readDiskCounters() []IOStat {
 
 // readNetCounters returns a cumulative I/O reading per interface, skipping
 // interfaces that have never carried a byte.
-func readNetCounters() []IOStat {
-	io, err := net.IOCounters(true)
+func readNetCounters(src source) []IOStat {
+	io, err := src.netIOCounters(true)
 	if err != nil {
 		return nil
 	}
@@ -262,8 +345,8 @@ func (o Options) sampleWindow() time.Duration {
 	return 500 * time.Millisecond
 }
 
-func topProcesses(opts Options) []ProcInfo {
-	ps, err := process.Processes()
+func topProcesses(src source, opts Options) []ProcInfo {
+	ps, err := src.processes()
 	if err != nil {
 		return nil
 	}
@@ -289,7 +372,7 @@ func topProcesses(opts Options) []ProcInfo {
 			cmd = name
 		}
 		out = append(out, ProcInfo{
-			PID: p.Pid, User: user, CPUPct: cpuPct, MemPct: memPct,
+			PID: p.PID(), User: user, CPUPct: cpuPct, MemPct: memPct,
 			RSSBytes: mi.RSS, Threads: nthreads, Name: name, Command: cmd,
 		})
 	}

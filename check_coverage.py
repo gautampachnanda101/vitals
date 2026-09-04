@@ -139,11 +139,26 @@ FLOORS = {
     # digit before the decimal point is never trimmed) — left
     # undisturbed rather than forcing a test for dead defensive code.
     "vitals/internal/metrics": 75,
-    # monitor: Run/sample/readDiskCounters/readNetCounters/topProcesses
-    # are all live gopsutil/process calls (the Collect side of this
-    # package); every pure formatting function (emit, bar, rate,
-    # memBreakdownLine, ioDelta) is at 100%.
-    "vitals/internal/monitor": 41,
+    # monitor: the gopsutil/process surface (host.Info, load.Avg,
+    # cpu.Counts/Percent, mem.VirtualMemory/SwapMemory, disk.IOCounters,
+    # net.IOCounters, process.Processes via a procSource interface +
+    # procHandle adapter) is now injected via a `source` struct (item 009),
+    # with defaultSource wiring the real calls and Run() reduced to
+    # run(defaultSource, opts). The --watch loop is pulled into its own
+    # watch(ctx, src, opts) so a test can drive it with an
+    # already-expiring context instead of a real OS signal; --watch's
+    # underlying signal.NotifyContext is itself injected as
+    # source.newSignalContext. 98.5% measured raw coverage; the 3
+    # remaining uncovered lines are genuinely unreachable/hard-to-trigger
+    # defensive code, same class as internal/dashboard's mustExecute
+    # panic branch: sample() has no code path that returns a non-nil
+    # error (every gopsutil call it makes already tolerates its own
+    # failure), so the "if err != nil" branches in both run() and
+    # watch() that exist to handle a failing sample() are dead by
+    # construction; realProcesses()'s "process.Processes() itself
+    # fails" branch would need a real OS-level process-table failure to
+    # exercise honestly.
+    "vitals/internal/monitor": 98,
     # tools: Installed/detectManager (exec.LookPath), Run/List/Install/
     # Launch/confirm (live subprocess exec, os.Stdin reads, real PATH
     # checks) are the irreducible live-glue majority of this package — a
