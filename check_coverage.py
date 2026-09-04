@@ -160,7 +160,7 @@ FLOORS = {
     # overriddenKeys are pure and fully table-tested. 100.0% measured; 99
     # for float-rounding margin.
     "vitals/internal/info": 99,
-    # llm (item 009, partial): Run's --watch loop is split into
+    # llm (item 009, second slice): Run's --watch loop is split into
     # watch(ctx, opts) with an injected newSignalContext, same pattern as
     # internal/monitor/internal/memhogs; checkGPUDriver/runsCleanly gained
     # a gpuPreflightDeps struct (goos/lookPath/runCmd), branch-tested for
@@ -169,20 +169,27 @@ FLOORS = {
     # exported wrappers (OllamaModels/ProbeProviders/ScanProcesses/
     # CloudAPIKeyEnvVars) and RunFit's two error branches are now
     # exercised directly rather than only through their unexported
-    # counterparts. 62.6% -> ~86-87% measured.
+    # counterparts. Second slice: complete.go's ~12 provider-completion
+    # functions (completeLocal/completeCloud/completeOllama/completeNamed/
+    # doComplete and their per-provider response parsers) are now
+    # branch-tested via several httptest response-shape variations per
+    # provider — bad-URL/unreachable/non-200/unparseable-body/empty-
+    # response branches for Ollama, OpenAI-compatible, and Anthropic
+    # shapes, plus completeNamed's full provider-resolution matrix
+    # (forced ollama found/model-less, forced local non-ollama found/
+    # unreachable, forced cloud found/missing-key, unknown provider).
+    # 62.6% -> ~86-87% -> ~92%. complete.go itself is now ~100%.
     #
-    # NOT done, and a real remaining lift comparable in size to what item
-    # 009 already calls out for internal/doctor: complete.go's ~12
-    # provider-completion functions (completeLocal/completeCloud/
-    # completeOllama/completeNamed/doComplete and their per-provider
-    # response parsers) each still has uncovered branches — closing them
-    # needs several more httptest response-shape variations per provider,
-    # not a quick pattern application like the rest of this package got.
-    # fit.go's vramBudget (gpu.Probe/mem.VirtualMemory, both already
-    # ~100% tested in their own packages) was left as a real end-to-end
-    # call rather than injected — no new seam invented for a function
-    # this thin.
-    "vitals/internal/llm": 82,  # measured 84.5-86.7% across local/CI runs; floor set below the low end
+    # NOT done, a smaller remaining slice: llm.go's run/render (the CLI
+    # entrypoint and its terminal-report printer) and fit.go's vramBudget/
+    # RunFit still have real uncovered branches — vramBudget calls
+    # gpu.Probe/mem.VirtualMemory directly (both already ~100% tested in
+    # their own packages) rather than through an injected seam, and
+    # render's per-field terminal-formatting branches haven't had the
+    # same fixture-table treatment internal/gpu's printReport got.
+    "vitals/internal/llm": 90,  # measured ~92% locally; a few points of margin for cross-OS variance
+    # (this package has shown it before: 86.6% local vs. 84.5% on a
+    # Windows CI runner in an earlier pass).
     # mcp (item 009): the open design question this package's task noted
     # ("accept doctor.Assess/etc. as injectable dependencies of each
     # Handler closure" vs. "unit-test the JSON-RPC plumbing against a
