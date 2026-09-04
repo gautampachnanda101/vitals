@@ -341,3 +341,73 @@ threat this codebase's own model (§1) already excludes: a legitimate
 same-machine, same-origin caller replaying a request is the user's own
 action, not an attacker's. Flagged again here explicitly so this
 review pass can either close the question or override it.
+
+### Security review outcome (2026-09-03)
+
+Security-architect-persona review of this section, per the item's exit
+criteria ("a real mutating write action still needs its own pass before
+it ships"). Verdict: **go-with-changes** — nothing blocking, two
+findings acted on, one open question closed.
+
+1. **(Closed) Preview→apply single-use token — confirm not needed.**
+   Agrees with §7's own reasoning: `sameOriginOnly` (`internal/guide/
+   serve.go`, applied to every non-GET/HEAD request on `ServeLocal`
+   uniformly, not just this route) is the actual boundary here, and a
+   same-origin replay is the user's own browser doing what the user
+   already asked it to do — not a new threat a token would close. Adding
+   one would introduce the dashboard's first piece of server-side
+   session state for a threat already excluded by §1. No change; this
+   closes the open question rather than leaving it open again.
+2. **(Informational, not blocking) A hung external command wedges
+   `/clean/apply` for the life of the server process, not just one
+   request.** `clean.Apply` shells out to several commands with no
+   timeout (`docker system prune -f`, `brew cleanup -s`, `dism.exe`,
+   `powershell -Command Clear-RecycleBin`, package-manager cleans —
+   `internal/clean/clean.go`'s `optional()` uses a bare `exec.Command(...
+   ).Run()`, no `context`). Confirmed live during this pass's own
+   end-to-end verification: a real `/clean/apply` call against a
+   throwaway `$HOME` triggered `cleanMacOS`'s unconditional `brew
+   cleanup -s`, and because Homebrew resolves its own cache location
+   from `$HOME`, that one call made live network requests to Homebrew's
+   API and wrote several MB of fresh formula metadata under the
+   throwaway home — a real, uncontained side effect from a single
+   `optional()` call having nothing to do with the measured cache file
+   the test actually meant to delete. `cleanApplyMu.TryLock()`/`defer
+   Unlock()`
+   means the mutex stays held for as long as that call blocks — a single
+   hung subprocess (e.g. a `dism.exe` prompt, a wedged `docker` daemon)
+   would make every future `/clean/apply` call return 409 forever, until
+   the whole `vitals dashboard` process is restarted. This is not a new
+   vulnerability the dashboard introduces — `vitals clean` (CLI) has had
+   the identical no-timeout `optional()` calls since before this item
+   started, and a hang there only blocks one foreground process a human
+   can Ctrl-C. What changes here is blast radius: a long-running server
+   process wedges *every* future apply, not just the one call, and there
+   is no user-facing way to recover short of a restart. No concrete
+   exploit path exists (this requires the user's own OS-level tooling to
+   hang, not attacker input — out of scope per §1), so this does not
+   block shipping. Recorded here as a known, accepted limitation rather
+   than fixed now: fixing it properly means threading a `context.Context`
+   through `clean.Apply`'s subprocess calls to cancel a hung one, which
+   is a real `internal/clean` API change deserving its own task, not a
+   drive-by inside this review.
+3. **(Confirmed sound) Confirm-body validation, request/response shape,
+   and the "same-origin is the real boundary" reasoning for a route that
+   actually deletes (unlike `/clean/preview`, which only measures).** The
+   request body carries no path/filename data at all — `home` comes from
+   `os.UserHomeDir()` server-side, never the client — so there is no
+   injection or path-traversal surface in the request itself, unlike a
+   hypothetical write action that let the client name a target. Rejecting
+   before `TryLock` (design's own ordering) means a malformed/false
+   `confirm` never contends for the single-flight guard at all. Verdict
+   holds: `confirm` is a footgun guard, not a security control, and that
+   is the correct call for this specific route.
+
+Action taken on these findings during implementation: finding 2 is
+tracked as an accepted limitation (this note); finding 1 closes the
+open question with no code change; finding 3 required no change. The
+crafted-path escaping requirement from the earlier panel review
+(`html/template` for every write-action render function) still applies
+here — `renderCleanApplyResult` mirrors `renderCleanPreview` exactly, see
+`internal/dashboard/modules_clean_test.go`'s
+`TestRenderCleanApplyResultEscapesACraftedPath`.
