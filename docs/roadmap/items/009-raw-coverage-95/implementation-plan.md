@@ -100,34 +100,58 @@ functions need an injectable seam.
       decomposition pass. Also still untouched: the CLI entrypoints
       (`Run`/`Assess`/`RunFocus` and their print helpers). `Analyze`/
       `AnalyzeResource` and the small pure helpers are already ~100%.
-- [ ] `internal/llm` (62.6% → ~86-87% → ~92%, floor 57 → 85 → 90) —
-      **two slices, still not fully closed out**. First: `Run`'s `--watch` loop split into
-      `watch(ctx, opts)` with an injected `newSignalContext` (same
-      pattern as `internal/monitor`/`internal/memhogs`);
-      `checkGPUDriver`/`runsCleanly` gained a `gpuPreflightDeps` struct
-      (`goos`/`lookPath`/`runCmd`), branch-tested for nvidia-smi/rocm-smi
-      found-and-working, found-but-failing, and neither-present; the four
-      thin exported wrappers (`OllamaModels`/`ProbeProviders`/
-      `ScanProcesses`/`CloudAPIKeyEnvVars`) and `RunFit`'s two error
-      branches now have their own direct tests, not just their unexported
-      counterparts'. Second slice: `complete.go`'s ~12 provider-completion
-      functions (`completeLocal`/`completeCloud`/`completeOllama`/
-      `completeNamed`/`doComplete` and their per-provider response
-      parsers) are now branch-tested via several `httptest`
-      response-shape variations per provider — bad-URL/unreachable/
-      non-200/unparseable-body/empty-response branches for Ollama,
-      OpenAI-compatible, and Anthropic shapes, plus `completeNamed`'s
-      full provider-resolution matrix (forced ollama found/model-less,
-      forced local non-ollama found/unreachable, forced cloud
-      found/missing-key, unknown provider). `complete.go` itself is now
-      ~100%. **Still open, a smaller remaining slice**: `llm.go`'s
-      `run`/`render` (the CLI entrypoint and its terminal-report
-      printer) and `fit.go`'s `vramBudget`/`RunFit` still have real
-      uncovered branches — `vramBudget` calls `gpu.Probe`/
-      `mem.VirtualMemory` directly (both already ~100% tested in their
-      own packages) rather than through an injected seam, and `render`'s
-      per-field terminal-formatting branches haven't had the same
-      fixture-table treatment `internal/gpu`'s `printReport` got.
+- [x] `internal/llm` (62.6% → ~86-87% → ~92% → 98.4%, floor 57 → 85 →
+      90 → 96) — **three slices, closed out**. First: `Run`'s `--watch`
+      loop split into `watch(ctx, opts)` with an injected
+      `newSignalContext` (same pattern as `internal/monitor`/
+      `internal/memhogs`); `checkGPUDriver`/`runsCleanly` gained a
+      `gpuPreflightDeps` struct (`goos`/`lookPath`/`runCmd`),
+      branch-tested for nvidia-smi/rocm-smi found-and-working,
+      found-but-failing, and neither-present; the four thin exported
+      wrappers (`OllamaModels`/`ProbeProviders`/`ScanProcesses`/
+      `CloudAPIKeyEnvVars`) and `RunFit`'s two error branches now have
+      their own direct tests, not just their unexported counterparts'.
+      Second slice: `complete.go`'s ~12 provider-completion functions
+      (`completeLocal`/`completeCloud`/`completeOllama`/`completeNamed`/
+      `doComplete` and their per-provider response parsers) are now
+      branch-tested via several `httptest` response-shape variations per
+      provider — bad-URL/unreachable/non-200/unparseable-body/empty-
+      response branches for Ollama, OpenAI-compatible, and Anthropic
+      shapes, plus `completeNamed`'s full provider-resolution matrix
+      (forced ollama found/model-less, forced local non-ollama
+      found/unreachable, forced cloud found/missing-key, unknown
+      provider). `complete.go` itself is now ~100%. Third slice: `run`/
+      `watch`'s remaining dispatch branches (empty-`OllamaURL` default,
+      `run()` actually dispatching through `newSignalContext` into
+      `watch()` rather than only `watch()` tested directly, the non-JSON
+      clear-screen line, a direct real-signal-context test matching
+      `internal/monitor`'s own `TestDefaultSourceNewSignalContextWiresRealSignalNotify`);
+      `render` gained the same `printReport`-style fixture-table
+      treatment `internal/gpu` got (host-process table, blank-`Location`
+      grouping, latency/error display, and the full "loaded models"
+      insight switch); `probeOne`/`parseModels`/`collectResidentModels`/
+      `ollamaModels`'s remaining branches (bad endpoint, ollama-shaped
+      garbage, dedup-by-key, blank-name skip, unparseable body,
+      name-falls-back-to-`Model`); `once()`'s `needsGPUPreflightCheck`
+      branch exercised for real via a fake Ollama server reporting a
+      CPU-bound resident model (a real integration call, not an injected
+      seam); and `RunFit` gained one size-chosen-for-determinism
+      end-to-end case: a 5000B model no real machine's budget clears,
+      forcing the "nothing fits" branch — safely asymmetric (no real
+      machine has terabytes of VRAM). A "tiny model, everything fits"
+      counterpart was tried and reverted: GitHub's macOS CI runner's
+      virtualized Apple GPU reports a real, `ioreg`-sourced VRAM budget
+      of ~104 MB — smaller than even a 500M-parameter model's smallest
+      quant — so unlike the safely-huge direction, there is no
+      small-enough-to-always-fit model size. **Left as genuinely
+      unreachable**, same class already accepted elsewhere in this repo:
+      `scanProcesses`' `process.Processes()`-fails branch; `watch`'s
+      `ui.Errf` branch (`once()` only errors on a JSON-encode failure,
+      and `Report` is plain marshalable data); `vramBudget`'s non-taken
+      `gpu.Probe`/`mem.VirtualMemory` branches (deliberately left
+      un-injected per this item's own prior "no new seam invented for a
+      function this thin" call); and `RunFit`'s downstream
+      `vram<=0`/switch-default/plain-"yes"-not-recommended branches.
 - [x] `internal/clean` (67.9% → 86.2%, floor 50 → 84) — `os.UserHomeDir`/
       the confirm read injected via a `deps` struct; `optional`'s
       package-manager exec injected via `lookPath`/`runCmd` fields added

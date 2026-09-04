@@ -110,6 +110,36 @@ func TestRunFitRejectsAModelWithNoInferableSize(t *testing.T) {
 	}
 }
 
+func TestRunFitHugeModelNothingFitsWarnsAndReturnsNil(t *testing.T) {
+	// 5000B at even the smallest quant (Q2_K) needs ~2.2 TB — no real
+	// machine's VRAM/unified-memory budget clears that, so this
+	// reliably exercises RunFit's "best == \"\"" warn-and-return branch
+	// on any CI runner, unlike a size picked close to some real
+	// machine's actual budget would.
+	out := captureStdout(t, func() {
+		if err := RunFit("giant-model:5000b"); err != nil {
+			t.Fatalf("RunFit: %v", err)
+		}
+	})
+	if !strings.Contains(out, "no quant") || !strings.Contains(out, "spills") {
+		t.Errorf("RunFit(huge model) should warn that nothing fits, got:\n%s", out)
+	}
+}
+
+// No "tiny model" test parallels the huge-model one above: unlike "too
+// big for anything real" (safely asymmetric — no real machine has
+// terabytes of VRAM), "small enough to always fit" turned out not to be
+// determinable by picking a small parameter count. GitHub's macOS CI
+// runner's virtualized Apple GPU reports a real, ioreg-sourced VRAM
+// budget of ~104 MB — smaller than even a 500M-parameter model's
+// smallest quant (Q2_K, ~470 MB) — so a model chosen "safely tiny" for
+// a real Mac's actual unified memory still doesn't fit on that runner.
+// RunFit's plain-"yes" (fits, but isn't the recommended quant) verdict
+// branch is consequently left as the same class of accepted gap as the
+// vram<=0/switch-default branches next to it in the source: genuinely
+// live, hardware-dependent behavior this item's own prior "no new seam
+// invented for a function this thin" decision leaves un-injected.
+
 func TestRunFitGoesThroughTheRealVRAMBudgetEndToEnd(t *testing.T) {
 	// One real end-to-end call through vramBudget()'s actual gpu.Probe/
 	// mem.VirtualMemory wiring — those are already ~100% tested in their

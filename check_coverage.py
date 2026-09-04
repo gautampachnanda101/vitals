@@ -180,16 +180,48 @@ FLOORS = {
     # shapes, plus completeNamed's full provider-resolution matrix
     # (forced ollama found/model-less, forced local non-ollama found/
     # unreachable, forced cloud found/missing-key, unknown provider).
-    # 62.6% -> ~86-87% -> ~92%. complete.go itself is now ~100%.
+    # 62.6% -> ~86-87% -> ~92%. complete.go itself is now ~100%. Third
+    # slice, closes this package out: run/watch's remaining dispatch
+    # branches (an empty OllamaURL's default-fill, run() actually
+    # dispatching through newSignalContext into watch() rather than only
+    # watch() tested directly, watch()'s non-JSON clear-screen line, plus
+    # a direct real-signal-context test matching internal/monitor's own
+    # TestDefaultSourceNewSignalContextWiresRealSignalNotify pattern);
+    # render(devs []Device)-style fixture-table tests for every branch
+    # (host-process table, blank-Location grouping, latency/error
+    # display, and the full "loaded models" insight switch — fully
+    # offloaded/partial/CPU-only-with-and-without-a-checked-GPU-driver);
+    # probeOne/parseModels/collectResidentModels/ollamaModels's remaining
+    # branches (bad endpoint, ollama-shaped garbage, dedup-by-key, blank
+    # model-name skip, unparseable body, name-falls-back-to-model); and
+    # once()'s needsGPUPreflightCheck branch exercised for real via a
+    # fake Ollama server reporting a CPU-bound resident model (not an
+    # injected seam — a real httptest server driving the real
+    # integration, matching this package's existing end-to-end-call
+    # style). fit.go's RunFit gained one size-chosen-for-determinism
+    # end-to-end case: a 5000B model no real machine's VRAM/RAM budget
+    # clears, forcing the "nothing fits" warn branch — safely asymmetric
+    # (no real machine has terabytes of VRAM). A "tiny model, everything
+    # fits" counterpart was tried and reverted: GitHub's macOS CI runner's
+    # virtualized Apple GPU reports a real, ioreg-sourced VRAM budget of
+    # ~104 MB, smaller than even a 500M-parameter model's smallest quant
+    # — there's no small-enough-to-always-fit model size, unlike the
+    # safely-huge direction. 62.6% -> ~92% -> 98.4%.
     #
-    # NOT done, a smaller remaining slice: llm.go's run/render (the CLI
-    # entrypoint and its terminal-report printer) and fit.go's vramBudget/
-    # RunFit still have real uncovered branches — vramBudget calls
-    # gpu.Probe/mem.VirtualMemory directly (both already ~100% tested in
-    # their own packages) rather than through an injected seam, and
-    # render's per-field terminal-formatting branches haven't had the
-    # same fixture-table treatment internal/gpu's printReport got.
-    "vitals/internal/llm": 90,  # measured ~92% locally; a few points of margin for cross-OS variance
+    # Left as genuinely unreachable without either faking an OS-level
+    # failure or a specific piece of hardware, same class of gap already
+    # accepted elsewhere in this repo (e.g. internal/monitor's
+    # realProcesses()-fails branch, internal/dashboard's
+    # generateAdvice json.Marshal branch): scanProcesses'
+    # process.Processes()-fails branch; watch()'s ui.Errf branch (once()
+    # only errors on a JSON-encode failure, and Report is plain
+    # marshalable data); vramBudget's non-taken gpu.Probe/mem.VirtualMemory
+    # branches (each CI runner's real hardware only ever takes one) — left
+    # deliberately un-injected per this item's own prior "no new seam
+    # invented for a function this thin" call; and RunFit's own
+    # vram<=0/switch-default/plain-"yes"-not-recommended branches,
+    # downstream of that same call.
+    "vitals/internal/llm": 96,  # measured 98.4% locally; margin for cross-OS variance
     # (this package has shown it before: 86.6% local vs. 84.5% on a
     # Windows CI runner in an earlier pass).
     # mcp (item 009): the open design question this package's task noted
