@@ -451,6 +451,15 @@ a comment. A missing file, an unreadable file, or an unrecognized key is
 never an error; vitals just falls back to its built-in default for
 whatever isn't set.
 
+The first plain `vitals doctor` run on a machine with no config file
+**creates one for you**, with every threshold written out at its current
+default — nothing commented out, so changing one is a single-line edit.
+Because the written values *are* the defaults, the file's existence alone
+changes nothing until you edit a value. `vitals info` shows the file's
+path, which values are still at their default, and which you've changed.
+(The `ollama_url` line is the one commented-out example, since it has no
+default — uncomment it to set one.)
+
 ### Extending memhogs
 
 `memhogs` resolves most application families automatically — the macOS

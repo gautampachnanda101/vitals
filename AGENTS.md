@@ -159,6 +159,25 @@ to exist *before* implementation starts on anything non-trivial; the
 
 ## Non-negotiable principles
 
+- **A status word with no context is a bug, not a status line.** Every
+  state vitals surfaces to a user — an absent config file, a disabled
+  feature, an unreachable LLM, a skipped check, an empty result, a
+  `0` — must also tell them (a) whether anything is actually wrong, and
+  (b) the concrete next step: the command to run, the file to create,
+  the flag to pass, with a pointer to `vitals guide` for the detail. A
+  bare `not found`, `unavailable`, `none`, `disabled` — or, just as bad,
+  a bare `loaded` / `ok` — on its own reads as a broken or pointless
+  feature even when the tool is working exactly as designed: `loaded`
+  from where, containing what, overriding which defaults? This is a real
+  report, not a hypothetical: `vitals info` first printed `status: not
+  found — using built-in defaults`, then `status: loaded`, and both told
+  the reader nothing they could act on — so it looked broken. The fix is
+  never "the user should have known"; it's showing the actual values,
+  their source, and how to change them. Applies to `--json` too — a
+  machine consumer gets the structured equivalent (the value, an
+  `exists`/`overrides`-style field, a documented way to act on it), not
+  just the bare word.
+
 - **One dependency for data, three for reliable terminal output.**
   gopsutil for system data — that's the whole "one dependency" claim's
   original scope, and it still holds there. Before reaching for a

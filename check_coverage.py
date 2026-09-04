@@ -108,12 +108,12 @@ FLOORS = {
     # — this is that exemption showing up in the number.
     "vitals/internal/guide": 72,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
-    # info: Collect's two live calls (hostInfoFn, executableFn) are both
-    # injected function values, exercised via fakes for both their
-    # success and failure paths — nothing genuinely irreducible-live
-    # left in this package. 96.7% measured; 96 for float-rounding
-    # margin.
-    "vitals/internal/info": 96,
+    # info: Collect's two live calls (hostInfoFn, executableFn) and
+    # abbrevHome's homeDirFn are all injected function values, exercised
+    # via fakes for both success and failure paths; Render and
+    # overriddenKeys are pure and fully table-tested. 100.0% measured; 99
+    # for float-rounding margin.
+    "vitals/internal/info": 99,
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
     # exec), and render (a print function, like internal/dupes' — not yet

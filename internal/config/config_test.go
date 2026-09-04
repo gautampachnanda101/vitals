@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -116,24 +117,43 @@ func TestLoadWithNoFileReturnsDefaults(t *testing.T) {
 	}
 }
 
-func TestWriteDefaultCreatesAParseableCommentedOutTemplate(t *testing.T) {
+func TestWriteDefaultCreatesAFunctionalFileAtTheDefaults(t *testing.T) {
 	isolateConfigDir(t)
 	path, _ := Path()
 
 	if err := WriteDefault(path); err != nil {
 		t.Fatalf("WriteDefault: %v", err)
 	}
-	if _, err := os.Stat(path); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		t.Fatalf("config file should exist after WriteDefault: %v", err)
 	}
 
-	// Every key is commented out, so Load() against the freshly written
-	// file must still report pure defaults — the whole point of writing
-	// it commented is that its mere existence changes nothing.
-	got := Load()
-	want := Default()
-	if got != want {
+	// The numeric thresholds are written out uncommented (nothing to
+	// un-comment before an edit takes effect) — but since every written
+	// value IS the current default, Load() against the fresh file still
+	// reports exactly Default(): the file's existence alone changes nothing.
+	for _, key := range []string{
+		"disk_warn_percent = ", "disk_critical_percent = ", "ram_warn_percent = ",
+		"ram_high_percent = ", "cpu_oversubscribe_multiplier = ",
+	} {
+		if !bytes.Contains(data, []byte("\n"+key)) {
+			t.Errorf("written config is missing an uncommented %q line:\n%s", key, data)
+		}
+		if bytes.Contains(data, []byte("# "+key)) {
+			t.Errorf("%q should be written uncommented, not as a commented example:\n%s", key, data)
+		}
+	}
+	if got, want := Load(), Default(); got != want {
 		t.Errorf("Load() after WriteDefault = %+v, want unchanged defaults %+v", got, want)
+	}
+}
+
+func TestDefaultFileContentsIsGeneratedFromDefault(t *testing.T) {
+	var cfg Config
+	Parse(&cfg, []byte(DefaultFileContents()))
+	if cfg != Default() {
+		t.Errorf("DefaultFileContents() parses to %+v, want Default() %+v — the two must never drift", cfg, Default())
 	}
 }
 

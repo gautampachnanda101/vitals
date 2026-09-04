@@ -58,32 +58,37 @@ func Path() (string, bool) {
 	return filepath.Join(dir, "vitals", "config.toml"), true
 }
 
-// DefaultTemplate is what WriteDefault writes: every key commented out at
-// its actual current default, so opening the file shows exactly what's in
-// effect and how to override it, without silently activating an override
-// nobody asked for the moment the file exists (a commented-out line still
-// parses as a comment, per Parse's own "# starts a comment" rule).
-const DefaultTemplate = `# vitals config — every value below is commented out at its current
-# default. Uncomment and edit a line to override it; a missing, unreadable,
-# or malformed file is never an error, vitals just falls back to defaults.
-# See vitals guide (the "Configuration file" section) for what each key does.
+// DefaultFileContents renders a ready-to-use config file: every tunable
+// written out at its current built-in default, uncommented, so the file is
+// functional the moment it exists and changing a threshold is a one-line
+// edit with nothing to un-comment first. It is generated from Default() so
+// the written values can never drift from the code's actual defaults.
+// ollama_url has no default (it's opt-in), so it's the one commented
+// example rather than a written-out empty string.
+func DefaultFileContents() string {
+	d := Default()
+	return fmt.Sprintf(`# vitals configuration — these are the built-in defaults, written out so you
+# can edit them in place. A missing, unreadable, or malformed file is never
+# an error; vitals falls back to these same values. Run `+"`vitals guide`"+` and
+# read the "Configuration file" section for what each key controls.
 
-# disk_warn_percent = 90
-# disk_critical_percent = 97
-# ram_warn_percent = 78
-# ram_high_percent = 90
-# cpu_oversubscribe_multiplier = 2.0
+disk_warn_percent = %.0f
+disk_critical_percent = %.0f
+ram_warn_percent = %.0f
+ram_high_percent = %.0f
+cpu_oversubscribe_multiplier = %.1f
 
-# default --ollama-url when the flag is omitted, e.g.:
+# ollama_url has no default. Uncomment to set the --ollama-url used when the
+# flag is omitted:
 # ollama_url = "http://gpu-box:11434"
-`
+`, d.DiskWarnPercent, d.DiskCriticalPercent, d.RAMWarnPercent, d.RAMHighPercent, d.CPUOversubscribeMult)
+}
 
-// WriteDefault writes DefaultTemplate to path, creating any missing parent
-// directory (0o700 — this file can carry an internal hostname/URL in
-// ollama_url once uncommented, so it gets the same non-world-readable
-// treatment as any other per-user vitals state). Fails if path already
-// exists — this only ever runs once, on the "no config file yet" path; it
-// must never silently overwrite a file the user has since edited.
+// WriteDefault writes DefaultFileContents() to path, creating any missing
+// parent directory (0o700 — this file can carry an internal hostname/URL in
+// ollama_url once set, so it gets the same non-world-readable treatment as
+// any other per-user vitals state). Fails if path already exists — it must
+// never silently overwrite a file the user has since edited.
 func WriteDefault(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("refusing to overwrite existing config at %s", path)
@@ -91,7 +96,7 @@ func WriteDefault(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(DefaultTemplate), 0o600)
+	return os.WriteFile(path, []byte(DefaultFileContents()), 0o600)
 }
 
 // Load reads the config file if present, applying any recognised keys on top
