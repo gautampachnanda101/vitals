@@ -135,17 +135,29 @@ func TestRenderGPUListsEveryDevice(t *testing.T) {
 	}
 }
 
-func TestRenderGPUExplainsUnifiedMemoryInsteadOfShowingZeroVRAM(t *testing.T) {
+func TestRenderGPUShowsLiveRAMPressureForAppleUnifiedMemory(t *testing.T) {
 	// A real user report: an Apple Silicon GPU (no discrete VRAM to
 	// report — see internal/gpu/gpu.go's parseIORegApple) rendered as
-	// "0% util, 0 B / 0 B VRAM", which reads as broken telemetry rather
-	// than "there's genuinely nothing separate to report here."
-	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{Name: "Apple M3 Pro"}}})
+	// "0% util, 0 B / 0 B VRAM", which reads as broken telemetry. A first
+	// fix that replaced it with a sentence pointing at the Memory page
+	// ("go look elsewhere") was rightly rejected as still not actionable —
+	// GPU and RAM are the same pool here, so this page shows that live
+	// pressure directly: the same numbers/format renderMem uses.
+	s := doctor.Snapshot{
+		GPUs:   []doctor.GPU{{Name: "Apple M3 Pro"}},
+		Memory: doctor.Memory{UsedPct: 86, TopProc: doctor.ProcRef{Name: "llama-server", PID: 123, RSSBytes: 2 << 30}},
+	}
+	out := renderGPU(s)
 	if strings.Contains(out, "0 B / 0 B") || strings.Contains(out, "0% util") {
 		t.Errorf("renderGPU should never print a bare zero VRAM/util reading, got: %s", out)
 	}
 	if !strings.Contains(out, "unified memory") {
 		t.Errorf("an Apple GPU with no VRAM reading should explain why (unified memory), got: %s", out)
+	}
+	for _, want := range []string{"86%", "llama-server", "pid 123"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderGPU should show the actual live RAM pressure (same as renderMem), missing %q, got: %s", want, out)
+		}
 	}
 }
 

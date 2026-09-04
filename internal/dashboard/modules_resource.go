@@ -101,28 +101,30 @@ func renderPower(s doctor.Snapshot) string {
 
 // renderGPU mirrors internal/gpu/report.go's Run: it never prints a
 // telemetry field vitals didn't actually get a real reading for. A bare
-// "0% util, 0 B / 0 B VRAM" for a GPU with no discrete VRAM (every Apple
-// Silicon GPU — unified memory, no separate VRAM pool to report; doctor
-// tracks that pressure via the Memory page instead, see
-// internal/gpu/gpu.go's parseIORegApple) reads as broken telemetry, not
-// as "there's genuinely nothing separate to report here." A real user
-// saw exactly that and asked "that looks wrong?" — this is the fix.
+// "0% util, 0 B / 0 B VRAM" for a GPU with no discrete VRAM reading read
+// as broken telemetry to a real user, not as "nothing separate to report."
+//
+// On Apple Silicon there's no separate VRAM pool to be missing in the
+// first place — GPU and RAM are the same physical memory (see
+// internal/gpu/gpu.go's parseIORegApple) — so "go check the Memory page"
+// is a dead end, not an answer: this page shows that same live pressure
+// directly, the same numbers/format renderMem uses, because for this GPU
+// they ARE the GPU numbers.
 func renderGPU(s doctor.Snapshot) string {
 	if len(s.GPUs) == 0 {
 		return `<p class="unavailable">No GPU detected.</p>`
 	}
 	var out string
 	for _, g := range s.GPUs {
-		var detail string
 		switch {
 		case g.VRAMTotal > 0:
-			detail = fmt.Sprintf("%.0f%% util, %s / %s VRAM", g.UtilPct, ui.HumanBytes(int64(g.VRAMUsed)), ui.HumanBytes(int64(g.VRAMTotal)))
+			out += row(g.Name, fmt.Sprintf("%.0f%% util, %s / %s VRAM", g.UtilPct, ui.HumanBytes(int64(g.VRAMUsed)), ui.HumanBytes(int64(g.VRAMTotal))))
 		case strings.HasPrefix(g.Name, "Apple"):
-			detail = "uses unified memory, shared with system RAM — see the Memory page for RAM pressure"
+			out += row(g.Name, "unified memory — same pool as system RAM, shown below")
+			out += renderMem(s)
 		default:
-			detail = "no utilisation/VRAM telemetry available for this GPU"
+			out += row(g.Name, "no utilisation/VRAM telemetry available for this GPU")
 		}
-		out += row(g.Name, detail)
 	}
 	return out
 }

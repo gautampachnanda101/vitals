@@ -178,6 +178,28 @@ to exist *before* implementation starts on anything non-trivial; the
   `exists`/`overrides`-style field, a documented way to act on it), not
   just the bare word.
 
+- **Stating a fact the reader already knows is not an insight, and a
+  sentence explaining an absence is not a fix for it.** vitals' whole
+  premise is correlating raw signals into a verdict + remedy (see
+  "What this is" at the top of this file) — every piece of user-facing
+  output should clear that same bar, not stop at "here's a true
+  statement about the system." Concretely: when a value is genuinely
+  unavailable for a structural reason (no discrete VRAM on Apple
+  Silicon, no battery on a desktop), the fix is not a sentence *saying*
+  that — it's finding and showing whatever *is* actually available and
+  actionable in its place. This was a real, two-step correction, not a
+  hypothetical: the dashboard's GPU page first went from a bare
+  `0% util, 0 B / 0 B VRAM` (looked like broken telemetry) to `uses
+  unified memory, shared with system RAM — see the Memory page` (a true
+  sentence, correctly diagnosed as the previous bullet's fix) — and
+  *that* was rejected too, because it still handed the reader nothing to
+  act on, just a fact and a pointer to go look elsewhere. The actual fix
+  was showing the live RAM numbers (used %, available %, top process)
+  directly on that same page, since on that hardware they *are* the GPU
+  numbers. Before calling a piece of output done, ask "what is the user
+  going to do with this" — if the honest answer is "nothing, it's just
+  true," it isn't finished.
+
 - **One dependency for data, three for reliable terminal output.**
   gopsutil for system data — that's the whole "one dependency" claim's
   original scope, and it still holds there. Before reaching for a
