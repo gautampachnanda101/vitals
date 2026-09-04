@@ -117,13 +117,17 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       the dashboard its first piece of server-side session state for a
       threat §1 already excludes. This closes the question rather than
       leaving it open.
-- [ ] `dupes`/`--hardlink` exposure — not picked up this pass. Left for
-      later, per this task's own conditional wording ("if still wanted
-      at this point"): `/clean/apply` was the item's concrete, scoped
-      deliverable; `dupes` exposure is a new write surface that would
-      want its own short design note (what does "confirm" mean for a
-      hardlink operation, what's the response shape) rather than being
-      freehanded as a drive-by addition here.
+- [ ] `dupes`/`--hardlink` exposure — design note drafted
+      ([`design-dupes.md`](design-dupes.md), 2026-09-04): a fixed
+      server-side scope enum (no client-chosen paths, unlike
+      `/clean/apply` which takes none), a preview→apply pair of
+      `WriteAction`s re-running `Scan` server-side on apply, a
+      `context`/budget bound added to `Scan` so an expensive walk can't
+      wedge the single-flight mutex, and `html/template` responses
+      mirroring the `clean` ones. **Still open**: a security-persona
+      pass on that note (four open questions listed in it), then the
+      `Scan` `context`/`Truncated` refactor, then the two routes +
+      client buttons + tests.
 
 ## Exit criteria
 

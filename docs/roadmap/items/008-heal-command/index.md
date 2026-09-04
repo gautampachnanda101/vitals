@@ -4,12 +4,14 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Not started — captured as a followup, not yet designed
+**Status**: Designed, pending review — [`design.md`](design.md) drafted
+2026-09-04; needs a full `review-panel` pass before any code, per the
+"Why this needs a design doc and review panel" section below
 **Depends on**: [diag](../../../architecture/design.md) findings/fixes model (existing); logically follows `doctor`/`advice`
 **Target release**: not yet
-**Architecture**: not written yet — needs its own design doc and review
-panel before implementation starts, per `AGENTS.md`'s "Roadmap
-discipline"
+**Architecture**: [`design.md`](design.md) — the structured `Remedy`
+type, the deliberately-tiny v1 remedy set, the confirmation model, and
+the stale-target trust-boundary analysis. Pre-review.
 
 ## What
 
@@ -56,8 +58,17 @@ exhaustive list:
   looser path to the same destructive operations `clean` already gates
   carefully.
 
+Each of these is answered in [`design.md`](design.md): a structured
+`Remedy` type on `diag.Finding` (never a regex over prose); a
+deliberately tiny v1 remedy set (SIGTERM-to-top-consumer, `sudo purge`,
+and a `clean` *delegate* — nothing else); per-remedy interactive confirm
+with `--yes` gated to reversible low-risk remedies only; and `clean`
+overlap handled by delegating to `vitals clean` as a subprocess rather
+than re-implementing deletion. The panel still has to sign off before
+code starts.
+
 ## Plan
 
-[`implementation-plan.md`](implementation-plan.md) — empty until this is
-designed and reviewed; do not start checking off tasks here without a
-design doc this item's own header can point to.
+[`implementation-plan.md`](implementation-plan.md) — stays empty until
+the `review-panel` pass on [`design.md`](design.md) converges and its
+must-fix findings are folded back into the design.
