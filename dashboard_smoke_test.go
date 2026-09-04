@@ -69,6 +69,13 @@ func TestDashboardSmoke(t *testing.T) {
 	// this machine happens to have a real local LLM answering, unlike
 	// asserting on the LLM-unreachable note specifically.
 	assertRoute(t, url, "advice", http.StatusOK, "rule-based checks found")
+	// advice's LLM commentary is a separate AsyncFragment (asked by the
+	// page's own client-side JS, not blocked on by the page itself) — the
+	// real regression this guards is Serve's own handler wiring the async
+	// route through route() at all against a live server, not just a
+	// route() unit test. ai-commentary is present whether the LLM
+	// answered or not (a friendly "unavailable" message either way).
+	assertRoute(t, url, "advice/commentary", http.StatusOK, "ai-commentary")
 	assertRoute(t, url, "nope-does-not-exist", http.StatusNotFound, "")
 	assertRoute(t, url, "clean", http.StatusOK, "clean-preview-btn")
 	// Exercises the actual write-action HTTP path end to end, not just

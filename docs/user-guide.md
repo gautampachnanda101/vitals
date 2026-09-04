@@ -442,14 +442,32 @@ disk_critical_percent = 99          # default 97
 ram_warn_percent = 85               # default 78
 ram_high_percent = 95               # default 90
 cpu_oversubscribe_multiplier = 4    # default 2.0 — load1 >= this * cores triggers a finding
-ollama_url = "http://gpu-box:11434" # default for --ollama-url when the flag is omitted
+ollama_url = "http://gpu-box:11434"   # default for --ollama-url when the flag is omitted
+lmstudio_url = "http://gpu-box:1234"  # default for --lmstudio-url (vitals advice only)
+llamacpp_url = "http://gpu-box:8080"  # default for --llamacpp-url (vitals advice only)
+vllm_url = "http://gpu-box:8000"      # default for --vllm-url (vitals advice only)
 ```
+
+The four URL overrides have no built-in default of their own — vitals
+already probes each runtime's well-known local port
+(`http://localhost:11434`/`1234`/`8080`/`8000`) with no config at all; set
+one here only to point at a different host (a GPU box on the LAN) or
+port.
 
 The format is a flat `key = value` list on purpose, not TOML or YAML — a
 handful of numeric knobs don't justify a parsing dependency. `#` starts
 a comment. A missing file, an unreadable file, or an unrecognized key is
 never an error; vitals just falls back to its built-in default for
 whatever isn't set.
+
+The first plain `vitals doctor` run on a machine with no config file
+**creates one for you**, with every threshold written out at its current
+default — nothing commented out, so changing one is a single-line edit.
+Because the written values *are* the defaults, the file's existence alone
+changes nothing until you edit a value. `vitals info` shows the file's
+path, which values are still at their default, and which you've changed.
+(The `ollama_url` line is the one commented-out example, since it has no
+default — uncomment it to set one.)
 
 ### Extending memhogs
 

@@ -121,16 +121,18 @@ func Run(opts RunOptions) int {
 	return report.ExitCode()
 }
 
-// scaffoldConfigIfMissing writes a commented-out default config.toml the
-// first time `vitals doctor` runs on a machine with none, so its
-// thresholds are discoverable and editable instead of living invisibly
-// in code — `vitals info` used to just report "not found" with no path
-// forward. Deliberately scoped to the plain interactive terminal path
-// only (not --json/--ci/--quiet): a scripted/automated invocation must
-// never gain a filesystem side effect or extra output nobody asked for.
-// Failure (a read-only config dir, e.g.) is silently ignored — same
-// non-fatal posture Load() already takes on every other config error,
-// and doctor's own verdict doesn't depend on this succeeding.
+// scaffoldConfigIfMissing writes a fully-functional default config.toml
+// (every threshold written out at its current default, nothing commented
+// out — see config.DefaultFileContents) the first time `vitals doctor`
+// runs on a machine with none, so the thresholds are discoverable and a
+// one-line edit away instead of living invisibly in code. Because the file
+// only ever contains the current defaults, its existence changes nothing
+// until the user actually edits a value. Deliberately scoped to the plain
+// interactive terminal path only (not --json/--ci/--quiet): a scripted
+// invocation must never gain a filesystem side effect or extra output
+// nobody asked for. Failure (a read-only config dir, e.g.) is silently
+// ignored — same non-fatal posture Load() takes on every other config
+// error, and doctor's verdict doesn't depend on this succeeding.
 func scaffoldConfigIfMissing() {
 	path, ok := config.Path()
 	if !ok {
@@ -140,7 +142,7 @@ func scaffoldConfigIfMissing() {
 		return
 	}
 	if config.WriteDefault(path) == nil {
-		ui.Infof("wrote default config to %s — edit thresholds there", path)
+		ui.Infof("created %s with the current defaults — edit any value there to change a threshold", path)
 	}
 }
 

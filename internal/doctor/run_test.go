@@ -183,8 +183,8 @@ func TestScaffoldConfigIfMissingWritesAFileWithNoExistingOne(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("scaffoldConfigIfMissing should have written a config file, got: %v", err)
 	}
-	if !strings.Contains(out, "wrote default config") {
-		t.Errorf("scaffoldConfigIfMissing should print a one-time notice, got: %q", out)
+	if !strings.Contains(out, "created") || !strings.Contains(out, "config.toml") {
+		t.Errorf("scaffoldConfigIfMissing should print a one-time notice naming the created file, got: %q", out)
 	}
 }
 

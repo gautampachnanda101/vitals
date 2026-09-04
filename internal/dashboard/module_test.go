@@ -16,6 +16,42 @@ func withRegistry(t *testing.T, modules []Module) {
 	t.Cleanup(func() { registry = old })
 }
 
+// withAsyncRegistry is withRegistry's counterpart for asyncFragments.
+func withAsyncRegistry(t *testing.T, fragments []AsyncFragment) {
+	t.Helper()
+	old := asyncFragments
+	asyncFragments = append([]AsyncFragment(nil), fragments...)
+	t.Cleanup(func() { asyncFragments = old })
+}
+
+func TestRegisterAsyncPanicsOnDuplicatePath(t *testing.T) {
+	withAsyncRegistry(t, nil)
+	RegisterAsync(AsyncFragment{Path: "/x/y"})
+
+	defer func() {
+		if recover() == nil {
+			t.Error("RegisterAsync should panic on a duplicate path, it did not")
+		}
+	}()
+	RegisterAsync(AsyncFragment{Path: "/x/y"})
+}
+
+func TestFindAsyncFragment(t *testing.T) {
+	withAsyncRegistry(t, []AsyncFragment{
+		{Path: "/advice/commentary", Handler: func(PageContext) (int, string) { return 200, "hi" }},
+	})
+	if _, ok := findAsyncFragment("/nope"); ok {
+		t.Error("findAsyncFragment should report false for an unregistered path")
+	}
+	a, ok := findAsyncFragment("/advice/commentary")
+	if !ok {
+		t.Fatal("findAsyncFragment should find the registered path")
+	}
+	if status, body := a.Handler(PageContext{}); status != 200 || body != "hi" {
+		t.Errorf("Handler() = %d %q, want 200 \"hi\"", status, body)
+	}
+}
+
 func TestRegisterPanicsOnDuplicateSlug(t *testing.T) {
 	// A second module silently shadowing the first on a slug collision
 	// would be permanently unreachable dead code with no error anywhere —

@@ -71,6 +71,16 @@ func defaultOllamaURL() string {
 	return "http://localhost:11434"
 }
 
+// defaultLMStudioURL/defaultLlamaCppURL/defaultVLLMURL mirror
+// defaultOllamaURL for the other three local runtimes --advice supports.
+// Unlike defaultOllamaURL, these fall through to "" (not a hardcoded
+// port) when unset — the flag's own current default is already "", and
+// internal/llm's Options.apply() fills in that runtime's well-known port
+// itself, so there's no reason to duplicate that constant here too.
+func defaultLMStudioURL() string { return cfg.LMStudioURL }
+func defaultLlamaCppURL() string { return cfg.LlamaCppURL }
+func defaultVLLMURL() string     { return cfg.VLLMURL }
+
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
@@ -258,9 +268,9 @@ func run(argv []string, version string) int {
 	case "advice":
 		fs := newFlagSet("advice")
 		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
-		lmstudioURL := fs.String("lmstudio-url", "", "base URL of the LM Studio server")
-		llamacppURL := fs.String("llamacpp-url", "", "base URL of the llama.cpp / OpenAI-compatible server")
-		vllmURL := fs.String("vllm-url", "", "base URL of the vLLM server")
+		lmstudioURL := fs.String("lmstudio-url", defaultLMStudioURL(), "base URL of the LM Studio server")
+		llamacppURL := fs.String("llamacpp-url", defaultLlamaCppURL(), "base URL of the llama.cpp / OpenAI-compatible server")
+		vllmURL := fs.String("vllm-url", defaultVLLMURL(), "base URL of the vLLM server")
 		provider := fs.String("provider", "", "force a provider (ollama, lmstudio, llamacpp, vllm, openai, anthropic, groq, ...); default: auto-detect")
 		model := fs.String("model", "", "override the provider's default model")
 		asJSON := fs.Bool("json", false, "emit {\"advice\": \"...\"} as JSON instead of plain text")

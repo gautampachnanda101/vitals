@@ -17,19 +17,15 @@ import (
 	"vitals/internal/llm"
 )
 
-// PageContext is everything a Module's Available/Render functions can see.
-// It's built fresh per request from a live Collect(), so every page
-// reflects the current machine rather than a cached snapshot. AdviceReply/
-// AdviceErr are the one exception: they're only populated by the HTTP
-// handler when the advice module itself is being rendered, since asking an
-// LLM is too slow to do on every request just in case a page needs it.
+// PageContext is everything a Module's Available/Render/AsyncFragment
+// functions can see. It's built fresh per request from a live Collect(),
+// so every page reflects the current machine rather than a cached
+// snapshot.
 type PageContext struct {
-	Snapshot    doctor.Snapshot
-	Report      diag.Report
-	Providers   []llm.Provider
-	LLMOpts     llm.CompleteOptions
-	AdviceReply string
-	AdviceErr   error
+	Snapshot  doctor.Snapshot
+	Report    diag.Report
+	Providers []llm.Provider
+	LLMOpts   llm.CompleteOptions
 	// Version is main.version, threaded through so the footer can show it
 	// without this package importing package main.
 	Version string
@@ -45,17 +41,46 @@ type Module struct {
 	// restatement of "isn't available" itself, which the router already
 	// says. Empty falls back to a generic reason.
 	UnavailableReason string
-	// Prepare does whatever request-scoped, module-specific work Render
-	// needs but PageContext doesn't carry by default (the advice module
-	// uses this to call the LLM only when its own route is hit, not on
-	// every request). Called once, uniformly, by the router for whichever
-	// module matched — nil means there's nothing to do, not an error.
-	// This exists specifically so a module needing extra setup never
-	// requires the router to special-case its slug: see
-	// docs/architecture/design.md §6.2.
-	Prepare   func(*PageContext) error
-	Available func(PageContext) bool
-	Render    func(PageContext) string
+	Available         func(PageContext) bool
+	Render            func(PageContext) string
+}
+
+// AsyncFragment is a GET-only, on-demand HTML fragment a module offers
+// beyond its own page — the deliberately separate-from-Module concept
+// (same reasoning as WriteAction, item 005 §3) for request-scoped work too
+// slow to block a page render on. Replaces the earlier Module.Prepare
+// hook (docs/architecture/design.md §6.2's original design): Prepare ran
+// synchronously before Render, so a slow Prepare (advice's LLM call, up to
+// completeTimeout — 60s) blocked the *entire* page, including the
+// heuristic half that needs no LLM at all. An AsyncFragment is fetched by
+// the page's own client-side JS after the page (which needs none of this
+// work) has already rendered — see modules_advice.go's adviceCommentaryScript.
+type AsyncFragment struct {
+	Path    string // full URL path, e.g. "/advice/commentary"
+	Handler func(PageContext) (status int, body string)
+}
+
+var asyncFragments []AsyncFragment
+
+// RegisterAsync adds an async fragment. Call it from the owning module's
+// own init(), alongside Register — see modules_advice.go. Panics on a
+// duplicate Path, matching Register's own behavior for a duplicate Slug.
+func RegisterAsync(a AsyncFragment) {
+	for _, existing := range asyncFragments {
+		if existing.Path == a.Path {
+			panic(fmt.Sprintf("dashboard: duplicate async fragment path %q", a.Path))
+		}
+	}
+	asyncFragments = append(asyncFragments, a)
+}
+
+func findAsyncFragment(path string) (AsyncFragment, bool) {
+	for _, a := range asyncFragments {
+		if a.Path == path {
+			return a, true
+		}
+	}
+	return AsyncFragment{}, false
 }
 
 var registry []Module

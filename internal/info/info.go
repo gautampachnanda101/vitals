@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/shirou/gopsutil/v4/host"
 
@@ -48,11 +49,18 @@ type Machine struct {
 	Cores      int    `json:"cores"`
 }
 
-// ConfigStatus is which config file (if any) is in effect.
+// ConfigStatus is which config file (if any) is in effect, and — the part
+// that actually matters to a reader — whether it's changing any behaviour.
+// A scaffolded config.toml with every line commented out exists on disk but
+// is byte-for-byte equivalent to having no file at all; "loaded" alone
+// would imply it's doing something. Overrides lists the TOML keys whose
+// effective value differs from the built-in default, so the reader knows
+// exactly what their file is (or isn't) doing.
 type ConfigStatus struct {
-	Path   string  `json:"path"`
-	Exists bool    `json:"exists"`
-	Active Config_ `json:"active"`
+	Path      string   `json:"path"`
+	Exists    bool     `json:"exists"`
+	Overrides []string `json:"overrides"` // TOML keys whose value differs from the built-in default; empty means "defaults are in effect"
+	Active    Config_  `json:"active"`
 }
 
 // Config_ mirrors internal/config.Config's fields — a separate type (not
@@ -104,8 +112,9 @@ func Collect(version string) Report {
 	path, _ := config.Path()
 	_, statErr := os.Stat(path)
 	r.Config = ConfigStatus{
-		Path:   path,
-		Exists: statErr == nil,
+		Path:      path,
+		Exists:    statErr == nil,
+		Overrides: overriddenKeys(cfg, config.Default()),
 		Active: Config_{
 			DiskWarnPercent:      cfg.DiskWarnPercent,
 			DiskCriticalPercent:  cfg.DiskCriticalPercent,
@@ -116,6 +125,55 @@ func Collect(version string) Report {
 		},
 	}
 	return r
+}
+
+// overriddenKeys returns the config-file TOML keys whose effective value
+// differs from the built-in default — i.e. what the user's config.toml is
+// actually changing. Empty means the defaults are in effect (whether or not
+// a file exists), which is the common case for a freshly scaffolded,
+// all-commented-out template.
+func overriddenKeys(got, def config.Config) []string {
+	var k []string
+	if got.DiskWarnPercent != def.DiskWarnPercent {
+		k = append(k, "disk_warn_percent")
+	}
+	if got.DiskCriticalPercent != def.DiskCriticalPercent {
+		k = append(k, "disk_critical_percent")
+	}
+	if got.RAMWarnPercent != def.RAMWarnPercent {
+		k = append(k, "ram_warn_percent")
+	}
+	if got.RAMHighPercent != def.RAMHighPercent {
+		k = append(k, "ram_high_percent")
+	}
+	if got.CPUOversubscribeMult != def.CPUOversubscribeMult {
+		k = append(k, "cpu_oversubscribe_multiplier")
+	}
+	if got.OllamaURL != def.OllamaURL {
+		k = append(k, "ollama_url")
+	}
+	return k
+}
+
+// homeDirFn is os.UserHomeDir, injectable so abbrevHome is testable.
+var homeDirFn = os.UserHomeDir
+
+// abbrevHome shortens a path under the user's home directory to a leading
+// "~", the way a shell prompt would — purely for display, so a long config
+// path doesn't wrap awkwardly in a narrow terminal. The full path stays
+// in the --json output untouched.
+func abbrevHome(p string) string {
+	home, err := homeDirFn()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == home {
+		return "~"
+	}
+	if strings.HasPrefix(p, home+string(os.PathSeparator)) {
+		return "~" + p[len(home):]
+	}
+	return p
 }
 
 // humanUptime renders seconds as "2d 3h 14m" — coarsest-first, dropping
@@ -163,17 +221,52 @@ func Render(r Report) string {
 	line("cores", fmt.Sprintf("%d", r.Machine.Cores))
 
 	b = append(b, []byte(fmt.Sprintf("\n%sConfig%s\n", ui.Bold, ui.Reset))...)
-	line("path", r.Config.Path)
-	if r.Config.Exists {
-		line("status", ui.Green+"loaded"+ui.Reset)
-	} else {
-		line("status", ui.Key("not found — using built-in defaults"))
+
+	overridden := make(map[string]bool, len(r.Config.Overrides))
+	for _, k := range r.Config.Overrides {
+		overridden[k] = true
 	}
-	line("disk warn / crit", fmt.Sprintf("%.0f%% / %.0f%%", r.Config.Active.DiskWarnPercent, r.Config.Active.DiskCriticalPercent))
-	line("ram warn / high", fmt.Sprintf("%.0f%% / %.0f%%", r.Config.Active.RAMWarnPercent, r.Config.Active.RAMHighPercent))
-	line("cpu oversubscribe", fmt.Sprintf("%.1fx", r.Config.Active.CPUOversubscribeMult))
-	if r.Config.Active.OllamaURL != "" {
-		line("ollama url", r.Config.Active.OllamaURL)
+
+	line("file", abbrevHome(r.Config.Path))
+	switch n := len(r.Config.Overrides); {
+	case !r.Config.Exists:
+		line("status", ui.Key("not created yet — run `vitals doctor` to create it"))
+	case n == 1:
+		line("status", ui.Green+"in use"+ui.Reset+" — 1 value changed from its default (below)")
+	case n > 1:
+		line("status", ui.Green+"in use"+ui.Reset+fmt.Sprintf(" — %d values changed from their defaults (below)", n))
+	default:
+		line("status", ui.Green+"in use"+ui.Reset+" — every value still at its built-in default")
+	}
+	line("change", "edit any line in that file, then re-run — see `vitals guide` › \"Configuration file\"")
+
+	// Show every tunable, its value in effect, and whether that value is the
+	// built-in default or one the user set in the file. A bare "loaded" /
+	// "not found" told the reader none of that.
+	b = append(b, '\n')
+	type row struct {
+		key, val string
+		fromFile bool
+	}
+	ollama := r.Config.Active.OllamaURL
+	if ollama == "" {
+		ollama = "(unset)"
+	}
+	rows := []row{
+		{"disk_warn_percent", fmt.Sprintf("%.0f", r.Config.Active.DiskWarnPercent), overridden["disk_warn_percent"]},
+		{"disk_critical_percent", fmt.Sprintf("%.0f", r.Config.Active.DiskCriticalPercent), overridden["disk_critical_percent"]},
+		{"ram_warn_percent", fmt.Sprintf("%.0f", r.Config.Active.RAMWarnPercent), overridden["ram_warn_percent"]},
+		{"ram_high_percent", fmt.Sprintf("%.0f", r.Config.Active.RAMHighPercent), overridden["ram_high_percent"]},
+		{"cpu_oversubscribe_multiplier", fmt.Sprintf("%.1f", r.Config.Active.CPUOversubscribeMult), overridden["cpu_oversubscribe_multiplier"]},
+		{"ollama_url", ollama, overridden["ollama_url"]},
+	}
+	b = append(b, []byte(fmt.Sprintf("  %-30s %-22s %s\n", "key", "value", "source"))...)
+	for _, rw := range rows {
+		src := ui.Key("built-in default")
+		if rw.fromFile {
+			src = ui.Green + "set in file" + ui.Reset
+		}
+		b = append(b, []byte(fmt.Sprintf("  %-30s %-22s %s\n", rw.key, rw.val, src))...)
 	}
 
 	return string(b)

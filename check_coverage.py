@@ -91,11 +91,20 @@ FLOORS = {
     # despite its name) is now fully tested via the same stdout-capture
     # pattern as internal/monitor/internal/memcheck.
     "vitals/internal/dupes": 68,
-    # gpu: Probe/run (report.go's Run too) shell out to nvidia-smi/
-    # rocm-smi/ioreg — genuinely live. Every pure parser (parseNvidiaSMI/
-    # Apps, attachNvidiaApps, parseRocmSMIJSON, atoiOr/numOr/
-    # firstNonEmpty/strSort) is at or near 100%.
-    "vitals/internal/gpu": 54,
+    # gpu: Probe (the actual nvidia-smi/rocm-smi/ioreg exec.Command calls)
+    # is still genuinely live and untested. Run's printing half is no
+    # longer bundled with it: printReport(devs []Device) is now the pure
+    # seam (same live-vs-print split as internal/monitor's sample/emit),
+    # fully fixture-tested including the exact bug this was split out to
+    # fix — a real Apple Silicon reading (real UtilPct/VRAM from ioreg's
+    # PerformanceStatistics, see gpu.go's parseIORegApple) must never
+    # print a bare "Temp 0°C"/"Power 0 W"/"Clock 0 MHz" alongside it, and
+    # a real NVIDIA/AMD-shaped device (every field populated) must still
+    # show all of them together — both directions covered by fixture, not
+    # just the Apple case, so this doesn't regress on a real GPU machine.
+    # 74.8% measured (up from 54.7%); Probe itself is the only remaining
+    # gap.
+    "vitals/internal/gpu": 74,
     # guide's floor keeps dropping despite new tests, not a regression:
     # allowedHostsOnly/safeLinkHref/sameOriginOnly are all fully covered
     # (100%), but the package grows around Serve/ServeHTML/ServeLocal/
@@ -108,12 +117,12 @@ FLOORS = {
     # — this is that exemption showing up in the number.
     "vitals/internal/guide": 72,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
-    # info: Collect's two live calls (hostInfoFn, executableFn) are both
-    # injected function values, exercised via fakes for both their
-    # success and failure paths — nothing genuinely irreducible-live
-    # left in this package. 96.7% measured; 96 for float-rounding
-    # margin.
-    "vitals/internal/info": 96,
+    # info: Collect's two live calls (hostInfoFn, executableFn) and
+    # abbrevHome's homeDirFn are all injected function values, exercised
+    # via fakes for both success and failure paths; Render and
+    # overriddenKeys are pure and fully table-tested. 100.0% measured; 99
+    # for float-rounding margin.
+    "vitals/internal/info": 99,
     # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
     # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
     # exec), and render (a print function, like internal/dupes' — not yet
@@ -135,11 +144,20 @@ FLOORS = {
     # plus one real end-to-end call through Run()/defaultSource. 100.0%
     # measured raw coverage.
     "vitals/internal/memcheck": 99,
-    # memhogs: Run/once/readCgroup are live (real process scanning,
-    # /proc reads). describe and userFamilies (config-file read/parse,
-    # tested via isolateConfigDir the same way internal/doctor's history
-    # tests are) are now fully covered.
-    "vitals/internal/memhogs": 59,
+    # memhogs: Run/once/watch now go through an injected `source` struct
+    # (processes/readCgroup/virtualMemory/swapMemory/newSignalContext,
+    # item 009), so once()'s three-section rendering, the --watch loop
+    # (driven by an already-expiring context, not a real signal), and the
+    # process-table-enumeration-fails path are all exercised with fakes;
+    # readCgroup is split into readCgroupFor(goos, pid, readFile) so both
+    # the non-Linux short-circuit and the Linux read/error paths are
+    # testable on any host. 96.1% raw — the residual gaps are
+    # OS-partitioned switch arms (the linux/windows section-3 remedy
+    # lines, the Windows System-process branch) and unreachable error
+    # branches (realProcesses' OS-level failure, families()' embedded-file
+    # panic, userFamilies' os.UserConfigDir error), same class as
+    # internal/monitor's documented remainder.
+    "vitals/internal/memhogs": 95,
     # metrics: collect/RunOnce/Serve are live (real Collect + HTTP
     # server). trimFloat's "s == \"\" || s == \"-\"" guard looks
     # unreachable for any real float64 via %.6f formatting (the leading
@@ -166,14 +184,14 @@ FLOORS = {
     # fails" branch would need a real OS-level process-table failure to
     # exercise honestly.
     "vitals/internal/monitor": 98,
-    # tools: Installed/detectManager (exec.LookPath), Run/List/Install/
-    # Launch/confirm (live subprocess exec, os.Stdin reads, real PATH
-    # checks) are the irreducible live-glue majority of this package — a
-    # package-manager launcher/installer is mostly "shell out and let the
-    # user's terminal take over." The pure logic sitting next to them
-    # (installCommand, withSudo, binary, firstOrEmpty, formatToolList) is
-    # at 100%.
-    "vitals/internal/tools": 44,
+    # tools (item 009): exec.LookPath and the subprocess exec are both
+    # injected via a `deps` struct (lookPath, runCmd, confirmReader, goos)
+    # — defaultDeps wires the real calls; Run/List/Install/Launch/confirm
+    # are now one-line wrappers over run/list/install/launch/confirm(d,
+    # ...), each fully exercised with fakes (a recordingRunCmd proves the
+    # exact argv without ever shelling out) plus one real end-to-end call
+    # per public wrapper. 100.0% measured; 99 for float-rounding margin.
+    "vitals/internal/tools": 99,
     "vitals/internal/ui": 96,
 }
 

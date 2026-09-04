@@ -54,6 +54,32 @@ visible in the job summary, not just buried in a pass/fail. When you add a
 new command or a new safe (non-destructive, non-blocking, non-network) flag
 combination, add a case here.
 
+### Dashboard end-to-end tests (Playwright)
+
+`e2e/` is this repo's one Node/JS toolchain (2026-09-04, deliberate
+exception to "one dependency," same bar as `internal/ui`'s three-package
+one) — real-browser tests against the actual compiled `vitals dashboard`
+binary, for what a Go test asserting on server-rendered HTML strings
+structurally cannot see: a client-side `fetch()` that never resolves, a
+button click that does nothing, real dark-mode rendering, a browser
+console error. It exists because exactly that class of bug shipped
+(the advice page's LLM call blocking its own render) and was only caught
+by a human clicking around in a real browser, not by any test in the
+Go suite. `make e2e` (builds `vitals` first) or, directly:
+
+```sh
+cd e2e && npm ci && npx playwright install chromium && npm test
+```
+
+Chromium only, on purpose — this catches real browser-behavior bugs, not
+engine-specific rendering differences, so a three-engine matrix isn't
+worth its CI cost here. Runs in CI (`e2e` job in `.github/workflows/
+ci.yml`) on the same three-OS matrix as the Go `test` job. Add a case to
+`e2e/tests/dashboard.spec.js` for any new dashboard page or client-side
+interaction; keep asserting on Go-testable server output
+(`internal/dashboard`'s own tests) for everything else — this suite is
+for what only a real browser can prove, not a second copy of those.
+
 ## Architecture map
 
 ```
@@ -158,6 +184,47 @@ to exist *before* implementation starts on anything non-trivial; the
   by default ordering).
 
 ## Non-negotiable principles
+
+- **A status word with no context is a bug, not a status line.** Every
+  state vitals surfaces to a user — an absent config file, a disabled
+  feature, an unreachable LLM, a skipped check, an empty result, a
+  `0` — must also tell them (a) whether anything is actually wrong, and
+  (b) the concrete next step: the command to run, the file to create,
+  the flag to pass, with a pointer to `vitals guide` for the detail. A
+  bare `not found`, `unavailable`, `none`, `disabled` — or, just as bad,
+  a bare `loaded` / `ok` — on its own reads as a broken or pointless
+  feature even when the tool is working exactly as designed: `loaded`
+  from where, containing what, overriding which defaults? This is a real
+  report, not a hypothetical: `vitals info` first printed `status: not
+  found — using built-in defaults`, then `status: loaded`, and both told
+  the reader nothing they could act on — so it looked broken. The fix is
+  never "the user should have known"; it's showing the actual values,
+  their source, and how to change them. Applies to `--json` too — a
+  machine consumer gets the structured equivalent (the value, an
+  `exists`/`overrides`-style field, a documented way to act on it), not
+  just the bare word.
+
+- **Stating a fact the reader already knows is not an insight, and a
+  sentence explaining an absence is not a fix for it.** vitals' whole
+  premise is correlating raw signals into a verdict + remedy (see
+  "What this is" at the top of this file) — every piece of user-facing
+  output should clear that same bar, not stop at "here's a true
+  statement about the system." Concretely: when a value is genuinely
+  unavailable for a structural reason (no discrete VRAM on Apple
+  Silicon, no battery on a desktop), the fix is not a sentence *saying*
+  that — it's finding and showing whatever *is* actually available and
+  actionable in its place. This was a real, two-step correction, not a
+  hypothetical: the dashboard's GPU page first went from a bare
+  `0% util, 0 B / 0 B VRAM` (looked like broken telemetry) to `uses
+  unified memory, shared with system RAM — see the Memory page` (a true
+  sentence, correctly diagnosed as the previous bullet's fix) — and
+  *that* was rejected too, because it still handed the reader nothing to
+  act on, just a fact and a pointer to go look elsewhere. The actual fix
+  was showing the live RAM numbers (used %, available %, top process)
+  directly on that same page, since on that hardware they *are* the GPU
+  numbers. Before calling a piece of output done, ask "what is the user
+  going to do with this" — if the honest answer is "nothing, it's just
+  true," it isn't finished.
 
 - **One dependency for data, three for reliable terminal output.**
   gopsutil for system data — that's the whole "one dependency" claim's

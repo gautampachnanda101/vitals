@@ -17,16 +17,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/shirou/gopsutil/v4/process"
 
 	"vitals/internal/ui"
 )
@@ -205,13 +201,20 @@ type familyAgg struct {
 	pattern  string
 }
 
-// readCgroup returns /proc/<pid>/cgroup for OS-native app grouping on Linux;
-// empty on every other platform.
-func readCgroup(pid int32) string {
-	if runtime.GOOS != "linux" {
+// realReadCgroup returns /proc/<pid>/cgroup for OS-native app grouping on
+// Linux; empty on every other platform. It is the default source.readCgroup.
+func realReadCgroup(pid int32) string {
+	return readCgroupFor(runtime.GOOS, pid, os.ReadFile)
+}
+
+// readCgroupFor is realReadCgroup with the OS and the file read injected, so
+// both the non-Linux short-circuit and the Linux read/error paths are testable
+// on any host.
+func readCgroupFor(goos string, pid int32, readFile func(string) ([]byte, error)) string {
+	if goos != "linux" {
 		return ""
 	}
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	b, err := readFile(fmt.Sprintf("/proc/%d/cgroup", pid))
 	if err != nil {
 		return ""
 	}
@@ -266,7 +269,9 @@ func bucketFamilies(all []procInfo, goos string, fams []family) []familyAgg {
 
 // Run prints the three report sections, once or (with Watch) continuously
 // until interrupted.
-func Run(opts Options) error {
+func Run(opts Options) error { return run(defaultSource, opts) }
+
+func run(src source, opts Options) error {
 	if opts.Top <= 0 {
 		opts.Top = 15
 	}
@@ -274,34 +279,38 @@ func Run(opts Options) error {
 		opts.Interval = 2 * time.Second
 	}
 	if !opts.Watch {
-		return once(opts.Top)
+		return once(src, opts.Top)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := src.newSignalContext()
 	defer stop()
-	ticker := time.NewTicker(opts.Interval)
-	defer ticker.Stop()
+	return watch(ctx, src, opts)
+}
+
+// watch is Run's --watch loop, pulled out so a test can drive it with an
+// already-expiring context instead of a real OS signal.
+func watch(ctx context.Context, src source, opts Options) error {
 	for {
 		fmt.Print("\033[H\033[2J") // clear screen
-		if err := once(opts.Top); err != nil {
+		if err := once(src, opts.Top); err != nil {
 			ui.Errf("%v", err)
 		}
 		select {
 		case <-ctx.Done():
 			fmt.Println()
 			return nil
-		case <-ticker.C:
+		case <-time.After(opts.Interval):
 		}
 	}
 }
 
 // once prints the three report sections a single time.
-func once(topN int) error {
+func once(src source, topN int) error {
 	if topN <= 0 {
 		topN = 15
 	}
 
-	ps, err := process.Processes()
+	ps, err := src.processes()
 	if err != nil {
 		return fmt.Errorf("enumerate processes: %w", err)
 	}
@@ -319,8 +328,8 @@ func once(topN int) error {
 		}
 		exe, _ := p.Exe()
 		all = append(all, procInfo{
-			pid: p.Pid, rss: mi.RSS, name: name, cmd: cmd,
-			exe: exe, cgroup: readCgroup(p.Pid),
+			pid: p.PID(), rss: mi.RSS, name: name, cmd: cmd,
+			exe: exe, cgroup: src.readCgroup(p.PID()),
 		})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].rss > all[j].rss })
@@ -363,12 +372,12 @@ func once(topN int) error {
 
 	// Section 3: system memory pressure + remedies
 	ui.Header("3. SYSTEM MEMORY & REMEDIES")
-	if vm, err := mem.VirtualMemory(); err == nil {
+	if vm, err := src.virtualMemory(); err == nil {
 		fmt.Printf("  Total RAM        : %s\n", ui.HumanBytes(int64(vm.Total)))
 		fmt.Printf("  Used             : %s (%.1f%%)\n", ui.HumanBytes(int64(vm.Used)), vm.UsedPercent)
 		fmt.Printf("  Available        : %s\n", ui.HumanBytes(int64(vm.Available)))
 	}
-	if sw, err := mem.SwapMemory(); err == nil && sw.Total > 0 {
+	if sw, err := src.swapMemory(); err == nil && sw.Total > 0 {
 		fmt.Printf("  Swap used        : %s / %s (%.1f%%)\n",
 			ui.HumanBytes(int64(sw.Used)), ui.HumanBytes(int64(sw.Total)), sw.UsedPercent)
 	}

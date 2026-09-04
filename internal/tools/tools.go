@@ -9,6 +9,7 @@ package tools
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -78,9 +79,42 @@ func Find(name string) (Tool, bool) {
 	return Tool{}, false
 }
 
+// deps is the live exec/PATH/subprocess surface this package's Run/List/
+// Install/Launch read from, pulled out so a test can substitute fakes and
+// exercise the surrounding logic — argument construction, the confirm-then-
+// run ordering, which candidate gets picked — without touching the real
+// PATH or actually running an installer/launching a TUI. defaultDeps wires
+// the real calls; production code always goes through it.
+type deps struct {
+	lookPath func(file string) (string, error)
+	// runCmd runs name with args, wiring the given stdin/stdout/stderr —
+	// the same shape Install/Launch need for a child TUI to behave exactly
+	// as if run directly.
+	runCmd func(name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error
+	// confirmReader is what confirm() reads the y/N answer from.
+	confirmReader io.Reader
+	// goos is runtime.GOOS, parameterized (like withSudo's goos/euid
+	// arguments) so install()'s manager-detection branch is testable
+	// regardless of which OS actually runs the test.
+	goos string
+}
+
+var defaultDeps = deps{
+	lookPath: exec.LookPath,
+	goos:     runtime.GOOS,
+	runCmd: func(name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+		cmd := exec.Command(name, args...)
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+		return cmd.Run()
+	},
+	confirmReader: os.Stdin,
+}
+
 // Installed reports whether t's binary is on PATH.
-func Installed(t Tool) bool {
-	_, err := exec.LookPath(t.binary())
+func Installed(t Tool) bool { return installed(defaultDeps, t) }
+
+func installed(d deps, t Tool) bool {
+	_, err := d.lookPath(t.binary())
 	return err == nil
 }
 
@@ -98,10 +132,13 @@ func byCategory(category string) []Tool {
 }
 
 // detectManager returns the first package manager available on this host,
-// trying the platform's usual options in order.
-func detectManager() (Manager, bool) {
+// trying the platform's usual options in order. goos is a parameter (not
+// runtime.GOOS read directly) so every OS's candidate list is testable
+// regardless of which OS actually runs the test — same reasoning as
+// withSudo's goos/euid parameters below.
+func detectManager(d deps, goos string) (Manager, bool) {
 	var candidates []Manager
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		candidates = []Manager{Brew}
 	case "linux":
@@ -110,7 +147,7 @@ func detectManager() (Manager, bool) {
 		candidates = []Manager{Winget, Scoop}
 	}
 	for _, m := range candidates {
-		if _, err := exec.LookPath(string(m)); err == nil {
+		if _, err := d.lookPath(string(m)); err == nil {
 			return m, true
 		}
 	}
@@ -162,20 +199,24 @@ type Options struct {
 
 // Run lists every known companion tool with its install status, or installs
 // one when Options.Install is set.
-func Run(opts Options) error {
+func Run(opts Options) error { return run(defaultDeps, opts) }
+
+func run(d deps, opts Options) error {
 	if opts.Install != "" {
-		return Install(opts.Install, opts.Yes)
+		return install(d, opts.Install, opts.Yes)
 	}
-	List()
+	list(d)
 	return nil
 }
 
 // List prints every registry entry with its install status.
-func List() {
+func List() { list(defaultDeps) }
+
+func list(d deps) {
 	ui.Header("COMPANION TOOLS")
 	fmt.Println(ui.Key("  vitals complements these rather than reimplementing them — see `vitals tools install <name>`"))
 	fmt.Println()
-	fmt.Print(formatToolList(Registry, Installed))
+	fmt.Print(formatToolList(Registry, func(t Tool) bool { return installed(d, t) }))
 }
 
 // formatToolList renders one status line per tool. installed is a
@@ -199,47 +240,47 @@ func formatToolList(tools []Tool, installed func(Tool) bool) string {
 // the exact command before running it and confirming first unless yes is
 // set — installing software is a real, system-wide change, the same bar
 // `vitals clean` holds destructive cleanup to.
-func Install(name string, yes bool) error {
+func Install(name string, yes bool) error { return install(defaultDeps, name, yes) }
+
+func install(d deps, name string, yes bool) error {
 	t, ok := Find(name)
 	if !ok {
 		return fmt.Errorf("unknown tool %q — run `vitals tools` to see the list", name)
 	}
-	if Installed(t) {
+	if installed(d, t) {
 		ui.Okf("%s is already installed", t.Name)
 		return nil
 	}
-	mgr, ok := detectManager()
+	mgr, ok := detectManager(d, d.goos)
 	if !ok {
-		return fmt.Errorf("no supported package manager found for %s — install %s manually", runtime.GOOS, t.Name)
+		return fmt.Errorf("no supported package manager found for %s — install %s manually", d.goos, t.Name)
 	}
 	pkg, ok := t.Packages[mgr]
 	if !ok {
-		return fmt.Errorf("no known %s package for %s on %s — install it manually", t.Name, mgr, runtime.GOOS)
+		return fmt.Errorf("no known %s package for %s on %s — install it manually", t.Name, mgr, d.goos)
 	}
 	cmdName, args := installCommand(mgr, pkg)
 
 	fmt.Printf("  this will run: %s %s %s\n", ui.Bold, strings.Join(append([]string{cmdName}, args...), " "), ui.Reset)
-	if !yes && !confirm() {
+	if !yes && !confirm(d.confirmReader) {
 		ui.Infof("aborted")
 		return nil
 	}
-	cmd := exec.Command(cmdName, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	return d.runCmd(cmdName, args, os.Stdin, os.Stdout, os.Stderr)
 }
 
 // Launch hands off to the best installed tool in category, replacing
 // vitals' own stdio with the child's so its TUI (ncdu, btop, ...) behaves
 // exactly as it would run directly.
-func Launch(category string, args []string) error {
+func Launch(category string, args []string) error { return launch(defaultDeps, category, args) }
+
+func launch(d deps, category string, args []string) error {
 	candidates := byCategory(category)
 	for _, t := range candidates {
-		if !Installed(t) {
+		if !installed(d, t) {
 			continue
 		}
-		cmd := exec.Command(t.binary(), args...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		return cmd.Run()
+		return d.runCmd(t.binary(), args, os.Stdin, os.Stdout, os.Stderr)
 	}
 	names := make([]string, len(candidates))
 	for i, t := range candidates {
@@ -256,9 +297,12 @@ func firstOrEmpty(names []string) string {
 	return names[0]
 }
 
-func confirm() bool {
+// confirm prompts on stdout and reads a y/N answer from r — an injected
+// reader (defaultDeps.confirmReader is os.Stdin) so this is testable
+// without a real terminal, matching internal/clean's confirm().
+func confirm(r io.Reader) bool {
 	fmt.Print(ui.Yellow + "Continue? [y/N] " + ui.Reset)
-	sc := bufio.NewScanner(os.Stdin)
+	sc := bufio.NewScanner(r)
 	if !sc.Scan() {
 		return false
 	}
