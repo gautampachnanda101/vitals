@@ -84,17 +84,27 @@ FLOORS = {
     # unreachable defensive code already exempted elsewhere in this repo.
     "vitals/internal/dashboard": 91,
     "vitals/internal/diag": 96,
-    # doctor: Collect and its OS-level helpers (firstTimes, percoreTimes,
-    # topProcs, swapCounters, diskCounters, netCounters, collectPower,
-    # runCmd, readLinuxBattery, collectDisks), the CLI entrypoints
-    # (Run/Assess/RunFocus and their print helpers focusDetail/
-    # printFindings/printReclaimable/listExcludedMounts), and
-    # checkDNSLatency/topRemotePeers are all live. The correlation engine
-    # itself (Analyze/AnalyzeResource and every analyze* rule) and the
-    # small pure helpers (pct, throttleNote, fullestDisk, summaryLine,
+    # doctor (item 009, partial — see its own roadmap task for why this
+    # is only a small first slice): checkDNSLatency/topRemotePeers are
+    # now split into thin real wrappers over checkDNSLatencyWith(lookupHost,
+    # ...)/topRemotePeersWith(connections, ...), branch-tested (slow/
+    # failing/timing-out lookup; connection ranking, capping, error) plus
+    # one real end-to-end call each. 54.6% -> 56.6%; a small, honest gain.
+    # Collect and its OS-level helpers (firstTimes, percoreTimes, topProcs,
+    # swapCounters, diskCounters, netCounters, collectPower, runCmd,
+    # readLinuxBattery, collectDisks) remain fully live and untouched —
+    # this is the item's own flagged "biggest lift," needing a real
+    # decomposition-strategy decision (a source struct the size of
+    # internal/monitor's, or several named per-signal collectors) before
+    # any injection starts, not a quick pattern application. The CLI
+    # entrypoints (Run/Assess/RunFocus and their print helpers
+    # focusDetail/printFindings/printReclaimable/listExcludedMounts) are
+    # also untouched. The correlation engine itself (Analyze/
+    # AnalyzeResource and every analyze* rule) and the small pure helpers
+    # (pct, throttleNote, fullestDisk, summaryLine,
     # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
     # or near 100%.
-    "vitals/internal/doctor": 54,
+    "vitals/internal/doctor": 56,
     # dupes (item 009): os.UserHomeDir and the os.Stdin confirm prompt are
     # both injected via a deps struct (homeDir, confirmReader), same
     # shape as internal/tools'; Run/applyHardlinksWithConfirmation/

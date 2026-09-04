@@ -69,14 +69,22 @@ functions need an injectable seam.
       rest of the gap. Parsers (`parseNvidiaSMI`/`Apps`,
       `attachNvidiaApps`, `parseRocmSMIJSON`, `parseIORegApple`,
       `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`) already ~100%.
-- [ ] `internal/doctor` (54.6%, floor 54) — the biggest lift: `Collect`
-      and its OS-level helpers (`firstTimes`, `percoreTimes`,
-      `topProcs`, `swapCounters`, `diskCounters`, `netCounters`,
-      `collectPower`, `runCmd`, `readLinuxBattery`, `collectDisks`),
-      the CLI entrypoints (`Run`/`Assess`/`RunFocus` and their print
-      helpers), and `checkDNSLatency`/`topRemotePeers` are all live.
-      `Analyze`/`AnalyzeResource` and the small pure helpers are
-      already ~100%. Given the volume, consider whether `Collect`
+- [ ] `internal/doctor` (54.6% → 56.6%, floor 54 → 56) — **barely
+      started; still the biggest lift in this item**. Done, this pass:
+      `checkDNSLatency`/`topRemotePeers` split into thin real wrappers
+      over `checkDNSLatencyWith(lookupHost, ...)`/`topRemotePeersWith(
+      connections, ...)`, branch-tested (slow/failing/timing-out lookup;
+      connection ranking, capping, the error path) plus one real
+      end-to-end call each — a deliberately small, self-contained slice
+      chosen specifically *because* it needed no architectural decision,
+      unlike `Collect`. **Not done, and still needing the decomposition
+      decision below before starting**: `Collect` and its OS-level
+      helpers (`firstTimes`, `percoreTimes`, `topProcs`, `swapCounters`,
+      `diskCounters`, `netCounters`, `collectPower`, `runCmd`,
+      `readLinuxBattery`, `collectDisks`) remain fully live; so do the
+      CLI entrypoints (`Run`/`Assess`/`RunFocus` and their print
+      helpers). `Analyze`/`AnalyzeResource` and the small pure helpers
+      are already ~100%. Given the volume, consider whether `Collect`
       itself can be decomposed into named per-signal collectors each
       taking an injected data source, rather than one monolithic
       injection point — matches how item 006 already extracted

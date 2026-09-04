@@ -24,10 +24,18 @@ const dnsProbeHost = "www.google.com"
 // slow" from "my link is slow", which raw throughput numbers can't do on
 // their own, without needing the raw-socket privileges an ICMP ping would.
 func checkDNSLatency(timeout time.Duration) (time.Duration, error) {
+	return checkDNSLatencyWith(net.DefaultResolver.LookupHost, timeout)
+}
+
+// checkDNSLatencyWith is checkDNSLatency's testable core: lookupHost is
+// injected (net.DefaultResolver.LookupHost in production) so a test can
+// substitute a fake with a controlled delay or error, instead of a real
+// network lookup.
+func checkDNSLatencyWith(lookupHost func(ctx context.Context, host string) ([]string, error), timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	start := time.Now()
-	_, err := net.DefaultResolver.LookupHost(ctx, dnsProbeHost)
+	_, err := lookupHost(ctx, dnsProbeHost)
 	return time.Since(start), err
 }
 

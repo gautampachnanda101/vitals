@@ -17,7 +17,15 @@ type remotePeer struct {
 // connections. Presentation-only (not part of the JSON snapshot): connection
 // tables are a live OS view, not something worth freezing into a schema.
 func topRemotePeers(n int) []remotePeer {
-	conns, err := gnet.Connections("tcp")
+	return topRemotePeersWith(func() ([]gnet.ConnectionStat, error) { return gnet.Connections("tcp") }, n)
+}
+
+// topRemotePeersWith is topRemotePeers' testable core: connections is
+// injected (gnet.Connections("tcp") in production) so a test can
+// substitute a fixed connection list instead of the real OS connection
+// table.
+func topRemotePeersWith(connections func() ([]gnet.ConnectionStat, error), n int) []remotePeer {
+	conns, err := connections()
 	if err != nil {
 		return nil
 	}
