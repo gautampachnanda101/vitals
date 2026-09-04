@@ -21,11 +21,22 @@ func Run(asJSON bool) error {
 		}{devs})
 	}
 
+	printReport(devs)
+	return nil
+}
+
+// printReport renders devs as the plain-text GPU report. Split out from
+// Run so every per-field gate — VRAM only with a real reading, Temp only
+// with a real reading, per-vendor telemetry availability — is directly
+// testable via captureStdout from a fixture []Device, without shelling
+// out to nvidia-smi/rocm-smi/ioreg (the same live-vs-print split
+// internal/monitor's sample/emit and internal/memhogs' once already use).
+func printReport(devs []Device) {
 	ui.Header("GPU TELEMETRY")
 	if len(devs) == 0 {
 		ui.Warnf("no GPU tooling found (nvidia-smi / rocm-smi / ioreg)")
 		fmt.Println("  For a live per-process view, install nvtop.")
-		return nil
+		return
 	}
 
 	for _, d := range devs {
@@ -37,9 +48,17 @@ func Run(asJSON bool) error {
 				ui.Grade(fmt.Sprintf("%.0f%%", p), p, 85, 95))
 		}
 		if d.UtilPct > 0 || d.TempC > 0 {
-			fmt.Printf("  %s %s    %s %s\n", ui.Key("Utilisation"),
-				ui.Emph(fmt.Sprintf("%.0f%%", d.UtilPct)),
-				ui.Key("Temp"), ui.Grade(fmt.Sprintf("%.0f°C", d.TempC), d.TempC, 80, 90))
+			// Utilisation and Temp are independent readings (Apple Silicon
+			// reports real utilization via ioreg but no temperature at all —
+			// showing "Temp 0°C" next to it would be exactly the same
+			// meaningless-zero bug already fixed for VRAM above), so each
+			// only prints when it's actually a real number, not bundled
+			// under one gate that only checks whether *either* is nonzero.
+			line := fmt.Sprintf("  %s %s", ui.Key("Utilisation"), ui.Emph(fmt.Sprintf("%.0f%%", d.UtilPct)))
+			if d.TempC > 0 {
+				line += fmt.Sprintf("    %s %s", ui.Key("Temp"), ui.Grade(fmt.Sprintf("%.0f°C", d.TempC), d.TempC, 80, 90))
+			}
+			fmt.Println(line)
 		}
 		if d.PowerLimitW > 0 {
 			pp := d.PowerW / d.PowerLimitW * 100
@@ -61,5 +80,4 @@ func Run(asJSON bool) error {
 		}
 	}
 	fmt.Printf("\n%sComplement with nvtop for a live per-process view.%s\n", ui.Dim, ui.Reset)
-	return nil
 }

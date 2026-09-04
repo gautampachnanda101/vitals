@@ -250,11 +250,32 @@ func parseRocmSMIJSON(s string) []Device {
 	return out
 }
 
-var appleGPUModel = regexp.MustCompile(`"model"\s*=\s*<"?([^">]+)"?>`)
+// appleGPUModel matches both ioreg quoting styles seen in the wild for
+// this key: plain `"model" = "Apple M4"` (current macOS, verified live)
+// and the older bracketed `"model" = <"Apple M3 Max">`.
+var appleGPUModel = regexp.MustCompile(`"model"\s*=\s*<?"([^"]+)"`)
 
-// parseIORegApple pulls just the Apple-silicon GPU name out of
-// `ioreg -c IOAccelerator`. Unified memory means there is no separate VRAM
-// figure to report; doctor treats Apple GPU pressure via system RAM instead.
+// The Apple-silicon GPU driver (AGXAccelerator) publishes a
+// "PerformanceStatistics" dict with real numbers `ioreg -r -d 1 -w 0 -c
+// IOAccelerator` already captures — the same technique asitop/mactop/
+// `stats.app` use for Apple Silicon GPU telemetry, verified against a
+// real M4 Mac's actual output (gpu_test.go's TestParseIORegApple has the
+// captured text). There is no separate, fixed VRAM budget on this
+// hardware (unified memory — GPU and system RAM are the same physical
+// pool), but "In use system memory"/"Alloc system memory" are real,
+// live numbers for how much of that pool the GPU driver currently has
+// mapped/allocated, not a placeholder: MemUsedB/MemTotalB carry them
+// using the same field shape every other vendor's Device already uses,
+// just dynamically sized instead of fixed.
+var (
+	appleGPUUtilPct  = regexp.MustCompile(`"Device Utilization %"\s*=\s*(\d+)`)
+	appleGPUMemInUse = regexp.MustCompile(`"In use system memory"\s*=\s*(\d+)`)
+	appleGPUMemAlloc = regexp.MustCompile(`"Alloc system memory"\s*=\s*(\d+)`)
+)
+
+// parseIORegApple pulls the Apple-silicon GPU's name and, when the driver
+// publishes one, its live utilization/memory-in-use reading out of
+// `ioreg -c IOAccelerator` output.
 func parseIORegApple(s string) []Device {
 	if !strings.Contains(s, "IOAccelerator") && !strings.Contains(s, "AGXAccelerator") {
 		return nil
@@ -263,7 +284,17 @@ func parseIORegApple(s string) []Device {
 	if m := appleGPUModel.FindStringSubmatch(s); m != nil {
 		name = strings.TrimSpace(m[1])
 	}
-	return []Device{{Vendor: Apple, Index: 0, Name: name}}
+	d := Device{Vendor: Apple, Index: 0, Name: name}
+	if m := appleGPUUtilPct.FindStringSubmatch(s); m != nil {
+		d.UtilPct = numOr(m[1], 0)
+	}
+	if m := appleGPUMemInUse.FindStringSubmatch(s); m != nil {
+		d.MemUsedB = uint64(numOr(m[1], 0))
+	}
+	if m := appleGPUMemAlloc.FindStringSubmatch(s); m != nil {
+		d.MemTotalB = uint64(numOr(m[1], 0))
+	}
+	return []Device{d}
 }
 
 func firstNonEmpty(vals ...string) string {

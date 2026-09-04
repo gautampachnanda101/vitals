@@ -58,11 +58,17 @@ functions need an injectable seam.
       injected the same way `internal/clean/clean.go`'s `confirm` already
       does it. One real end-to-end call through each public wrapper
       (`defaultDeps`) keeps the actual wiring exercised too.
-- [ ] `internal/gpu` (54.7%, floor 54) — `Probe`/`report.go`'s `Run`
-      shell out to `nvidia-smi`/`rocm-smi`/`ioreg`. Parsers
-      (`parseNvidiaSMI`/`Apps`, `attachNvidiaApps`, `parseRocmSMIJSON`,
-      `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`) already ~100%. Inject
-      the subprocess-exec call the same way as `tools`.
+- [ ] `internal/gpu` (54.7% → 74.8%, floor 54 → 74) — partial: `Run`'s
+      printing half is split out as `printReport(devs []Device)`, the
+      same live-vs-print seam `internal/monitor`'s `sample`/`emit` uses,
+      fixture-tested for every per-field gate (this is also where the
+      real Apple-Silicon-VRAM/Temp-zero bug fixes landed — see git log).
+      `Probe` itself still shells out to `nvidia-smi`/`rocm-smi`/`ioreg`
+      directly and is still untested — inject the subprocess-exec call
+      the same way `internal/tools`' `deps.runCmd` does, to close the
+      rest of the gap. Parsers (`parseNvidiaSMI`/`Apps`,
+      `attachNvidiaApps`, `parseRocmSMIJSON`, `parseIORegApple`,
+      `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`) already ~100%.
 - [ ] `internal/doctor` (54.6%, floor 54) — the biggest lift: `Collect`
       and its OS-level helpers (`firstTimes`, `percoreTimes`,
       `topProcs`, `swapCounters`, `diskCounters`, `netCounters`,

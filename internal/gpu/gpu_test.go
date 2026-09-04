@@ -191,6 +191,57 @@ func TestParseIORegApple(t *testing.T) {
 	}
 }
 
+// TestParseIORegAppleReadsPerformanceStatistics uses the exact text `ioreg
+// -r -d 1 -w 0 -c IOAccelerator` (Probe's own invocation) captured on a
+// real M4 Mac — per AGENTS.md's "verify OS command output empirically"
+// rule, not a guessed shape. PerformanceStatistics is the same dict
+// asitop/mactop/stats.app read for Apple Silicon GPU utilization; there's
+// no separate fixed VRAM budget on this hardware (unified memory), but
+// "In use system memory"/"Alloc system memory" are real, live figures for
+// how much of that shared pool the GPU driver currently has mapped —
+// answering "what's used by the GPU vs. by everything else" without
+// pretending there's a discrete VRAM chip.
+func TestParseIORegAppleReadsPerformanceStatistics(t *testing.T) {
+	const captured = `+-o AGXAcceleratorG16G  <class AGXAcceleratorG16G, id 0x1000003d5, registered, matched, active, busy 0 (262 ms), retain 67>
+    {
+      "model" = "Apple M4"
+      "PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=6383386624,"Tiler Utilization %"=10,"recoveryCount"=0,"lastRecoveryTime"=0,"Renderer Utilization %"=10,"TiledSceneBytes"=1048576,"Device Utilization %"=10,"SplitSceneCount"=0,"Allocated PB Size"=85196800,"In use system memory"=3153936384}
+      "IOClass" = "AGXAcceleratorG16G"
+    }`
+	devs := parseIORegApple(captured)
+	if len(devs) != 1 {
+		t.Fatalf("expected exactly one device, got %+v", devs)
+	}
+	d := devs[0]
+	if d.Name != "Apple M4" {
+		t.Errorf("Name = %q, want Apple M4", d.Name)
+	}
+	if d.UtilPct != 10 {
+		t.Errorf("UtilPct = %v, want 10 (from Device Utilization %%)", d.UtilPct)
+	}
+	if d.MemUsedB != 3153936384 {
+		t.Errorf("MemUsedB = %d, want 3153936384 (from the second, un-parenthesised 'In use system memory')", d.MemUsedB)
+	}
+	if d.MemTotalB != 6383386624 {
+		t.Errorf("MemTotalB = %d, want 6383386624 (from Alloc system memory)", d.MemTotalB)
+	}
+}
+
+// TestParseIORegAppleWithoutPerformanceStatisticsStaysZero covers an
+// AGXAccelerator entry (or driver version) that doesn't publish the dict
+// at all — the name-only fallback this package always had must still
+// work, not error or guess.
+func TestParseIORegAppleWithoutPerformanceStatisticsStaysZero(t *testing.T) {
+	devs := parseIORegApple(`+-o AGXAcceleratorG13G  <class AGXAcceleratorG13G>
+      "model" = "Apple M1"`)
+	if len(devs) != 1 {
+		t.Fatalf("expected exactly one device, got %+v", devs)
+	}
+	if d := devs[0]; d.UtilPct != 0 || d.MemUsedB != 0 || d.MemTotalB != 0 {
+		t.Errorf("with no PerformanceStatistics dict, telemetry should stay zero, got %+v", d)
+	}
+}
+
 func TestMemUsedPctZeroTotal(t *testing.T) {
 	if (Device{}).MemUsedPct() != 0 {
 		t.Error("MemUsedPct with zero total should be 0, not NaN")

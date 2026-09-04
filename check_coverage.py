@@ -91,11 +91,20 @@ FLOORS = {
     # despite its name) is now fully tested via the same stdout-capture
     # pattern as internal/monitor/internal/memcheck.
     "vitals/internal/dupes": 68,
-    # gpu: Probe/run (report.go's Run too) shell out to nvidia-smi/
-    # rocm-smi/ioreg — genuinely live. Every pure parser (parseNvidiaSMI/
-    # Apps, attachNvidiaApps, parseRocmSMIJSON, atoiOr/numOr/
-    # firstNonEmpty/strSort) is at or near 100%.
-    "vitals/internal/gpu": 54,
+    # gpu: Probe (the actual nvidia-smi/rocm-smi/ioreg exec.Command calls)
+    # is still genuinely live and untested. Run's printing half is no
+    # longer bundled with it: printReport(devs []Device) is now the pure
+    # seam (same live-vs-print split as internal/monitor's sample/emit),
+    # fully fixture-tested including the exact bug this was split out to
+    # fix — a real Apple Silicon reading (real UtilPct/VRAM from ioreg's
+    # PerformanceStatistics, see gpu.go's parseIORegApple) must never
+    # print a bare "Temp 0°C"/"Power 0 W"/"Clock 0 MHz" alongside it, and
+    # a real NVIDIA/AMD-shaped device (every field populated) must still
+    # show all of them together — both directions covered by fixture, not
+    # just the Apple case, so this doesn't regress on a real GPU machine.
+    # 74.8% measured (up from 54.7%); Probe itself is the only remaining
+    # gap.
+    "vitals/internal/gpu": 74,
     # guide's floor keeps dropping despite new tests, not a regression:
     # allowedHostsOnly/safeLinkHref/sameOriginOnly are all fully covered
     # (100%), but the package grows around Serve/ServeHTML/ServeLocal/
