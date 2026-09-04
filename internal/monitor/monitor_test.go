@@ -516,18 +516,24 @@ func TestRunAppliesDefaultsForZeroValueOptions(t *testing.T) {
 }
 
 func TestRunWatchLoopsUntilContextDoneThenReturns(t *testing.T) {
+	// Margins widened 2026-09-04 after a real flake on a loaded macOS CI
+	// runner: the original 15ms context / 5ms interval left no slack for
+	// scheduler jitter on a shared runner, so "at least 2 emits" could
+	// fail even though the loop itself was working correctly — the same
+	// class of timing-margin issue already fixed for internal/memhogs'
+	// analogous watch test this session.
 	src := fakeSource(func(s *source) {
 		s.newSignalContext = func() (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.Background(), 15*time.Millisecond)
+			return context.WithTimeout(context.Background(), 200*time.Millisecond)
 		}
 	})
 	out := captureStdout(t, func() {
-		if err := run(src, Options{Watch: true, Interval: 5 * time.Millisecond, JSON: true}); err != nil {
+		if err := run(src, Options{Watch: true, Interval: 20 * time.Millisecond, JSON: true}); err != nil {
 			t.Errorf("run watch: %v", err)
 		}
 	})
-	// One emit for the initial sample plus at least one more 5ms-interval
-	// tick inside the 15ms window before the injected context expires.
+	// One emit for the initial sample plus at least one more 20ms-interval
+	// tick inside the 200ms window before the injected context expires.
 	if n := strings.Count(out, `"hostname"`); n < 2 {
 		t.Errorf("want at least 2 emitted snapshots before the watch loop exits, got %d in:\n%s", n, out)
 	}

@@ -81,49 +81,83 @@ functions need an injectable seam.
       taking an injected data source, rather than one monolithic
       injection point — matches how item 006 already extracted
       `withDiskHistory` out of this same package.
-- [ ] `internal/llm` (62.6%, floor 57) — `Run`/`once`/`scanProcesses`/
-      `ScanProcesses`/`OllamaModels`/`ProbeProviders`/`RunFit`,
-      `checkGPUDriver`/`runsCleanly` (subprocess exec), and `render`
-      (a print function, not yet covered via the stdout-capture pattern
-      other packages already use — see `internal/dupes/dupes_test.go`'s
-      `captureStdout`, and `internal/llm/llm_test.go`'s own copy added
-      2026-09-03 for `TestRenderListsModelNamesForReachableLocalProviders`
-      — extend that, not a new one). Network calls (`probeOne`'s
-      `http.Client`) already use `httptest.NewServer` in existing tests
-      — extend that pattern to the currently-uncovered call sites.
-- [ ] `internal/clean` (67.9%, floor 50) — `Run`/`confirm`/`freeSpace`/
-      `cleanDevCaches`/`cleanLinux`/`cleanMacOS`/`cleanWindows`/
-      `ReclaimableSummary`/`optional` and the history file read/write
-      wrappers are live; pure decision functions are already ~100%.
-      `Apply` (added 2026-09-03) is a better seam than `Run` now exists
-      — the OS-specific `clean*` functions and `optional` (subprocess
-      exec for brew/docker/npm/etc.) still need their own injection.
-- [ ] `internal/dupes` (68.4%, floor 68) — `Run`/
-      `applyHardlinksWithConfirmation`/`confirmHardlink` are live
-      (`os.Stdin` prompts, real hardlinking); `render` is already fully
-      tested via stdout-capture.
-- [ ] `internal/mcp` (68.7%, floor 68) — `tools()` registers each
-      tool's `Handler` closure, which calls live `doctor.Assess`/`llm`/
-      `gpu` functions only when actually invoked; existing tests
-      deliberately avoid a real `tools/call` to dodge touching live
-      system state. This one needs a real design decision, not just
-      injection: either accept `doctor.Assess`/etc. as injectable
-      dependencies of each `Handler` closure (so a fake report can flow
-      through a real `tools/call`), or keep avoiding live state and
-      instead unit-test each `Handler`'s JSON-RPC plumbing against an
-      injected fake result. Decide before starting, don't improvise
-      mid-implementation.
-- [ ] `internal/guide` (72.0%, floor 72) — `Serve`/`ServeHTML`/
-      `ServeLocal`/`openBrowser` are live (a blocking server loop, an
-      OS browser-launch command). `allowedHostsOnly`/`safeLinkHref`/
-      `sameOriginOnly` already 100%. `ServeLocal`'s own non-blocking
-      setup (listener creation, handler wrapping) may be separable from
-      the actual blocking `Serve()` call it makes at the end — worth
-      checking whether that split is even possible before assuming the
-      whole function is irreducible.
-- [ ] `internal/metrics` (75.2%, floor 75) — `collect`/`RunOnce`/
-      `Serve` are live (real `Collect` + HTTP server). Same
-      Collect-vs-Analyze-style split as `doctor`/`memcheck` may apply.
+- [ ] `internal/llm` (62.6% → ~86-87%, floor 57 → 85) — **partial, not
+      closed out**. Done: `Run`'s `--watch` loop split into
+      `watch(ctx, opts)` with an injected `newSignalContext` (same
+      pattern as `internal/monitor`/`internal/memhogs`);
+      `checkGPUDriver`/`runsCleanly` gained a `gpuPreflightDeps` struct
+      (`goos`/`lookPath`/`runCmd`), branch-tested for nvidia-smi/rocm-smi
+      found-and-working, found-but-failing, and neither-present; the four
+      thin exported wrappers (`OllamaModels`/`ProbeProviders`/
+      `ScanProcesses`/`CloudAPIKeyEnvVars`) and `RunFit`'s two error
+      branches now have their own direct tests, not just their unexported
+      counterparts'. **Still open**, and comparable in size to
+      `internal/doctor`'s own "biggest lift" note: `complete.go`'s ~12
+      provider-completion functions (`completeLocal`/`completeCloud`/
+      `completeOllama`/`completeNamed`/`doComplete` and their per-provider
+      response parsers) still have real uncovered branches each — closing
+      them needs several more `httptest` response-shape variations per
+      provider, not a quick pattern application like the rest of this
+      package got this pass.
+- [x] `internal/clean` (67.9% → 86.2%, floor 50 → 84) — `os.UserHomeDir`/
+      the confirm read injected via a `deps` struct; `optional`'s
+      package-manager exec injected via `lookPath`/`runCmd` fields added
+      to the existing `runner` struct (`Apply`'s constructor), so a
+      `recordingRunCmd` proves the exact argv without ever shelling out
+      to brew/docker/npm for real; `cleanHistoryPath`/`History`/
+      `recordRun` gained real `isolateConfigDir`-based tests. Remaining:
+      `cleanLinux`/`cleanWindows` stay 0% on any one CI runner by
+      construction (`Apply`'s own `runtime.GOOS` switch — the 3-OS CI
+      matrix naturally covers each branch on its own runner);
+      `freeSpace`/`History`/`appendCleanHistoryTo`'s own error branches
+      need a real permission/IO failure to exercise honestly, not done.
+- [x] `internal/dupes` (68.4% → 93.7%, floor 68 → 93) — `os.UserHomeDir`
+      and the `os.Stdin` confirm read are both injected via a `deps`
+      struct (`homeDir`, `confirmReader`), same shape `internal/tools`'
+      already uses; `Run`/`applyHardlinksWithConfirmation`/
+      `confirmHardlink` are now one-line wrappers over `run`/`.../
+      confirmHardlink(d, ...)`, tested against real `t.TempDir()`
+      fixtures (a real duplicate pair, a real hardlink applied, a real
+      aborted confirmation, a real failed `--output` write).
+      `hashPrefix`/`hashFile` gained their missing-file error case.
+      Remaining gap: `Scan`'s `WalkDir`-error branch and `linkOver`'s
+      `Link`/`Rename`-failure branches need a real OS-level permission/IO
+      failure to exercise honestly — not yet done.
+- [x] `internal/mcp` (68.7% → 95.5%, floor 68 → 95) — decided in favor of
+      the first option this task posed: `doctor.Assess`/`llm.OllamaModels`/
+      `llm.ScanProcesses`/`gpu.Probe` are all injected via a `deps` struct
+      threaded through `tools(d)`/`handle(req, opts, d)`, so a fake now
+      flows through a real `tools/call` for each of the 4 tools — proving
+      the actual dispatch path, not a parallel test of its shape.
+      `Serve` gained its blank-line-skip and malformed-JSON parse-error
+      branches; `handle` gained the untested `ping` method. Remaining
+      gaps, left honest: `Serve`'s `enc.Encode`-fails branch, and a
+      tool's `run()` returning a non-nil error (unreachable in practice —
+      every real `deps` function returns a concretely-typed,
+      always-marshalable value).
+- [x] `internal/guide` (72.0% → 94.8-95.2%, floor 72 → 93) — the split
+      turned out to be possible: `buildServer(handler, opts)` now does
+      the real `net.Listen` + Host/CSRF handler-wrapping and returns the
+      real listener/URL, so a test drives `srv.Serve(ln)` itself against
+      a real ephemeral port and proves the wiring with real HTTP
+      requests (cross-origin POST → 403, foreign Host header → 400) —
+      catches a dashboard.Serve-POST-never-reaching-routeWrite-class bug,
+      not just `allowedHostsOnly`/`sameOriginOnly`'s own unit logic.
+      `signal.NotifyContext`/`openBrowser` injected via a `deps` struct;
+      `serveLocal`'s shutdown-on-signal and browser-open-unless-`NoOpen`
+      branches both covered; `openBrowser` gets one real `exec.Command`
+      call. Remaining gaps: the exported `Serve`/`ServeHTML`/`ServeLocal`
+      one-liners (calling them for real risks actually opening a browser
+      in a test run — same class of gap as `internal/metrics`' exported
+      `Serve()`), `serveLocal`'s genuine-non-`ErrServerClosed` error
+      branch, `openBrowser`'s two not-the-host-OS branches.
+- [x] `internal/metrics` (75.2% → 97.8-98.5%, floor 75 → 96) — `collect`/
+      `signal.NotifyContext` injected via a `deps` struct;
+      `newMux(d, ollamaURL)` split out from `serve` so the `/metrics`/`/`
+      handlers are tested via `httptest.NewServer`, never a real bound
+      port. Remaining gaps: the exported `Serve()` one-liner (a real
+      blocking HTTP server, no clean in-test interrupt) and
+      `trimFloat`'s unreachable defensive branch.
 - [ ] `main` / `vitals` package (40.9%, floor 40) — `run()`'s dispatch/
       validation logic is already unit tested; the remaining gap is
       each subcommand's actual `Run`/`RunFocus` call

@@ -49,16 +49,25 @@ FLOORS = {
     # end-to-end by cli_smoke_test.go, not unit tested for the same reason
     # as the rest of Run.
     "vitals/internal/advice": 37,
-    # clean: this package's whole job is filesystem/subprocess I/O, so
-    # Run/confirm/freeSpace/cleanDevCaches/cleanLinux/cleanMacOS/
-    # cleanWindows/ReclaimableSummary/optional and the clean_history.jsonl
-    # path/read/write wrappers (cleanHistoryPath/History/recordRun, same
-    # shape as internal/doctor's disk_history.json ones) are the
-    # irreducible live majority. Every pure decision function
-    # (devCacheDirs, osCacheDirs, freeSpaceRoot, withSudo-style OS/env
-    # parameterization, appendCleanHistoryTo, renderCleanHistory, plural)
-    # is at or near 100%.
-    "vitals/internal/clean": 50,
+    # clean (item 009): os.UserHomeDir and the os.Stdin confirm read are
+    # injected via a deps struct (homeDir, confirmReader), same shape as
+    # internal/tools'/internal/dupes'; optional()'s package-manager exec
+    # (brew/docker/npm/...) is injected via lookPath/runCmd fields added
+    # directly to the existing runner struct (Apply's own constructor),
+    # branch-tested for tool-not-on-PATH, dry-run's "would run" line, and
+    # a recordingRunCmd proving the exact argv without ever shelling out
+    # to a real package manager. cleanHistoryPath/History/recordRun
+    # gained real isolateConfigDir-based tests, same pattern internal/
+    # doctor's/internal/memhogs' own config-dir tests already use.
+    # 67.9% -> 86.2% measured. cleanLinux/cleanWindows stay at 0% on any
+    # one CI runner by construction (Apply's own runtime.GOOS switch —
+    # each OS in the 3-OS CI matrix naturally covers its own branch, the
+    # same class of OS-partitioned gap accepted elsewhere in this repo,
+    # e.g. internal/memhogs'). Remaining real gaps, not yet closed:
+    # freeSpace/History/appendCleanHistoryTo's own error branches
+    # (disk.Usage/os.Create failing) would need a real permission/IO
+    # failure to exercise honestly.
+    "vitals/internal/clean": 84,
     "vitals/internal/config": 99,  # 100.0% measured; 99 for float-rounding margin
     # dashboard: floor dropped from 98 with roadmap item 002 (the vitals
     # dashboard MVP), not a regression — Serve (dashboard.go) is new,
@@ -86,11 +95,19 @@ FLOORS = {
     # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
     # or near 100%.
     "vitals/internal/doctor": 54,
-    # dupes: Run/applyHardlinksWithConfirmation/confirmHardlink are live
-    # (os.Stdin prompts, real hardlinking); render (a print function
-    # despite its name) is now fully tested via the same stdout-capture
-    # pattern as internal/monitor/internal/memcheck.
-    "vitals/internal/dupes": 68,
+    # dupes (item 009): os.UserHomeDir and the os.Stdin confirm prompt are
+    # both injected via a deps struct (homeDir, confirmReader), same
+    # shape as internal/tools'; Run/applyHardlinksWithConfirmation/
+    # confirmHardlink are now one-line wrappers over run/.../confirmHardlink(d,
+    # ...), exercised against real temp-dir fixtures (real duplicate
+    # files, a real hardlink, a real aborted confirmation, a real failed
+    # --output write). Scan/hashPrefix/hashFile/linkOver were already
+    # real-filesystem-tested via t.TempDir(); hashPrefix/hashFile gained
+    # their missing-file error case. 93.7% measured; the remaining gaps
+    # (Scan's WalkDir-error branch, linkOver's Link/Rename-failure
+    # branches) need a real OS-level permission/IO failure to exercise
+    # honestly, not yet done here.
+    "vitals/internal/dupes": 93,
     # gpu: Probe (the actual nvidia-smi/rocm-smi/ioreg exec.Command calls)
     # is still genuinely live and untested. Run's printing half is no
     # longer bundled with it: printReport(devs []Device) is now the pure
@@ -105,17 +122,26 @@ FLOORS = {
     # 74.8% measured (up from 54.7%); Probe itself is the only remaining
     # gap.
     "vitals/internal/gpu": 74,
-    # guide's floor keeps dropping despite new tests, not a regression:
-    # allowedHostsOnly/safeLinkHref/sameOriginOnly are all fully covered
-    # (100%), but the package grows around Serve/ServeHTML/ServeLocal/
-    # openBrowser, which are — like doctor.Collect() — live glue (a
-    # blocking server loop, an OS browser-launch command) exempt from
-    # unit coverage by convention. ServeLocal grew again to wire in
-    # sameOriginOnly (roadmap item 005's CSRF defense) — more lines in
-    # the same already-exempt function, not a new gap. See AGENTS.md's
-    # "95%+ coverage is the target for a package's pure/testable logic"
-    # — this is that exemption showing up in the number.
-    "vitals/internal/guide": 72,
+    # guide (item 009): signal.NotifyContext and openBrowser are both
+    # injected via a deps struct; ServeLocal's real net.Listen + handler-
+    # wrapping half is split into buildServer(handler, opts), returning
+    # the real listener/URL so a test can drive srv.Serve(ln) itself
+    # against a real ephemeral port and prove the Host-header/CSRF
+    # wiring end to end with real HTTP requests (a cross-origin POST
+    # really gets 403, a foreign Host header really gets 400) — not just
+    # allowedHostsOnly/sameOriginOnly's own unit logic, the same class of
+    # wiring bug as dashboard.Serve's POST-never-reaching-routeWrite
+    # incident this repo already hit once. serveLocal's shutdown-on-
+    # signal and browser-open-unless-NoOpen branches are both covered via
+    # the injected deps; openBrowser itself gets one real exec.Command
+    # call. 95.2% measured. Remaining gaps, left honest: the exported
+    # Serve/ServeHTML/ServeLocal one-liners (calling them for real risks
+    # actually opening a browser during a test run, since they don't
+    # expose NoOpen/deps injection — same class of gap as
+    # internal/metrics' exported Serve()), serveLocal's genuine-
+    # non-ErrServerClosed error branch, and openBrowser's two
+    # not-the-host-OS branches (only one of three runs per CI machine).
+    "vitals/internal/guide": 93,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
     # info: Collect's two live calls (hostInfoFn, executableFn) and
     # abbrevHome's homeDirFn are all injected function values, exercised
@@ -123,19 +149,49 @@ FLOORS = {
     # overriddenKeys are pure and fully table-tested. 100.0% measured; 99
     # for float-rounding margin.
     "vitals/internal/info": 99,
-    # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
-    # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
-    # exec), and render (a print function, like internal/dupes' — not yet
-    # covered via the stdout-capture pattern, a good next step) remain
-    # low/live. classify/capitalize/plural/nz/shortLocalName/
-    # modelOrDefault/ollamaModelChoice's pure branches are now covered.
-    "vitals/internal/llm": 57,
-    # mcp: tools() registers each tool's Handler closure, which calls live
-    # doctor.Assess/llm/gpu functions when actually invoked — only
-    # exercised by a real tools/call, which the existing tests
-    # deliberately avoid (would touch live system state). toolText/
-    # jsonString/ToolNames are now fully covered.
-    "vitals/internal/mcp": 68,
+    # llm (item 009, partial): Run's --watch loop is split into
+    # watch(ctx, opts) with an injected newSignalContext, same pattern as
+    # internal/monitor/internal/memhogs; checkGPUDriver/runsCleanly gained
+    # a gpuPreflightDeps struct (goos/lookPath/runCmd), branch-tested for
+    # nvidia-smi/rocm-smi found-and-working, found-but-failing, and
+    # neither-present, plus one real end-to-end call. The four thin
+    # exported wrappers (OllamaModels/ProbeProviders/ScanProcesses/
+    # CloudAPIKeyEnvVars) and RunFit's two error branches are now
+    # exercised directly rather than only through their unexported
+    # counterparts. 62.6% -> ~86-87% measured.
+    #
+    # NOT done, and a real remaining lift comparable in size to what item
+    # 009 already calls out for internal/doctor: complete.go's ~12
+    # provider-completion functions (completeLocal/completeCloud/
+    # completeOllama/completeNamed/doComplete and their per-provider
+    # response parsers) each still has uncovered branches — closing them
+    # needs several more httptest response-shape variations per provider,
+    # not a quick pattern application like the rest of this package got.
+    # fit.go's vramBudget (gpu.Probe/mem.VirtualMemory, both already
+    # ~100% tested in their own packages) was left as a real end-to-end
+    # call rather than injected — no new seam invented for a function
+    # this thin.
+    "vitals/internal/llm": 82,  # measured 84.5-86.7% across local/CI runs; floor set below the low end
+    # mcp (item 009): the open design question this package's task noted
+    # ("accept doctor.Assess/etc. as injectable dependencies of each
+    # Handler closure" vs. "unit-test the JSON-RPC plumbing against a
+    # fake result only") is resolved in favor of the former —
+    # doctor.Assess/llm.OllamaModels/llm.ScanProcesses/gpu.Probe are all
+    # injected via a deps struct threaded through tools(d)/handle(...,d),
+    # so a fake now flows through a REAL tools/call for each of the 4
+    # tools (system_health, diagnose_bottleneck incl. its healthy/ok
+    # branch, llm_status, gpu_status), not a parallel test of the
+    # dispatch shape alone. Serve gained coverage for its blank-line skip
+    # and malformed-JSON parse-error reply; handle gained the untested
+    # "ping" method. 95.5% measured. Remaining gaps, left honest: Serve's
+    # enc.Encode-fails branch (needs a writer that succeeds once then
+    # fails, not yet built) and a tool's run() returning a non-nil error
+    # (unreachable in practice — every real deps function returns a
+    # concretely-typed, always-marshalable value, so jsonString never
+    # actually fails for any of the 4 tools; forcing a fake to simulate
+    # it would test the mock, not the code, per this item's own "don't
+    # fake it dishonestly" ground rule).
+    "vitals/internal/mcp": 95,
     # memcheck: the four gopsutil calls (host.Info, mem.VirtualMemory/
     # SwapMemory/SwapDevices) are now injected via a `source` struct (item
     # 009) — Run() is a one-line pass-through to run(defaultSource), and
@@ -158,12 +214,27 @@ FLOORS = {
     # panic, userFamilies' os.UserConfigDir error), same class as
     # internal/monitor's documented remainder.
     "vitals/internal/memhogs": 95,
-    # metrics: collect/RunOnce/Serve are live (real Collect + HTTP
-    # server). trimFloat's "s == \"\" || s == \"-\"" guard looks
-    # unreachable for any real float64 via %.6f formatting (the leading
-    # digit before the decimal point is never trimmed) — left
-    # undisturbed rather than forcing a test for dead defensive code.
-    "vitals/internal/metrics": 75,
+    # metrics (item 009): collect and signal.NotifyContext are both
+    # injected via a deps struct (collect, newSignalContext), same shape
+    # tools/dupes already use; RunOnce/Serve are now one-line wrappers
+    # over runOnce/serve(defaultDeps, ...). newMux (the /metrics and /
+    # handlers) is split out from serve so it's tested via
+    # httptest.NewServer without ever binding a real port; serve's own
+    # shutdown-on-signal and ListenAndServe-error branches are both
+    # covered (an already-done injected context, and a real unbindable
+    # address). One real end-to-end call each for collect()/RunOnce()
+    # through the actual doctor.Collect/Analyze/Render wiring. The
+    # exported Serve() one-liner (0%) and trimFloat's "s == \"\" ||
+    # s == \"-\"\" guard (unreachable for any real float64 via %.6f
+    # formatting) are the only remaining gaps — the former is a real
+    # blocking HTTP server with no clean way to interrupt it from inside
+    # a test (same documented exemption class as internal/guide's
+    # ServeLocal), the latter is dead defensive code. 97.8-98.5% measured
+    # across runs (some run-to-run variance observed between an isolated
+    # `go test ./internal/metrics/` and the full `go test ./...`); floor
+    # set with margin below the low end rather than the isolated-run
+    # high end.
+    "vitals/internal/metrics": 96,
     # monitor: the gopsutil/process surface (host.Info, load.Avg,
     # cpu.Counts/Percent, mem.VirtualMemory/SwapMemory, disk.IOCounters,
     # net.IOCounters, process.Processes via a procSource interface +

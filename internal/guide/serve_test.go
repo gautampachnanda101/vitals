@@ -1,9 +1,11 @@
 package guide
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestAllowedHostsOnlyPassesThroughAnAllowedHost(t *testing.T) {
@@ -154,5 +156,163 @@ func TestSameOriginOnlyAllowsBothHeadersAbsent(t *testing.T) {
 	called, status := callSameOriginOnly(t, http.MethodPost, "", "")
 	if !called || status != http.StatusOK {
 		t.Errorf("called=%v status=%d, want called=true status=200 when both headers are absent", called, status)
+	}
+}
+
+func TestBuildServerBindsARealListenerAndWiresHostAndOriginChecks(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	srv, ln, url, err := buildServer(handler, ServeOptions{Addr: "127.0.0.1:0"})
+	if err != nil {
+		t.Fatalf("buildServer: %v", err)
+	}
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	// A same-origin GET reaches the real handler.
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET status = %d, want 200", resp.StatusCode)
+	}
+
+	// A cross-origin POST is rejected end to end — this is the actual
+	// regression sameOriginOnly's own unit tests can't catch on their
+	// own: whether ServeLocal's real wiring applies it at all (the same
+	// class of bug as dashboard.Serve's own POST-never-reaches-routeWrite
+	// incident, see feedback-verify-write-actions-live).
+	req, _ := http.NewRequest(http.MethodPost, url, nil)
+	req.Header.Set("Origin", "https://evil.example")
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("cross-origin POST: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-origin POST status = %d, want 403", resp2.StatusCode)
+	}
+
+	// A request with a foreign Host header is rejected by allowedHostsOnly.
+	req3, _ := http.NewRequest(http.MethodGet, url, nil)
+	req3.Host = "evil.example"
+	resp3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatalf("foreign-Host GET: %v", err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusBadRequest {
+		t.Errorf("foreign-Host GET status = %d, want 400", resp3.StatusCode)
+	}
+}
+
+func TestBuildServerErrorsOnAnUnbindableAddr(t *testing.T) {
+	if _, _, _, err := buildServer(http.NotFoundHandler(), ServeOptions{Addr: "256.256.256.256:0"}); err == nil {
+		t.Error("buildServer should error on an unbindable address")
+	}
+}
+
+func TestServeLocalReturnsBuildServerErrorImmediately(t *testing.T) {
+	d := deps{
+		newSignalContext: func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) },
+		openBrowser:      func(string) error { return nil },
+	}
+	err := serveLocal(d, http.NotFoundHandler(), "test", ServeOptions{Addr: "256.256.256.256:0"})
+	if err == nil {
+		t.Error("serveLocal should return buildServer's error, not hang or panic")
+	}
+}
+
+func TestServeLocalShutsDownCleanlyWhenItsSignalContextIsDone(t *testing.T) {
+	d := deps{
+		newSignalContext: func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // already done — serveLocal should shut down almost immediately
+			return ctx, cancel
+		},
+		openBrowser: func(string) error { return nil },
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- serveLocal(d, http.NotFoundHandler(), "test", ServeOptions{Addr: "127.0.0.1:0", NoOpen: true})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveLocal: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveLocal did not shut down after its signal context was already done")
+	}
+}
+
+func TestServeLocalOpensTheBrowserUnlessNoOpen(t *testing.T) {
+	opened := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	d := deps{
+		newSignalContext: func() (context.Context, context.CancelFunc) { return ctx, cancel },
+		openBrowser:      func(url string) error { opened <- url; return nil },
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- serveLocal(d, http.NotFoundHandler(), "test", ServeOptions{Addr: "127.0.0.1:0"})
+	}()
+	select {
+	case url := <-opened:
+		if url == "" {
+			t.Error("openBrowser should have been called with the real bound URL")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("openBrowser was never called")
+	}
+	cancel() // let serveLocal shut down
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveLocal: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveLocal did not shut down after cancel")
+	}
+}
+
+func TestServeLocalOpensNoBrowserWithNoOpen(t *testing.T) {
+	opened := false
+	ctx, cancel := context.WithCancel(context.Background())
+	d := deps{
+		newSignalContext: func() (context.Context, context.CancelFunc) { return ctx, cancel },
+		openBrowser:      func(string) error { opened = true; return nil },
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- serveLocal(d, http.NotFoundHandler(), "test", ServeOptions{Addr: "127.0.0.1:0", NoOpen: true})
+	}()
+	time.Sleep(250 * time.Millisecond) // longer than the 150ms pre-open delay this deliberately never triggers
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveLocal: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveLocal did not shut down after cancel")
+	}
+	if opened {
+		t.Error("NoOpen should mean openBrowser is never called")
+	}
+}
+
+func TestOpenBrowserRunsTheRealOSCommand(t *testing.T) {
+	// One real call through the actual exec.Command wiring — cmd.Start()
+	// only launches the OS "open this URL" command, it doesn't wait for
+	// or need a real browser to be installed to return successfully on
+	// every OS this repo supports (xdg-open/open/rundll32 all exist on a
+	// stock install). A malformed "url" is still a valid argv element, so
+	// this can't accidentally open something real.
+	if err := openBrowser("http://127.0.0.1:1/does-not-matter"); err != nil {
+		// Not fatal: a CI container can genuinely lack xdg-open. Record it
+		// rather than fail the whole package on an environment gap.
+		t.Logf("openBrowser returned an error in this environment (acceptable — e.g. no xdg-open in a minimal container): %v", err)
 	}
 }

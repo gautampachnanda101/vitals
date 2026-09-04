@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParamsFromName(t *testing.T) {
 	cases := map[string]float64{
@@ -92,5 +95,33 @@ func TestFitAllHugeModelNothingFits(t *testing.T) {
 	fits := fitAll(671, int64(24)<<30)
 	if recommend(fits) != "" {
 		t.Errorf("671B model must not fit a 24 GB card, got %q", recommend(fits))
+	}
+}
+
+func TestRunFitRejectsAnEmptyModelName(t *testing.T) {
+	if err := RunFit("  "); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Errorf("RunFit(empty) = %v, want a usage error", err)
+	}
+}
+
+func TestRunFitRejectsAModelWithNoInferableSize(t *testing.T) {
+	if err := RunFit("mystery-model"); err == nil || !strings.Contains(err.Error(), "could not infer") {
+		t.Errorf("RunFit(no size in name) = %v, want a could-not-infer error", err)
+	}
+}
+
+func TestRunFitGoesThroughTheRealVRAMBudgetEndToEnd(t *testing.T) {
+	// One real end-to-end call through vramBudget()'s actual gpu.Probe/
+	// mem.VirtualMemory wiring — those are already ~100% tested in their
+	// own packages, so this proves RunFit's own orchestration (paramsFromName
+	// -> vramBudget -> fitAll -> recommend -> print) completes without
+	// error on a real machine, not any specific fit result.
+	out := captureStdout(t, func() {
+		if err := RunFit("qwen2.5:7b"); err != nil {
+			t.Fatalf("RunFit: %v", err)
+		}
+	})
+	if !strings.Contains(out, "LLM FIT") {
+		t.Errorf("RunFit produced no report, got:\n%s", out)
 	}
 }

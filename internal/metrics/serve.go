@@ -25,9 +25,27 @@ func collect(ollamaURL string) string {
 	return Render(snap, rep)
 }
 
+// deps is the live surface RunOnce/Serve read from, pulled out so a test
+// can substitute fakes — same shape as internal/tools'/internal/dupes'
+// deps structs. defaultDeps wires the real calls; production code
+// always goes through it via RunOnce/Serve.
+type deps struct {
+	collect          func(ollamaURL string) string
+	newSignalContext func() (context.Context, context.CancelFunc)
+}
+
+var defaultDeps = deps{
+	collect: collect,
+	newSignalContext: func() (context.Context, context.CancelFunc) {
+		return signal.NotifyContext(context.Background(), os.Interrupt)
+	},
+}
+
 // RunOnce prints one scrape to stdout and exits.
-func RunOnce(opts Options) error {
-	fmt.Print(collect(opts.OllamaURL))
+func RunOnce(opts Options) error { return runOnce(defaultDeps, opts) }
+
+func runOnce(d deps, opts Options) error {
+	fmt.Print(d.collect(opts.OllamaURL))
 	return nil
 }
 
@@ -44,20 +62,28 @@ func resolveAddr(addr string) string {
 	return addr
 }
 
-// Serve runs an HTTP server exposing /metrics until interrupted.
-func Serve(opts Options) error {
-	addr := resolveAddr(opts.Addr)
+// newMux builds the exporter's two routes — split out from Serve so it's
+// testable via httptest.NewServer without ever binding a real port or
+// depending on resolveAddr's fixed default.
+func newMux(d deps, ollamaURL string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		fmt.Fprint(w, collect(opts.OllamaURL))
+		fmt.Fprint(w, d.collect(ollamaURL))
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "vitals metrics exporter — scrape /metrics\n")
 	})
+	return mux
+}
 
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+// Serve runs an HTTP server exposing /metrics until interrupted.
+func Serve(opts Options) error { return serve(defaultDeps, opts) }
+
+func serve(d deps, opts Options) error {
+	addr := resolveAddr(opts.Addr)
+	srv := &http.Server{Addr: addr, Handler: newMux(d, opts.OllamaURL), ReadHeaderTimeout: 5 * time.Second}
+	ctx, stop := d.newSignalContext()
 	defer stop()
 
 	errc := make(chan error, 1)

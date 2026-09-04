@@ -44,25 +44,40 @@ type ServeOptions struct {
 	NoOpen bool   // true = never call openBrowser; the URL is still printed
 }
 
-// ServeLocal runs handler on a loopback port (127.0.0.1 — never on the
-// network; opts.Addr, if set, must already be a loopback address — see
-// dashboard.loopbackAddr for the caller-side enforcement of that), opens
-// the user's default browser to it unless opts.NoOpen, and blocks until
-// interrupted. This is the shared plumbing behind every local web view
-// vitals offers — the guide, `vitals dashboard` — so each one only has to
-// define its own routes; the safe-bind/auto-open/graceful-shutdown behavior
-// is written once and can't drift between them.
-func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
+// deps is the live OS surface ServeLocal reads from, pulled out so a test
+// can substitute fakes — same shape as internal/tools'/internal/dupes'/
+// internal/metrics' deps structs. defaultDeps wires the real calls;
+// production code always goes through it via ServeLocal.
+type deps struct {
+	newSignalContext func() (context.Context, context.CancelFunc)
+	openBrowser      func(url string) error
+}
+
+var defaultDeps = deps{
+	newSignalContext: func() (context.Context, context.CancelFunc) {
+		return signal.NotifyContext(context.Background(), os.Interrupt)
+	},
+	openBrowser: openBrowser,
+}
+
+// buildServer resolves opts.Addr into a real bound loopback listener,
+// wraps handler with the Host/same-origin checks, and returns the
+// ready-to-serve *http.Server plus that listener and its "http://host:port/"
+// URL — split out from ServeLocal so a test can drive srv.Serve(ln) itself
+// against a real ephemeral port and make real requests proving the
+// Host-header/CSRF wiring end to end, not just allowedHostsOnly/
+// sameOriginOnly's own already-100%-covered unit logic in isolation.
+func buildServer(handler http.Handler, opts ServeOptions) (srv *http.Server, ln net.Listener, url string, err error) {
 	addr := opts.Addr
 	if addr == "" {
 		addr = "127.0.0.1:0"
 	}
-	ln, err := net.Listen("tcp", addr)
+	ln, err = net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("start local server: %w", err)
+		return nil, nil, "", fmt.Errorf("start local server: %w", err)
 	}
 	addr = ln.Addr().String()
-	url := "http://" + addr + "/"
+	url = "http://" + addr + "/"
 
 	// Binding to 127.0.0.1 alone does not stop DNS rebinding: an external
 	// page can rebind its own origin's DNS to 127.0.0.1 with a short TTL,
@@ -85,9 +100,29 @@ func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
 	// ReadHeaderTimeout guards against a client that opens a connection
 	// and trickles headers in slowly (a slowloris-style hang) — the same
 	// defense internal/metrics.Serve already sets; this server had none.
-	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	srv = &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	return srv, ln, url, nil
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+// ServeLocal runs handler on a loopback port (127.0.0.1 — never on the
+// network; opts.Addr, if set, must already be a loopback address — see
+// dashboard.loopbackAddr for the caller-side enforcement of that), opens
+// the user's default browser to it unless opts.NoOpen, and blocks until
+// interrupted. This is the shared plumbing behind every local web view
+// vitals offers — the guide, `vitals dashboard` — so each one only has to
+// define its own routes; the safe-bind/auto-open/graceful-shutdown behavior
+// is written once and can't drift between them.
+func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
+	return serveLocal(defaultDeps, handler, label, opts)
+}
+
+func serveLocal(d deps, handler http.Handler, label string, opts ServeOptions) error {
+	srv, ln, url, err := buildServer(handler, opts)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := d.newSignalContext()
 	defer stop()
 	go func() {
 		<-ctx.Done()
@@ -99,7 +134,7 @@ func ServeLocal(handler http.Handler, label string, opts ServeOptions) error {
 	if !opts.NoOpen {
 		go func() {
 			time.Sleep(150 * time.Millisecond) // let Serve start accepting before we open the browser
-			if err := openBrowser(url); err != nil {
+			if err := d.openBrowser(url); err != nil {
 				ui.Warnf("could not open a browser automatically: %v", err)
 			}
 		}()
