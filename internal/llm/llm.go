@@ -123,8 +123,26 @@ type openAIModels struct {
 	} `json:"data"`
 }
 
+// runDeps is the live signal-context surface Run's --watch loop reads
+// from, pulled out so a test can drive it with an already-expiring
+// context instead of a real OS signal — same pattern internal/monitor's
+// and internal/memhogs' source structs already use for their own
+// --watch loops. defaultRunDeps wires the real call; production always
+// goes through it via Run.
+type runDeps struct {
+	newSignalContext func() (context.Context, context.CancelFunc)
+}
+
+var defaultRunDeps = runDeps{
+	newSignalContext: func() (context.Context, context.CancelFunc) {
+		return signal.NotifyContext(context.Background(), os.Interrupt)
+	},
+}
+
 // Run executes the diagnostic, optionally looping.
-func Run(opts Options) error {
+func Run(opts Options) error { return run(defaultRunDeps, opts) }
+
+func run(d runDeps, opts Options) error {
 	if opts.OllamaURL == "" {
 		opts.OllamaURL = "http://localhost:11434"
 	}
@@ -136,8 +154,14 @@ func Run(opts Options) error {
 		return once(opts)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := d.newSignalContext()
 	defer stop()
+	return watch(ctx, opts)
+}
+
+// watch is Run's --watch loop, pulled out so a test can drive it with an
+// already-expiring context instead of a real OS signal.
+func watch(ctx context.Context, opts Options) error {
 	ticker := time.NewTicker(opts.Interval)
 	defer ticker.Stop()
 

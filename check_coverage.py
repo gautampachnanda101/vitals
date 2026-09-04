@@ -140,13 +140,29 @@ FLOORS = {
     # overriddenKeys are pure and fully table-tested. 100.0% measured; 99
     # for float-rounding margin.
     "vitals/internal/info": 99,
-    # llm: Run/once/scanProcesses/ScanProcesses/OllamaModels/
-    # ProbeProviders/RunFit, checkGPUDriver/runsCleanly (subprocess
-    # exec), and render (a print function, like internal/dupes' — not yet
-    # covered via the stdout-capture pattern, a good next step) remain
-    # low/live. classify/capitalize/plural/nz/shortLocalName/
-    # modelOrDefault/ollamaModelChoice's pure branches are now covered.
-    "vitals/internal/llm": 57,
+    # llm (item 009, partial): Run's --watch loop is split into
+    # watch(ctx, opts) with an injected newSignalContext, same pattern as
+    # internal/monitor/internal/memhogs; checkGPUDriver/runsCleanly gained
+    # a gpuPreflightDeps struct (goos/lookPath/runCmd), branch-tested for
+    # nvidia-smi/rocm-smi found-and-working, found-but-failing, and
+    # neither-present, plus one real end-to-end call. The four thin
+    # exported wrappers (OllamaModels/ProbeProviders/ScanProcesses/
+    # CloudAPIKeyEnvVars) and RunFit's two error branches are now
+    # exercised directly rather than only through their unexported
+    # counterparts. 62.6% -> ~86-87% measured.
+    #
+    # NOT done, and a real remaining lift comparable in size to what item
+    # 009 already calls out for internal/doctor: complete.go's ~12
+    # provider-completion functions (completeLocal/completeCloud/
+    # completeOllama/completeNamed/doComplete and their per-provider
+    # response parsers) each still has uncovered branches — closing them
+    # needs several more httptest response-shape variations per provider,
+    # not a quick pattern application like the rest of this package got.
+    # fit.go's vramBudget (gpu.Probe/mem.VirtualMemory, both already
+    # ~100% tested in their own packages) was left as a real end-to-end
+    # call rather than injected — no new seam invented for a function
+    # this thin.
+    "vitals/internal/llm": 85,
     # mcp (item 009): the open design question this package's task noted
     # ("accept doctor.Assess/etc. as injectable dependencies of each
     # Handler closure" vs. "unit-test the JSON-RPC plumbing against a

@@ -81,16 +81,24 @@ functions need an injectable seam.
       taking an injected data source, rather than one monolithic
       injection point — matches how item 006 already extracted
       `withDiskHistory` out of this same package.
-- [ ] `internal/llm` (62.6%, floor 57) — `Run`/`once`/`scanProcesses`/
-      `ScanProcesses`/`OllamaModels`/`ProbeProviders`/`RunFit`,
-      `checkGPUDriver`/`runsCleanly` (subprocess exec), and `render`
-      (a print function, not yet covered via the stdout-capture pattern
-      other packages already use — see `internal/dupes/dupes_test.go`'s
-      `captureStdout`, and `internal/llm/llm_test.go`'s own copy added
-      2026-09-03 for `TestRenderListsModelNamesForReachableLocalProviders`
-      — extend that, not a new one). Network calls (`probeOne`'s
-      `http.Client`) already use `httptest.NewServer` in existing tests
-      — extend that pattern to the currently-uncovered call sites.
+- [ ] `internal/llm` (62.6% → ~86-87%, floor 57 → 85) — **partial, not
+      closed out**. Done: `Run`'s `--watch` loop split into
+      `watch(ctx, opts)` with an injected `newSignalContext` (same
+      pattern as `internal/monitor`/`internal/memhogs`);
+      `checkGPUDriver`/`runsCleanly` gained a `gpuPreflightDeps` struct
+      (`goos`/`lookPath`/`runCmd`), branch-tested for nvidia-smi/rocm-smi
+      found-and-working, found-but-failing, and neither-present; the four
+      thin exported wrappers (`OllamaModels`/`ProbeProviders`/
+      `ScanProcesses`/`CloudAPIKeyEnvVars`) and `RunFit`'s two error
+      branches now have their own direct tests, not just their unexported
+      counterparts'. **Still open**, and comparable in size to
+      `internal/doctor`'s own "biggest lift" note: `complete.go`'s ~12
+      provider-completion functions (`completeLocal`/`completeCloud`/
+      `completeOllama`/`completeNamed`/`doComplete` and their per-provider
+      response parsers) still have real uncovered branches each — closing
+      them needs several more `httptest` response-shape variations per
+      provider, not a quick pattern application like the rest of this
+      package got this pass.
 - [ ] `internal/clean` (67.9%, floor 50) — `Run`/`confirm`/`freeSpace`/
       `cleanDevCaches`/`cleanLinux`/`cleanMacOS`/`cleanWindows`/
       `ReclaimableSummary`/`optional` and the history file read/write

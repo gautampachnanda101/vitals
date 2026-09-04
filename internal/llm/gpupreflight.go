@@ -29,32 +29,53 @@ func needsGPUPreflightCheck(models []ModelState) bool {
 	return false
 }
 
+// gpuPreflightDeps is the live exec/PATH surface checkGPUDriver reads
+// from, pulled out so a test can substitute fakes — same shape as
+// internal/tools'/internal/gpu's deps structs. defaultGPUPreflightDeps
+// wires the real calls; production always goes through it via
+// checkGPUDriver.
+type gpuPreflightDeps struct {
+	goos     string
+	lookPath func(file string) (string, error)
+	runCmd   func(ctx context.Context, name string, args ...string) error
+}
+
+var defaultGPUPreflightDeps = gpuPreflightDeps{
+	goos:     runtime.GOOS,
+	lookPath: exec.LookPath,
+	runCmd: func(ctx context.Context, name string, args ...string) error {
+		return exec.CommandContext(ctx, name, args...).Run()
+	},
+}
+
 // checkGPUDriver tries the GPU management CLI relevant to this OS and
 // reports whether it ran successfully. Apple Silicon has no separate driver
 // layer to check — Metal is always available — so darwin is reported
 // unchecked rather than flagged as a problem.
-func checkGPUDriver() GPUDriverStatus {
+func checkGPUDriver() GPUDriverStatus { return checkGPUDriverWith(defaultGPUPreflightDeps) }
+
+func checkGPUDriverWith(d gpuPreflightDeps) GPUDriverStatus {
 	var name string
-	switch runtime.GOOS {
+	switch d.goos {
 	case "linux", "windows":
 		name = "nvidia-smi" // checked first; AMD hosts fall through to rocm-smi below
 	default:
 		return GPUDriverStatus{}
 	}
 
-	if ok, err := runsCleanly(name, "-L"); ok {
+	if ok, err := runsCleanly(d, name, "-L"); ok {
 		return GPUDriverStatus{Checked: true, Name: name, Reachable: true}
 	} else if err != nil {
-		if _, lookErr := exec.LookPath(name); lookErr == nil {
+		if _, lookErr := d.lookPath(name); lookErr == nil {
 			// present but failed — likely a driver/kernel-module mismatch
 			return GPUDriverStatus{Checked: true, Name: name, Reachable: false, Err: err.Error()}
 		}
 	}
 
 	name = "rocm-smi"
-	if ok, err := runsCleanly(name, "--showid"); ok {
+	if ok, err := runsCleanly(d, name, "--showid"); ok {
 		return GPUDriverStatus{Checked: true, Name: name, Reachable: true}
-	} else if _, lookErr := exec.LookPath(name); lookErr == nil {
+	} else if _, lookErr := d.lookPath(name); lookErr == nil {
 		errStr := ""
 		if err != nil {
 			errStr = err.Error()
@@ -65,13 +86,13 @@ func checkGPUDriver() GPUDriverStatus {
 	return GPUDriverStatus{Checked: true, Name: "", Reachable: false}
 }
 
-func runsCleanly(name string, args ...string) (ok bool, err error) {
-	if _, lookErr := exec.LookPath(name); lookErr != nil {
+func runsCleanly(d gpuPreflightDeps, name string, args ...string) (ok bool, err error) {
+	if _, lookErr := d.lookPath(name); lookErr != nil {
 		return false, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	err = exec.CommandContext(ctx, name, args...).Run()
+	err = d.runCmd(ctx, name, args...)
 	return err == nil, err
 }
 
