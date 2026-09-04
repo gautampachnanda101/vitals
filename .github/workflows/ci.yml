@@ -81,6 +81,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # check_docs.py's check_site_version needs the real tag list
+          # (git tag --list) to catch site/index.html referencing a
+          # version that hasn't been tagged yet — the default shallow
+          # checkout (fetch-depth: 1) fetches no tags at all, which
+          # would make that check either false-fail on every push or
+          # (worse) silently no-op. This is the exact gap that let the
+          # public site go live claiming v0.5.0 before the tag existed
+          # (2026-09-04) — see AGENTS.md's Release process.
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

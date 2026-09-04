@@ -323,17 +323,28 @@ tagging:
 3. Semver: additive/backward-compatible → minor bump; a real bug fix to
    already-released behavior → patch bump; a breaking change (schema major
    bump, a renamed/removed flag) → major bump.
-4. Update `site/index.html`'s version eyebrow (`vitals · vX.Y.Z · ...`) and
-   the comparison table's "as of vitals vX.Y.Z" footnote to the new tag,
-   and spot-check its hero terminal example and feature cards against
-   `git log <last tag>..HEAD` — a real feature landing that the site
-   doesn't mention isn't a bug, but a card describing behavior that's
-   changed or a mockup showing text the tool doesn't actually produce is
-   (see the hero card's own history: it once showed a rewritten title/fix
-   wording no real `vitals doctor` run would print). Commit this in the
-   same commit the tag points at, not a follow-up after — a release should
-   never point at a commit whose own marketing copy already describes the
-   *next* thing being planned rather than what that tag actually ships.
+4. **Never let `site/index.html` (or anything else public-facing) reference
+   a version number before that tag actually exists.** `.github/workflows/
+   pages.yml` deploys the live public site on every push to `main` that
+   touches `site/**` — completely independent of tagging. A commit that
+   bumps the site's version eyebrow to `vX.Y.Z` and gets pushed *before*
+   `git tag vX.Y.Z` goes out puts a false claim on the live public site for
+   however long that gap lasts, with no tag to back it up yet. This
+   happened for real (2026-09-04): the site went live claiming v0.5.0 while
+   only v0.4.0 was tagged, caught by the user reading the live site, not by
+   any check. **Correct order: create and push the tag first (step 1-3
+   above still gate that), then push the site-copy update referencing the
+   now-real tag** — never the reverse, and never bundle the version-bump
+   commit with unrelated work in a way that makes "did the tag go out
+   first" easy to lose track of.
+5. Once the tag is out: spot-check `site/index.html`'s hero terminal
+   example and feature cards against `git log <last tag>..HEAD` — a real
+   feature landing that the site doesn't mention isn't a bug, but a card
+   describing behavior that's changed, or a mockup showing text the tool
+   doesn't actually produce, is (see the hero card's own history: it once
+   showed a rewritten title/fix wording no real `vitals doctor` run would
+   print) — per item 003's "every claim on this page must be 100%
+   accurate" rule.
 
 ## Committing
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Docs consistency gate: catches the doc-rot this repo has actually shipped.
 
-Three checks, each one added because it caught a real bug while writing this
-script (see docs: parent/child breadcrumb nav commit):
+Four checks, each one added because it caught a real bug while writing this
+script (see docs: parent/child breadcrumb nav commit) or shortly after:
 
 1. Every relative link in docs/*.md and README.md resolves to a real file.
    (Caught 5 of 6 roadmap items linking to a nonexistent
@@ -13,11 +13,23 @@ script (see docs: parent/child breadcrumb nav commit):
    line back to the docs home (a line starting with "[docs](" or "[←
    docs]("), so a new page can't be added without wiring it into the
    parent/child navigation this check exists to enforce.
+4. site/index.html never references a version number that hasn't actually
+   been tagged yet. .github/workflows/pages.yml deploys the live public
+   site on every push to main touching site/**, completely independent of
+   `git tag` — so a commit that bumps the site's version string ahead of
+   the real tag puts a false "this is released" claim on the live public
+   site for however long the gap lasts. This happened for real
+   (2026-09-04): the site went live claiming v0.5.0 while only v0.4.0 was
+   tagged, caught by the user reading the live site, not by any check —
+   see AGENTS.md's Release process. CI's checkout step needs
+   `fetch-depth: 0` for `git tag --list` to see anything at all; a shallow
+   clone has no tags.
 
 Usage: python3 check_docs.py
 """
 import pathlib
 import re
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).parent
@@ -74,12 +86,44 @@ def check_breadcrumbs():
     return failed
 
 
+def check_site_version():
+    site = ROOT / "site" / "index.html"
+    if not site.exists():
+        return False  # nothing to check; not this script's job to require site/ exist
+
+    text = site.read_text()
+    versions = set(re.findall(r"\bv(\d+\.\d+\.\d+)\b", text))
+    if not versions:
+        print("::error::site/index.html has no vX.Y.Z version reference at all — "
+              "expected at least the hero eyebrow and the comparison-table footnote")
+        return True
+
+    try:
+        tags = subprocess.run(
+            ["git", "tag", "--list"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.split()
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"::error::could not list git tags to verify site/index.html's version claims: {e}")
+        return True
+    tagged = {t.lstrip("v") for t in tags}
+
+    failed = False
+    for v in sorted(versions):
+        if v not in tagged:
+            print(f"::error::site/index.html references v{v}, but no matching git tag exists yet — "
+                  "the live public site must never claim a release before `git tag vX.Y.Z` is pushed "
+                  "(see AGENTS.md's Release process: tag first, then update the site)")
+            failed = True
+    return failed
+
+
 def main():
     failed = False
     for name, check in [
         ("relative links", check_links),
         ("roadmap items registered in mkdocs.yml nav", check_roadmap_nav),
         ("breadcrumb navigation", check_breadcrumbs),
+        ("site/index.html only references tagged versions", check_site_version),
     ]:
         print(f"check_docs: {name}")
         if check():
