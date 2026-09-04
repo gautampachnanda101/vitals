@@ -58,6 +58,9 @@ ram_warn_percent = 85
 ram_high_percent = 95
 cpu_oversubscribe_multiplier = 4
 ollama_url = "http://gpu-box:11434"
+lmstudio_url = "http://gpu-box:1234"
+llamacpp_url = "http://gpu-box:8080"
+vllm_url = "http://gpu-box:8000"
 `))
 
 	if cfg.DiskWarnPercent != 95 {
@@ -77,6 +80,15 @@ ollama_url = "http://gpu-box:11434"
 	}
 	if cfg.OllamaURL != "http://gpu-box:11434" {
 		t.Errorf("OllamaURL = %q, want the quoted value unquoted", cfg.OllamaURL)
+	}
+	if cfg.LMStudioURL != "http://gpu-box:1234" {
+		t.Errorf("LMStudioURL = %q, want http://gpu-box:1234", cfg.LMStudioURL)
+	}
+	if cfg.LlamaCppURL != "http://gpu-box:8080" {
+		t.Errorf("LlamaCppURL = %q, want http://gpu-box:8080", cfg.LlamaCppURL)
+	}
+	if cfg.VLLMURL != "http://gpu-box:8000" {
+		t.Errorf("VLLMURL = %q, want http://gpu-box:8000", cfg.VLLMURL)
 	}
 }
 

@@ -34,6 +34,9 @@ type Config struct {
 	RAMHighPercent       float64 // vitals mem: high / exhausted tier
 	CPUOversubscribeMult float64 // vitals cpu: load1 >= this * cores triggers a finding
 	OllamaURL            string  // default --ollama-url when the flag is not passed
+	LMStudioURL          string  // default --lmstudio-url when the flag is not passed
+	LlamaCppURL          string  // default --llamacpp-url when the flag is not passed
+	VLLMURL              string  // default --vllm-url when the flag is not passed
 }
 
 // Default returns the values vitals has always used, unchanged by this
@@ -63,8 +66,10 @@ func Path() (string, bool) {
 // functional the moment it exists and changing a threshold is a one-line
 // edit with nothing to un-comment first. It is generated from Default() so
 // the written values can never drift from the code's actual defaults.
-// ollama_url has no default (it's opt-in), so it's the one commented
-// example rather than a written-out empty string.
+// ollama_url and its LM Studio / llama.cpp / vLLM counterparts have no
+// default (each is opt-in — vitals already probes their well-known local
+// ports without any config at all), so they're the commented examples
+// rather than written-out empty strings.
 func DefaultFileContents() string {
 	d := Default()
 	return fmt.Sprintf(`# vitals configuration — these are the built-in defaults, written out so you
@@ -78,9 +83,14 @@ ram_warn_percent = %.0f
 ram_high_percent = %.0f
 cpu_oversubscribe_multiplier = %.1f
 
-# ollama_url has no default. Uncomment to set the --ollama-url used when the
-# flag is omitted:
+# The four local-LLM runtime URLs below have no default — vitals already
+# probes each one's well-known local port without any config at all.
+# Uncomment to override the --*-url flag's default for a runtime that
+# isn't on its usual port (e.g. a GPU box on the LAN):
 # ollama_url = "http://gpu-box:11434"
+# lmstudio_url = "http://gpu-box:1234"
+# llamacpp_url = "http://gpu-box:8080"
+# vllm_url = "http://gpu-box:8000"
 `, d.DiskWarnPercent, d.DiskCriticalPercent, d.RAMWarnPercent, d.RAMHighPercent, d.CPUOversubscribeMult)
 }
 
@@ -148,6 +158,12 @@ func Parse(cfg *Config, data []byte) {
 			setFloat(&cfg.CPUOversubscribeMult, value)
 		case "ollama_url":
 			cfg.OllamaURL = value
+		case "lmstudio_url":
+			cfg.LMStudioURL = value
+		case "llamacpp_url":
+			cfg.LlamaCppURL = value
+		case "vllm_url":
+			cfg.VLLMURL = value
 		}
 	}
 }

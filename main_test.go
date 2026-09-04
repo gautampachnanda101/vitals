@@ -270,6 +270,33 @@ func TestDefaultOllamaURL(t *testing.T) {
 	}
 }
 
+func TestDefaultLocalRuntimeURLsFallThroughToEmpty(t *testing.T) {
+	saved := cfg
+	t.Cleanup(func() { cfg = saved })
+
+	cfg.LMStudioURL, cfg.LlamaCppURL, cfg.VLLMURL = "", "", ""
+	if got := defaultLMStudioURL(); got != "" {
+		t.Errorf("defaultLMStudioURL() with no override = %q, want empty (internal/llm fills in its own default)", got)
+	}
+	if got := defaultLlamaCppURL(); got != "" {
+		t.Errorf("defaultLlamaCppURL() with no override = %q, want empty", got)
+	}
+	if got := defaultVLLMURL(); got != "" {
+		t.Errorf("defaultVLLMURL() with no override = %q, want empty", got)
+	}
+
+	cfg.LMStudioURL, cfg.LlamaCppURL, cfg.VLLMURL = "http://a:1", "http://b:2", "http://c:3"
+	if got := defaultLMStudioURL(); got != "http://a:1" {
+		t.Errorf("defaultLMStudioURL() with override = %q", got)
+	}
+	if got := defaultLlamaCppURL(); got != "http://b:2" {
+		t.Errorf("defaultLlamaCppURL() with override = %q", got)
+	}
+	if got := defaultVLLMURL(); got != "http://c:3" {
+		t.Errorf("defaultVLLMURL() with override = %q", got)
+	}
+}
+
 func TestUserGuideEmbedded(t *testing.T) {
 	if len(userGuide) < 500 {
 		t.Fatalf("docs/user-guide.md not embedded (got %d bytes)", len(userGuide))
