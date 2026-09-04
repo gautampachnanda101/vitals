@@ -166,12 +166,27 @@ FLOORS = {
     # panic, userFamilies' os.UserConfigDir error), same class as
     # internal/monitor's documented remainder.
     "vitals/internal/memhogs": 95,
-    # metrics: collect/RunOnce/Serve are live (real Collect + HTTP
-    # server). trimFloat's "s == \"\" || s == \"-\"" guard looks
-    # unreachable for any real float64 via %.6f formatting (the leading
-    # digit before the decimal point is never trimmed) — left
-    # undisturbed rather than forcing a test for dead defensive code.
-    "vitals/internal/metrics": 75,
+    # metrics (item 009): collect and signal.NotifyContext are both
+    # injected via a deps struct (collect, newSignalContext), same shape
+    # tools/dupes already use; RunOnce/Serve are now one-line wrappers
+    # over runOnce/serve(defaultDeps, ...). newMux (the /metrics and /
+    # handlers) is split out from serve so it's tested via
+    # httptest.NewServer without ever binding a real port; serve's own
+    # shutdown-on-signal and ListenAndServe-error branches are both
+    # covered (an already-done injected context, and a real unbindable
+    # address). One real end-to-end call each for collect()/RunOnce()
+    # through the actual doctor.Collect/Analyze/Render wiring. The
+    # exported Serve() one-liner (0%) and trimFloat's "s == \"\" ||
+    # s == \"-\"\" guard (unreachable for any real float64 via %.6f
+    # formatting) are the only remaining gaps — the former is a real
+    # blocking HTTP server with no clean way to interrupt it from inside
+    # a test (same documented exemption class as internal/guide's
+    # ServeLocal), the latter is dead defensive code. 97.8-98.5% measured
+    # across runs (some run-to-run variance observed between an isolated
+    # `go test ./internal/metrics/` and the full `go test ./...`); floor
+    # set with margin below the low end rather than the isolated-run
+    # high end.
+    "vitals/internal/metrics": 96,
     # monitor: the gopsutil/process surface (host.Info, load.Avg,
     # cpu.Counts/Percent, mem.VirtualMemory/SwapMemory, disk.IOCounters,
     # net.IOCounters, process.Processes via a procSource interface +

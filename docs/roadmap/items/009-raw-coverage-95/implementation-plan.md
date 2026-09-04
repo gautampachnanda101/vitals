@@ -129,9 +129,13 @@ functions need an injectable seam.
       the actual blocking `Serve()` call it makes at the end — worth
       checking whether that split is even possible before assuming the
       whole function is irreducible.
-- [ ] `internal/metrics` (75.2%, floor 75) — `collect`/`RunOnce`/
-      `Serve` are live (real `Collect` + HTTP server). Same
-      Collect-vs-Analyze-style split as `doctor`/`memcheck` may apply.
+- [x] `internal/metrics` (75.2% → 97.8-98.5%, floor 75 → 96) — `collect`/
+      `signal.NotifyContext` injected via a `deps` struct;
+      `newMux(d, ollamaURL)` split out from `serve` so the `/metrics`/`/`
+      handlers are tested via `httptest.NewServer`, never a real bound
+      port. Remaining gaps: the exported `Serve()` one-liner (a real
+      blocking HTTP server, no clean in-test interrupt) and
+      `trimFloat`'s unreachable defensive branch.
 - [ ] `main` / `vitals` package (40.9%, floor 40) — `run()`'s dispatch/
       validation logic is already unit tested; the remaining gap is
       each subcommand's actual `Run`/`RunFocus` call
