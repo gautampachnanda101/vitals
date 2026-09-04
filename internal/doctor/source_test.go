@@ -332,16 +332,16 @@ func TestCollectRunsEndToEndOverAFakeSource(t *testing.T) {
 func TestRealProcessesReturnsSomeOfTheLiveProcessTable(t *testing.T) {
 	// One real end-to-end call through the actual process table, matching
 	// this package's dns/netpeers style of exercising the live wiring
-	// once without asserting on machine-specific content.
+	// once without asserting on machine-specific content. No assertion on
+	// individual PIDs: Windows legitimately enumerates the System Idle
+	// Process at PID 0, often first in the list, so "PID 0" isn't a
+	// signal of a broken read there the way it would be elsewhere.
 	procs, err := realProcesses()
 	if err != nil {
 		t.Fatalf("realProcesses: %v", err)
 	}
 	if len(procs) == 0 {
-		t.Skip("no processes visible (unusual, but not this test's concern)")
-	}
-	if procs[0].PID() == 0 {
-		t.Error("expected a real, nonzero PID from the live process table")
+		t.Error("expected at least one process from the live process table")
 	}
 }
 
