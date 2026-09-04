@@ -54,6 +54,32 @@ visible in the job summary, not just buried in a pass/fail. When you add a
 new command or a new safe (non-destructive, non-blocking, non-network) flag
 combination, add a case here.
 
+### Dashboard end-to-end tests (Playwright)
+
+`e2e/` is this repo's one Node/JS toolchain (2026-09-04, deliberate
+exception to "one dependency," same bar as `internal/ui`'s three-package
+one) — real-browser tests against the actual compiled `vitals dashboard`
+binary, for what a Go test asserting on server-rendered HTML strings
+structurally cannot see: a client-side `fetch()` that never resolves, a
+button click that does nothing, real dark-mode rendering, a browser
+console error. It exists because exactly that class of bug shipped
+(the advice page's LLM call blocking its own render) and was only caught
+by a human clicking around in a real browser, not by any test in the
+Go suite. `make e2e` (builds `vitals` first) or, directly:
+
+```sh
+cd e2e && npm ci && npx playwright install chromium && npm test
+```
+
+Chromium only, on purpose — this catches real browser-behavior bugs, not
+engine-specific rendering differences, so a three-engine matrix isn't
+worth its CI cost here. Runs in CI (`e2e` job in `.github/workflows/
+ci.yml`) on the same three-OS matrix as the Go `test` job. Add a case to
+`e2e/tests/dashboard.spec.js` for any new dashboard page or client-side
+interaction; keep asserting on Go-testable server output
+(`internal/dashboard`'s own tests) for everything else — this suite is
+for what only a real browser can prove, not a second copy of those.
+
 ## Architecture map
 
 ```

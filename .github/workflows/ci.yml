@@ -102,6 +102,50 @@ jobs:
       - name: Docs consistency (links, roadmap nav, breadcrumbs)
         run: python3 check_docs.py
 
+  e2e:
+    name: e2e (${{ matrix.os }})
+    # Real-browser regression tests for `vitals dashboard`, via
+    # Playwright — the repo's only Node/JS toolchain, added specifically
+    # for what a Go test asserting on server-rendered HTML strings can't
+    # see: a client-side fetch() that never resolves, a click that does
+    # nothing, a real dark-mode render, a browser console error. See
+    # e2e/package.json and e2e/tests/dashboard.spec.js.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build vitals
+        shell: bash
+        run: go build -o vitals${{ runner.os == 'Windows' && '.exe' || '' }} .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Install Playwright's Chromium (+ OS deps)
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run e2e tests
+        working-directory: e2e
+        run: npm test
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: e2e/playwright-report/
+          retention-days: 7
+
   crosscompile:
     runs-on: ubuntu-latest
     steps:

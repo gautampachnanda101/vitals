@@ -10,6 +10,14 @@
 coverage.txt
 coverage.out
 
+# e2e (Playwright, real-browser dashboard tests) — package-lock.json IS
+# tracked, for reproducible CI installs; only the installed/generated
+# stuff below is not.
+/e2e/node_modules/
+/e2e/test-results/
+/e2e/playwright-report/
+/e2e/blob-report/
+
 # TechDocs (mkdocs) build output — see mkdocs.yml's site_dir comment;
 # deliberately not named "site/", which is the real, tracked public
 # product page (roadmap item 003), not a build artifact.

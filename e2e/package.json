@@ -1,0 +1,12 @@
+{
+  "name": "vitals-dashboard-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Real-browser tests for `vitals dashboard`, run against the actual compiled binary via Playwright's webServer option. Plain-JS test files on purpose -- no TypeScript/build step, matching AGENTS.md's 'one dependency for a real reason' rule. This is the repo's only Node/JS toolchain; it exists specifically for what a Go test asserting on server-rendered HTML strings cannot see: real DOM state after a client-side fetch() resolves, a real button click, real dark-mode rendering, a real browser console error.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

@@ -37,6 +37,9 @@ clean: ## Remove build artifacts (./vitals, ./dist)
 	rm -f $(BINARY)
 	rm -rf dist
 
+e2e: build ## Real-browser dashboard tests (Playwright — needs Node; first run: cd e2e && npm ci && npx playwright install chromium)
+	cd e2e && npm test
+
 ##@ Test & lint
 
 test: ## Run the unit test suite, with a per-package coverage line
