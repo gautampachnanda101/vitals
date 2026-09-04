@@ -280,3 +280,148 @@ func TestTermWidthFallsBackWhenNotATerminal(t *testing.T) {
 		t.Errorf("TermWidth() = %d, want the DefaultWrapWidth fallback %d when stdout isn't a terminal", got, DefaultWrapWidth)
 	}
 }
+
+// withPaletteState forces enabled/trueColorSupported to the given values
+// for the duration of f, recomputing the exported color vars (Red, Green,
+// ...) before and restoring everything — including the vars themselves —
+// after. This is the same save/restore-around-mutation shape TestDisableColor
+// already uses for `enabled`, extended to cover the new truecolor switch.
+func withPaletteState(t *testing.T, colorEnabledState, trueColor bool, f func()) {
+	t.Helper()
+	saved := []*string{&Red, &Green, &Yellow, &Cyan, &Bold, &Dim, &Reset}
+	orig := make([]string, len(saved))
+	for i, p := range saved {
+		orig[i] = *p
+	}
+	origEnabled, origTrueColor := enabled, trueColorSupported
+	t.Cleanup(func() {
+		enabled, trueColorSupported = origEnabled, origTrueColor
+		for i, p := range saved {
+			*p = orig[i]
+		}
+	})
+
+	enabled, trueColorSupported = colorEnabledState, trueColor
+	refreshPalette()
+	f()
+}
+
+func TestTrueColorForcedOnProducesExactSiteHexEscapeSequences(t *testing.T) {
+	// Golden-byte assertions: these are the literal 24-bit escape sequences
+	// for site/index.html's --term-crit (#e2694a), --term-warn (#d9a441)
+	// and --term-accent (#6fbfa8) hex values, in the
+	// "\033[38;2;R;G;Bm" truecolor format. Written out in full (not built
+	// from the same rgbCode helper the production code uses) so a bug in
+	// rgbCode's formatting can't cancel itself out against the test.
+	withPaletteState(t, true, true, func() {
+		cases := []struct {
+			name string
+			got  string
+			want string
+		}{
+			{"Red = --term-crit #e2694a", Red, "\033[38;2;226;105;74m"},
+			{"Yellow = --term-warn #d9a441", Yellow, "\033[38;2;217;164;65m"},
+			{"Green = --term-accent #6fbfa8", Green, "\033[38;2;111;191;168m"},
+			{"Cyan = --term-accent #6fbfa8", Cyan, "\033[38;2;111;191;168m"},
+		}
+		for _, c := range cases {
+			if c.got != c.want {
+				t.Errorf("%s: got %q, want %q", c.name, c.got, c.want)
+			}
+		}
+		// Bold/Dim/Reset carry no color and are unaffected by truecolor.
+		if Bold != "\033[1m" || Dim != "\033[2m" || Reset != "\033[0m" {
+			t.Errorf("Bold/Dim/Reset changed under truecolor: %q %q %q", Bold, Dim, Reset)
+		}
+	})
+}
+
+func TestTrueColorForcedOffFallsBackToBasicSixteenColorCodes(t *testing.T) {
+	withPaletteState(t, true, false, func() {
+		cases := []struct {
+			name string
+			got  string
+			want string
+		}{
+			{"Red", Red, "\033[1;31m"},
+			{"Green", Green, "\033[1;32m"},
+			{"Yellow", Yellow, "\033[1;33m"},
+			{"Cyan", Cyan, "\033[1;36m"},
+		}
+		for _, c := range cases {
+			if c.got != c.want {
+				t.Errorf("%s: got %q, want the basic ANSI code %q", c.name, c.got, c.want)
+			}
+			if strings.Contains(c.got, "38;2;") {
+				t.Errorf("%s: fell back to basic ANSI but still contains a truecolor escape: %q", c.name, c.got)
+			}
+		}
+	})
+}
+
+func TestColorDisabledWinsOverTrueColor(t *testing.T) {
+	// enabled=false must beat trueColorSupported=true: NO_COLOR / a
+	// non-terminal stdout must never emit any escape sequence, truecolor
+	// included. This is a color-policy invariant, not something this
+	// change is allowed to touch.
+	withPaletteState(t, false, true, func() {
+		for name, got := range map[string]string{
+			"Red": Red, "Green": Green, "Yellow": Yellow, "Cyan": Cyan,
+			"Bold": Bold, "Dim": Dim, "Reset": Reset,
+		} {
+			if got != "" {
+				t.Errorf("%s = %q, want empty when color is disabled regardless of truecolor support", name, got)
+			}
+		}
+	})
+}
+
+func TestStripANSIHandlesTrueColorEscapeSequences(t *testing.T) {
+	in := "a" + "\033[38;2;226;105;74m" + "red" + "\033[0m" + "b"
+	if got := StripANSI(in); got != "aredb" {
+		t.Errorf("StripANSI(%q) = %q, want %q", in, got, "aredb")
+	}
+}
+
+func TestSupportsTrueColorDetection(t *testing.T) {
+	cases := []struct {
+		name      string
+		colorterm string
+		want      bool
+	}{
+		{"COLORTERM=truecolor", "truecolor", true},
+		{"COLORTERM=24bit", "24bit", true},
+		{"COLORTERM case-insensitive", "TrueColor", true},
+		{"COLORTERM padded with whitespace", "  truecolor  ", true},
+		{"COLORTERM unset", "", false},
+		{"COLORTERM=yes (some terminals set this, but it's not the standard signal)", "yes", false},
+		{"COLORTERM=1", "1", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.colorterm == "" {
+				// t.Setenv can't "unset"; simulate absence by clearing it.
+				t.Setenv("COLORTERM", "")
+			} else {
+				t.Setenv("COLORTERM", c.colorterm)
+			}
+			if got := supportsTrueColor(); got != c.want {
+				t.Errorf("supportsTrueColor() with COLORTERM=%q = %v, want %v", c.colorterm, got, c.want)
+			}
+		})
+	}
+}
+
+func TestSupportsTrueColorIgnoresTerm256Color(t *testing.T) {
+	// TERM advertising 256-color support (xterm-256color, tmux-256color,
+	// screen-256color, ...) must NOT be read as truecolor support — that
+	// would risk rendering garbled escape codes on a real 256-color-only
+	// terminal. Only an explicit COLORTERM opts in.
+	t.Setenv("COLORTERM", "")
+	for _, term := range []string{"xterm-256color", "screen-256color", "tmux-256color", "xterm-kitty"} {
+		t.Setenv("TERM", term)
+		if supportsTrueColor() {
+			t.Errorf("supportsTrueColor() with TERM=%q and no COLORTERM = true, want false", term)
+		}
+	}
+}

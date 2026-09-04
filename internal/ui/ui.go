@@ -14,17 +14,118 @@ import (
 
 // ANSI color codes. Disabled automatically when stdout is not a terminal or
 // when NO_COLOR is set (https://no-color.org).
+//
+// Each color has two representations: a basic 16-color ANSI code (renders
+// correctly everywhere) and a 24-bit "truecolor" escape sequence carrying
+// the exact hex value site/index.html's hero mockup uses for its fake
+// terminal (see the paletteHex* constants below). refreshPalette picks
+// between them — truecolor when the terminal advertises support for it
+// (supportsTrueColor), the basic code otherwise — so the *real* `vitals
+// doctor` output matches the marketing screenshot pixel-for-pixel where
+// the terminal can render it, and still looks like normal red/yellow/green
+// everywhere else.
 var (
-	enabled = colorEnabled()
+	enabled            = colorEnabled()
+	trueColorSupported = supportsTrueColor()
 
-	Red    = code("\033[1;31m")
-	Green  = code("\033[1;32m")
-	Yellow = code("\033[1;33m")
-	Cyan   = code("\033[1;36m")
-	Bold   = code("\033[1m")
-	Dim    = code("\033[2m")
-	Reset  = code("\033[0m")
+	Red    string
+	Green  string
+	Yellow string
+	Cyan   string
+	Bold   string
+	Dim    string
+	Reset  string
 )
+
+func init() {
+	refreshPalette()
+}
+
+// paletteHex* are the hex values from site/index.html's :root custom
+// properties that style the marketing hero's fake terminal window
+// (--term-crit, --term-warn, --term-accent — see .term-window/.term/.crit/
+// .warn-arrow/.prompt in that file's <style> block). They are declared
+// once in the base :root and are NOT overridden inside that file's
+// `@media (prefers-color-scheme: dark)` block — unlike the page's other
+// tokens (--bg, --ink, --ok, --crit, ...), the fake terminal always
+// renders in this one dark palette regardless of the visitor's light/dark
+// preference, the same way a real terminal window doesn't change color
+// scheme when the OS theme does. So there is only one palette to match
+// here, not a light/dark pair to choose between — matching the site
+// exactly means always using this dark set as the truecolor variant,
+// never trying to guess whether the user's real terminal background is
+// light or dark (COLORFGBG-style heuristics exist but are unreliable
+// enough, and unsupported widely enough, that a wrong guess would make
+// output harder to read than just picking one consistent palette).
+//
+// The site's terminal has no distinct "ok/success" token, so Green reuses
+// --term-accent (#6fbfa8) — the same teal used for the mockup's `$`
+// prompt and cursor, and the closest thing the palette has to a positive/
+// highlight color. Cyan (headers, info bullets) reuses it too: the site's
+// terminal only has one non-alert accent hue, so both real-CLI roles map
+// to it.
+const (
+	paletteHexCritR, paletteHexCritG, paletteHexCritB       = 0xe2, 0x69, 0x4a // --term-crit #e2694a
+	paletteHexWarnR, paletteHexWarnG, paletteHexWarnB       = 0xd9, 0xa4, 0x41 // --term-warn #d9a441
+	paletteHexAccentR, paletteHexAccentG, paletteHexAccentB = 0x6f, 0xbf, 0xa8 // --term-accent #6fbfa8
+)
+
+// rgbCode formats a 24-bit truecolor foreground escape sequence, e.g.
+// rgbCode(0xe2, 0x69, 0x4a) == "\033[38;2;226;105;74m" for #e2694a.
+func rgbCode(r, g, b byte) string {
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
+}
+
+// paletteCode returns "" when color is disabled entirely, the 24-bit
+// truecolor sequence for (r,g,b) when the terminal supports it, or the
+// basic 16-color fallback otherwise.
+func paletteCode(basic string, r, g, b byte) string {
+	if !enabled {
+		return ""
+	}
+	if trueColorSupported {
+		return rgbCode(r, g, b)
+	}
+	return basic
+}
+
+// refreshPalette (re)computes every exported color var from the current
+// enabled/trueColorSupported state. It runs once at package init; tests
+// that flip enabled or trueColorSupported directly call it again to see
+// the effect (see ui_test.go), the same way DisableColor does.
+func refreshPalette() {
+	Red = paletteCode("\033[1;31m", paletteHexCritR, paletteHexCritG, paletteHexCritB)
+	Green = paletteCode("\033[1;32m", paletteHexAccentR, paletteHexAccentG, paletteHexAccentB)
+	Yellow = paletteCode("\033[1;33m", paletteHexWarnR, paletteHexWarnG, paletteHexWarnB)
+	Cyan = paletteCode("\033[1;36m", paletteHexAccentR, paletteHexAccentG, paletteHexAccentB)
+	Bold = code("\033[1m")
+	Dim = code("\033[2m")
+	Reset = code("\033[0m")
+}
+
+// supportsTrueColor reports whether the terminal advertises full 24-bit
+// color support. There is no single universal signal for this, so this
+// uses the same conservative heuristic most terminal color libraries
+// converge on (e.g. muesli/termenv, Node's supports-color): trust an
+// explicit COLORTERM=truecolor or COLORTERM=24bit, and nothing else.
+//
+// Deliberately NOT treated as a truecolor signal: TERM containing
+// "256color" (xterm-256color, screen-256color, tmux-256color, ...) — that
+// advertises 256-indexed-color support, not 24-bit truecolor, and the two
+// are not interchangeable at the escape-code level. Reading it as
+// truecolor would risk visible escape-code garbage on any real
+// 256-color-only terminal — a much worse failure than the alternative.
+// A terminal that genuinely supports truecolor but doesn't set COLORTERM
+// (it happens — some tmux/screen configurations don't pass the variable
+// through from the outer terminal) just gets the basic 16-color fallback
+// instead of the exact site palette. That's the right tradeoff: a
+// slightly-off color on a terminal that could have rendered better is a
+// far smaller cost than garbled output on one that can't, so ambiguous
+// cases fall back rather than guess.
+func supportsTrueColor() bool {
+	ct := strings.TrimSpace(os.Getenv("COLORTERM"))
+	return strings.EqualFold(ct, "truecolor") || strings.EqualFold(ct, "24bit")
+}
 
 // ColorEnabled reports whether styled output is currently active.
 func ColorEnabled() bool { return enabled }
@@ -33,7 +134,7 @@ func ColorEnabled() bool { return enabled }
 // NO_COLOR environment variable. Call it once at startup, before any output.
 func DisableColor() {
 	enabled = false
-	Red, Green, Yellow, Cyan, Bold, Dim, Reset = "", "", "", "", "", "", ""
+	refreshPalette()
 }
 
 // colorEnabled decides whether to emit ANSI codes at all. Two real
