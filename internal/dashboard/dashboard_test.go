@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -96,30 +95,30 @@ func TestRouteFallsBackToAGenericReasonWhenNoneIsSet(t *testing.T) {
 	}
 }
 
-func TestRouteCallsPrepareBeforeRender(t *testing.T) {
-	withRegistry(t, []Module{{
-		Slug: "advice", NavLabel: "Advice", Available: Always,
-		Prepare: func(ctx *PageContext) error { ctx.AdviceReply = "prepared"; return nil },
-		Render:  func(ctx PageContext) string { return "reply=" + ctx.AdviceReply },
-	}})
-	_, body := route("/advice", PageContext{})
-	if !strings.Contains(body, "reply=prepared") {
-		t.Errorf("Render should see what Prepare set on ctx: %s", body)
+func TestRouteDispatchesAnAsyncFragmentBeforeModuleLookup(t *testing.T) {
+	// The replacement for the old Prepare hook (see AsyncFragment's doc
+	// comment): a request-scoped, potentially-slow computation is now its
+	// own registered path, not something route() runs before every
+	// module's Render.
+	withAsyncRegistry(t, []AsyncFragment{
+		{Path: "/advice/commentary", Handler: func(PageContext) (int, string) { return http.StatusOK, "fragment" }},
+	})
+	status, body := route("/advice/commentary", PageContext{})
+	if status != http.StatusOK || body != "fragment" {
+		t.Errorf("route(async fragment) = %d %q, want 200 \"fragment\"", status, body)
 	}
 }
 
-func TestRoutePrepareErrorRendersAnErrorPageInsteadOfPanicking(t *testing.T) {
-	withRegistry(t, []Module{{
-		Slug: "x", NavLabel: "X", Available: Always,
-		Prepare: func(*PageContext) error { return errors.New("boom") },
-		Render:  func(PageContext) string { return "should not render" },
-	}})
-	status, body := route("/x", PageContext{})
-	if status != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", status)
-	}
-	if !strings.Contains(body, "boom") {
-		t.Errorf("body should surface the Prepare error: %s", body)
+func TestRouteAsyncFragmentBypassesModuleAvailabilityEntirely(t *testing.T) {
+	// A fragment path takes priority over any registered module with the
+	// same-looking slug — it's matched on the full path, not a slug.
+	withRegistry(t, nil)
+	withAsyncRegistry(t, []AsyncFragment{
+		{Path: "/nonexistent-module-path", Handler: func(PageContext) (int, string) { return http.StatusOK, "still works" }},
+	})
+	status, body := route("/nonexistent-module-path", PageContext{})
+	if status != http.StatusOK || body != "still works" {
+		t.Errorf("route(async fragment, no modules registered) = %d %q", status, body)
 	}
 }
 

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"encoding/json"
 	"html/template"
+	"net/http"
 	"sync"
 	"time"
 
@@ -16,7 +17,12 @@ func init() {
 	// needs no LLM at all, so the page itself shouldn't disappear from the
 	// nav just because none is reachable; only the LLM commentary section
 	// is conditional on that.
-	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Prepare: prepareAdvice, Available: Always, Render: renderAdvice})
+	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Available: Always, Render: renderAdvice})
+	// The LLM call is registered as a separate AsyncFragment, not part of
+	// this page's own render — see AsyncFragment's own doc comment for why
+	// (it replaces an earlier Module.Prepare hook that blocked the whole
+	// page, heuristic half included, on the LLM call).
+	RegisterAsync(AsyncFragment{Path: "/advice/commentary", Handler: renderAdviceCommentary})
 }
 
 // prepareAdviceCacheTTL bounds how stale a synthesized advice reply can
@@ -87,16 +93,16 @@ func (c *prepareAdviceCache) Get(ctx *PageContext) (string, error) {
 	return reply, err
 }
 
-// defaultAdviceCache is the one instance prepareAdvice uses in the real
-// binary — a single `vitals dashboard` process serves one machine, so a
-// package-level cache is safe there. Tests that need a clean cache use
-// withFreshAdviceCache (modules_test.go), the same swap-and-restore
-// pattern withRegistry uses for the module registry.
+// defaultAdviceCache is the one instance renderAdviceCommentary uses in
+// the real binary — a single `vitals dashboard` process serves one
+// machine, so a package-level cache is safe there. Tests that need a
+// clean cache use withFreshAdviceCache (modules_test.go), the same
+// swap-and-restore pattern withRegistry uses for the module registry.
 var defaultAdviceCache = newPrepareAdviceCache()
 
-// generateAdvice does the actual LLM call — split out from prepareAdvice
-// so prepareAdviceCache.Get has something pure-ish (given a ctx) to
-// memoize.
+// generateAdvice does the actual LLM call — split out from
+// renderAdviceCommentary so prepareAdviceCache.Get has something
+// pure-ish (given a ctx) to memoize.
 func generateAdvice(ctx *PageContext) (string, error) {
 	reportJSON, err := json.Marshal(doctor.JSONReport(ctx.Snapshot, ctx.Report))
 	if err != nil {
@@ -105,50 +111,68 @@ func generateAdvice(ctx *PageContext) (string, error) {
 	return advice.Generate(reportJSON, ctx.LLMOpts)
 }
 
-// prepareAdvice is the advice module's Prepare hook: the one piece of
-// request-scoped work Render can't do on its own, since it needs an
-// actual LLM call rather than just formatting already-collected data.
-// Failure is absorbed into ctx.AdviceErr rather than returned — the same
-// graceful-degradation shape renderAdvice already expects — so the page
-// still renders a friendly message instead of an error page when no
-// provider answers.
-func prepareAdvice(ctx *PageContext) error {
-	reply, err := defaultAdviceCache.Get(ctx)
-	if err != nil {
-		ctx.AdviceErr = err
-		return nil
-	}
-	ctx.AdviceReply = reply
-	return nil
-}
-
-// adviceErrorTmpl renders ctx.AdviceErr's message — an error string that
-// can embed arbitrary provider/network detail, so it goes through
+// adviceErrorTmpl renders an LLM error's message — a string that can
+// embed arbitrary provider/network detail, so it goes through
 // html/template's auto-escaping like every other render function in this
 // package, not a manual html.EscapeString call. It's shown alongside the
 // heuristic findings, not instead of them: the LLM is a complement, so
 // its being unreachable is a quiet note here, not a page-level failure.
 var adviceErrorTmpl = template.Must(template.New("adviceError").Parse(
-	`<div class="card"><p class="unavailable">No LLM reachable for further AI commentary: {{.}}</p></div>`))
+	`<div id="ai-commentary"><p class="unavailable">No LLM reachable for further AI commentary: {{.}}</p></div>`))
 
-// renderAdvice shows this machine's rule-based findings first — the same
-// data and layout the overview page uses (reportHeadline/verdictBanner/
-// findingsList), needing no LLM at all — then, when Prepare above managed
-// to reach one, an LLM commentary section underneath adding whatever a
-// per-finding list can't: shared root causes, what matters most when
-// there's more than one issue. Render itself stays pure over whatever
-// ctx.Report/AdviceReply/AdviceErr it's handed, consistent with every
-// other module, and testable the same way.
+// adviceCommentaryScript fetches the AsyncFragment above and swaps it in
+// once it resolves, after the page itself (which needs none of this) has
+// already rendered — vanilla JS, no framework, the same "no client-side
+// dependency" convention modules_clean.go's Preview/Apply buttons use.
+// A fetch-level failure (the request never even reaching the server) gets
+// its own message distinct from adviceErrorTmpl's "no LLM reachable" —
+// that one means the server answered and found no provider; this one
+// means the browser couldn't even ask.
+const adviceCommentaryScript = `<script>
+(function(){
+  var el = document.getElementById('ai-commentary');
+  fetch('/advice/commentary').then(function(r){ return r.text(); }).then(function(html){
+    document.getElementById('ai-commentary').outerHTML = html;
+  }).catch(function(){
+    if (el) el.innerHTML = '<p class="unavailable">Could not reach the dashboard for AI commentary.</p>';
+  });
+})();
+</script>`
+
+// renderAdvice shows this machine's rule-based findings — the same data
+// and layout the overview page uses (reportHeadline/verdictBanner/
+// findingsList), needing no LLM at all — immediately, unconditionally.
+// The LLM commentary is a placeholder card filled in later by
+// adviceCommentaryScript's fetch to the /advice/commentary AsyncFragment,
+// so a slow or unreachable LLM (up to completeTimeout, 60s) never delays
+// this page's own render — see AsyncFragment's doc comment for the bug
+// this replaced (the whole page, heuristic half included, used to block
+// on the LLM call).
 func renderAdvice(ctx PageContext) string {
 	headline := reportHeadline(ctx.Report, "Healthy — nothing needs attention")
 	body := verdictBanner(headline, "What vitals doctor's own rule-based checks found", ctx.Report.Worst())
 	body += `<div class="card">` + findingsList(ctx.Report.SortedBySeverity()) + `</div>`
-
-	switch {
-	case ctx.AdviceReply != "":
-		body += `<div class="card"><h3>AI commentary</h3>` + guide.RenderFragment(ctx.AdviceReply) + `</div>`
-	case ctx.AdviceErr != nil:
-		body += mustExecute(adviceErrorTmpl, ctx.AdviceErr.Error())
-	}
+	body += `<div id="ai-commentary" class="card"><p class="unavailable">Asking the LLM for further commentary&hellip;</p></div>`
+	body += adviceCommentaryScript
 	return body
+}
+
+// renderAdviceCommentary is the /advice/commentary AsyncFragment's
+// Handler: the actual LLM call (via the cache above), rendering just the
+// replacement fragment for renderAdvice's placeholder div — not a full
+// page.Layout, since the client-side fetch() only wants the fragment.
+// Always 200: an unreachable LLM is a graceful-degradation message here
+// (adviceErrorTmpl), not an HTTP error, the same posture prepareAdvice
+// used to take by absorbing the error into ctx.AdviceErr rather than
+// returning it.
+func renderAdviceCommentary(ctx PageContext) (int, string) {
+	reply, err := defaultAdviceCache.Get(&ctx)
+	switch {
+	case reply != "":
+		return http.StatusOK, `<div id="ai-commentary" class="card"><h3>AI commentary</h3>` + guide.RenderFragment(reply) + `</div>`
+	case err != nil:
+		return http.StatusOK, mustExecute(adviceErrorTmpl, err.Error())
+	default:
+		return http.StatusOK, `<div id="ai-commentary"></div>`
+	}
 }

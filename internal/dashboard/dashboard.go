@@ -88,8 +88,16 @@ func loopbackAddr(addr string) (string, error) {
 
 // route computes the HTTP status and full page HTML for path against ctx.
 // Kept pure (no *http.Request/ResponseWriter) so the exists/available/404
-// branching, and Prepare's error path, are tested directly.
+// branching is tested directly. An AsyncFragment path (e.g.
+// "/advice/commentary") is dispatched before module lookup — it renders a
+// bare HTML fragment, not a full page.Layout, so a module's own
+// client-side JS can fetch() and inject it after the page itself has
+// already rendered.
 func route(path string, ctx PageContext) (int, string) {
+	if a, ok := findAsyncFragment(path); ok {
+		return a.Handler(ctx)
+	}
+
 	nav := availableModules(ctx)
 	slug := strings.TrimPrefix(path, "/")
 
@@ -106,11 +114,6 @@ func route(path string, ctx PageContext) (int, string) {
 		return http.StatusOK, layout(m.NavLabel, m.Slug, ctx.Version, nav, unavailablePage(m.NavLabel, reason))
 	}
 
-	if m.Prepare != nil {
-		if err := m.Prepare(&ctx); err != nil {
-			return http.StatusInternalServerError, layout(m.NavLabel, m.Slug, ctx.Version, nav, unavailablePage(m.NavLabel, err.Error()))
-		}
-	}
 	return http.StatusOK, layout(m.NavLabel, m.Slug, ctx.Version, nav, m.Render(ctx))
 }
 

@@ -161,15 +161,23 @@ resolved trust model, not the original "loopback is enough" assumption.
 
 ```go
 type Module struct {
-    Slug      string                  // URL path segment; "" = root/overview
+    Slug      string                 // URL path segment; "" = root/overview
     NavLabel  string
-    Order     int                     // nav position
-    Available func(PageContext) bool  // can THIS machine offer this page right now?
-    Prepare   func(*PageContext) error // NEW per review: uniform per-request setup hook
+    Order     int                    // nav position
+    Available func(PageContext) bool // can THIS machine offer this page right now?
     Render    func(PageContext) string
 }
 
 func Register(m Module) { registry = append(registry, m) } // panics on a duplicate Slug — see §6.6
+
+// AsyncFragment: a GET-only, on-demand HTML fragment for request-scoped
+// work too slow to block a page's own render on (2026-09-04, see below).
+type AsyncFragment struct {
+    Path    string // full URL path, e.g. "/advice/commentary"
+    Handler func(PageContext) (status int, body string)
+}
+
+func RegisterAsync(a AsyncFragment) { asyncFragments = append(asyncFragments, a) } // panics on a duplicate Path
 ```
 
 Each page is a separate file that calls `Register(...)` in its own
@@ -178,15 +186,36 @@ availability/render, nothing else in the package changes. Verified today
 by `TestModulesRegisterThemselvesWithDistinctSlugs`, which runs against
 the real registry, not a fixture.
 
-**Review finding (2 architects), resolved**: the original design had no
-`Prepare` hook, so the advice route's need for an LLM call before
-rendering was going to be a hardcoded `if slug == "advice"` special case
-in the HTTP handler — directly contradicting "nothing else changes."
-`Prepare func(*PageContext) error`, called uniformly by the router for
-whichever module matched the request, closes this: advice's `Prepare`
-calls `llm.Complete` and populates `AdviceReply`/`AdviceErr`; every other
-module's `Prepare` is nil (skipped). The next module that needs
-request-scoped work gets the same hook, not a new special case.
+**Review finding (2 architects), resolved, later superseded (2026-09-04)**:
+the original design had no `Prepare` hook, so the advice route's need for
+an LLM call before rendering was going to be a hardcoded
+`if slug == "advice"` special case in the HTTP handler — directly
+contradicting "nothing else changes." `Prepare func(*PageContext) error`,
+called uniformly by the router for whichever module matched the request,
+closed this: advice's `Prepare` called `llm.Complete` and populated
+`AdviceReply`/`AdviceErr`; every other module's `Prepare` was nil
+(skipped).
+
+**Real bug found in production (2026-09-04): `Prepare` ran synchronously
+inside `route()`, before `Render` — so a slow or unreachable LLM (up to
+`completeTimeout`, 60s) blocked the *entire* advice page, including the
+heuristic findings half that needs no LLM at all and is supposed to be
+the immediate, always-available answer (see the `advice`
+heuristic-first-LLM-complements principle elsewhere in this doc). A user
+saw this as "the Advice page is just blank." `Prepare` is removed;
+replaced by `AsyncFragment` (`internal/dashboard/module.go`), a small
+registry parallel to `WriteAction` (§ below) for exactly this shape —
+request-scoped work too slow to do inline. A module registers a path
+(`RegisterAsync(AsyncFragment{Path: "/advice/commentary", Handler: ...})`)
+that `route()` dispatches *before* module lookup, returning a bare HTML
+fragment instead of a full page; the module's own `Render` emits a
+placeholder plus a small vanilla-JS `fetch()` (no framework, same
+convention `modules_clean.go`'s Preview/Apply buttons already use) that
+swaps the fragment in once it resolves. This keeps "adding a page means
+adding a file, nothing else changes" true for *this* shape too — the
+next module with slow request-scoped work registers its own
+`AsyncFragment`, not a new hardcoded path check — while making it
+structurally impossible for a page's own render to block on it.
 
 **Review finding (architect A), resolved**: `Register` must panic on a
 duplicate `Slug` (matching `http.ServeMux.Handle`'s own behavior for a

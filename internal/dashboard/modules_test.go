@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -176,52 +175,70 @@ func TestRenderGPUEmptyIsFriendly(t *testing.T) {
 	}
 }
 
-func TestRenderAdviceShowsTheReply(t *testing.T) {
-	out := renderAdvice(PageContext{AdviceReply: "**Restart** the app."})
+func TestRenderAdviceAlwaysShowsHeuristicFindingsAndAPlaceholderForTheLLM(t *testing.T) {
+	// renderAdvice no longer knows anything about the LLM's state at all —
+	// that's the whole point of the AsyncFragment split (it can't block on
+	// a slow/unreachable LLM if it never calls one). It always shows the
+	// heuristic findings plus a placeholder the client-side fetch replaces.
+	report := diag.Report{Findings: []diag.Finding{{Severity: diag.Critical, Title: "disk nearly full", Fixes: []string{"run vitals clean"}}}}
+	out := renderAdvice(PageContext{Report: report})
+	if !strings.Contains(out, "disk nearly full") || !strings.Contains(out, "run vitals clean") {
+		t.Errorf("renderAdvice should always include the heuristic finding and fix, got: %s", out)
+	}
+	if !strings.Contains(out, `id="ai-commentary"`) {
+		t.Errorf("renderAdvice should include the ai-commentary placeholder, got: %s", out)
+	}
+	if !strings.Contains(out, "/advice/commentary") {
+		t.Errorf("renderAdvice should fetch the commentary AsyncFragment, got: %s", out)
+	}
+}
+
+func TestRenderAdviceCommentaryShowsTheReply(t *testing.T) {
+	withFreshAdviceCache(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Write([]byte(`{"models":[{"name":"llama3.1:8b"}]}`))
+		case "/api/chat":
+			w.Write([]byte(`{"message":{"content":"**Restart** the app."}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	status, out := renderAdviceCommentary(PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: srv.URL}})
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want 200", status)
+	}
 	if !strings.Contains(out, "<strong>Restart</strong>") {
-		t.Errorf("renderAdvice should render the reply's Markdown (guide.RenderFragment turns **x** into <strong>x</strong>), got: %s", out)
+		t.Errorf("renderAdviceCommentary should render the reply's Markdown, got: %s", out)
 	}
 	if !strings.Contains(out, "the app.") {
-		t.Errorf("renderAdvice should include the reply's plain text too, got: %s", out)
+		t.Errorf("renderAdviceCommentary should include the reply's plain text too, got: %s", out)
 	}
 }
 
-func TestRenderAdviceShowsTheErrorInstead(t *testing.T) {
-	out := renderAdvice(PageContext{AdviceErr: errors.New("no reachable model")})
-	if !strings.Contains(out, "no reachable model") {
-		t.Errorf("renderAdvice should surface the error, got: %s", out)
+func TestRenderAdviceCommentaryShowsTheErrorInstead(t *testing.T) {
+	withFreshAdviceCache(t)
+	status, out := renderAdviceCommentary(PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: "http://127.0.0.1:1"}})
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want 200 even when no LLM is reachable", status)
+	}
+	if !strings.Contains(out, "No LLM reachable") {
+		t.Errorf("renderAdviceCommentary should surface the error, got: %s", out)
 	}
 }
 
-func TestRenderAdviceAlwaysShowsHeuristicFindingsRegardlessOfLLMState(t *testing.T) {
-	// The heuristic half needs no LLM at all — it must render identically
-	// whether the LLM answered, failed, or was never asked (Prepare not
-	// yet run), so a machine with no LLM configured still gets a useful
-	// advice page instead of an empty one.
-	report := diag.Report{Findings: []diag.Finding{{Severity: diag.Critical, Title: "disk nearly full", Fixes: []string{"run vitals clean"}}}}
-	for name, ctx := range map[string]PageContext{
-		"LLM answered":    {Report: report, AdviceReply: "some commentary"},
-		"LLM failed":      {Report: report, AdviceErr: errors.New("no reachable model")},
-		"LLM never asked": {Report: report},
-	} {
-		t.Run(name, func(t *testing.T) {
-			out := renderAdvice(ctx)
-			if !strings.Contains(out, "disk nearly full") || !strings.Contains(out, "run vitals clean") {
-				t.Errorf("renderAdvice(%s) should always include the heuristic finding and fix, got: %s", name, out)
-			}
-		})
-	}
-}
-
-func TestRenderAdviceEscapesTheErrorMessage(t *testing.T) {
+func TestRenderAdviceCommentaryEscapesTheErrorMessage(t *testing.T) {
 	// An error's message can embed arbitrary provider/network detail —
 	// this was a raw string-concat + manual html.EscapeString call before
 	// the html/template migration; confirm it's still escaped now that
 	// escaping is the template's job, not a call the author has to
 	// remember.
-	out := renderAdvice(PageContext{AdviceErr: errors.New("<script>alert(1)</script>")})
+	out := mustExecute(adviceErrorTmpl, "<script>alert(1)</script>")
 	if strings.Contains(out, "<script>alert(1)</script>") {
-		t.Errorf("AdviceErr message was not escaped: %s", out)
+		t.Errorf("error message was not escaped: %s", out)
 	}
 }
 
@@ -263,74 +280,31 @@ func TestPowerAndGPUModulesAreConditionallyAvailable(t *testing.T) {
 	}
 }
 
-func TestOnlyAdviceModuleHasAPrepareHook(t *testing.T) {
-	// The router (item 002) calls every matched module's Prepare
-	// uniformly, nil or not — modules with nothing request-scoped to do
-	// (everything except advice today) must leave it nil rather than a
-	// no-op func, so "does this module need extra setup" stays a cheap
-	// nil check instead of always calling through an empty closure.
-	for _, m := range sortedModules() {
-		hasPrepare := m.Prepare != nil
-		want := m.Slug == "advice"
-		if hasPrepare != want {
-			t.Errorf("module %q: Prepare != nil is %v, want %v", m.Slug, hasPrepare, want)
-		}
+func TestOnlyAdviceRegistersAnAsyncFragment(t *testing.T) {
+	// Runs against the real registry (populated by every module's own
+	// init()) — advice is the only page today with request-scoped work
+	// too slow to do inline; a future one would register its own
+	// AsyncFragment the same way, not grow this test.
+	if _, ok := findAsyncFragment("/advice/commentary"); !ok {
+		t.Error("advice should have registered /advice/commentary as an AsyncFragment")
+	}
+	if len(asyncFragments) != 1 {
+		t.Errorf("expected exactly one registered AsyncFragment, got %d: %+v", len(asyncFragments), asyncFragments)
 	}
 }
 
 // withFreshAdviceCache swaps defaultAdviceCache for a new, empty instance
 // for the duration of a test and restores the original after — the same
 // swap-and-restore shape withRegistry uses, needed because
-// TestPrepareAdviceCallsTheLLMAndPopulatesTheReply and
-// TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt each
-// expect prepareAdvice to actually run, not serve a result cached by
-// whichever of the two ran first in the same test binary.
+// TestRenderAdviceCommentaryShowsTheReply and
+// TestRenderAdviceCommentaryShowsTheErrorInstead each expect
+// renderAdviceCommentary to actually call the LLM, not serve a result
+// cached by whichever of the two ran first in the same test binary.
 func withFreshAdviceCache(t *testing.T) {
 	t.Helper()
 	old := defaultAdviceCache
 	defaultAdviceCache = newPrepareAdviceCache()
 	t.Cleanup(func() { defaultAdviceCache = old })
-}
-
-func TestPrepareAdviceCallsTheLLMAndPopulatesTheReply(t *testing.T) {
-	withFreshAdviceCache(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/tags":
-			w.Write([]byte(`{"models":[{"name":"llama3.1:8b"}]}`))
-		case "/api/chat":
-			w.Write([]byte(`{"message":{"content":"Restart the app."}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	ctx := PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: srv.URL}}
-	if err := prepareAdvice(&ctx); err != nil {
-		t.Fatalf("prepareAdvice: %v", err)
-	}
-	if ctx.AdviceReply != "Restart the app." {
-		t.Errorf("AdviceReply = %q, want the model's reply", ctx.AdviceReply)
-	}
-	if ctx.AdviceErr != nil {
-		t.Errorf("AdviceErr = %v, want nil on success", ctx.AdviceErr)
-	}
-}
-
-func TestPrepareAdvicePopulatesAdviceErrOnFailureRatherThanReturningIt(t *testing.T) {
-	withFreshAdviceCache(t)
-	// No reachable provider at all — Generate fails. prepareAdvice must
-	// still return nil and let renderAdvice show the friendly message via
-	// ctx.AdviceErr, the same graceful-degradation shape every other
-	// "no X available" case in this codebase uses.
-	ctx := PageContext{LLMOpts: llm.CompleteOptions{OllamaURL: "http://127.0.0.1:1"}}
-	if err := prepareAdvice(&ctx); err != nil {
-		t.Fatalf("prepareAdvice should absorb the LLM error into ctx.AdviceErr, not return it, got: %v", err)
-	}
-	if ctx.AdviceErr == nil {
-		t.Error("AdviceErr should be set when no provider is reachable")
-	}
 }
 
 func TestAdviceModuleIsAlwaysAvailable(t *testing.T) {
