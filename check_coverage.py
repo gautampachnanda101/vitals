@@ -49,16 +49,25 @@ FLOORS = {
     # end-to-end by cli_smoke_test.go, not unit tested for the same reason
     # as the rest of Run.
     "vitals/internal/advice": 37,
-    # clean: this package's whole job is filesystem/subprocess I/O, so
-    # Run/confirm/freeSpace/cleanDevCaches/cleanLinux/cleanMacOS/
-    # cleanWindows/ReclaimableSummary/optional and the clean_history.jsonl
-    # path/read/write wrappers (cleanHistoryPath/History/recordRun, same
-    # shape as internal/doctor's disk_history.json ones) are the
-    # irreducible live majority. Every pure decision function
-    # (devCacheDirs, osCacheDirs, freeSpaceRoot, withSudo-style OS/env
-    # parameterization, appendCleanHistoryTo, renderCleanHistory, plural)
-    # is at or near 100%.
-    "vitals/internal/clean": 50,
+    # clean (item 009): os.UserHomeDir and the os.Stdin confirm read are
+    # injected via a deps struct (homeDir, confirmReader), same shape as
+    # internal/tools'/internal/dupes'; optional()'s package-manager exec
+    # (brew/docker/npm/...) is injected via lookPath/runCmd fields added
+    # directly to the existing runner struct (Apply's own constructor),
+    # branch-tested for tool-not-on-PATH, dry-run's "would run" line, and
+    # a recordingRunCmd proving the exact argv without ever shelling out
+    # to a real package manager. cleanHistoryPath/History/recordRun
+    # gained real isolateConfigDir-based tests, same pattern internal/
+    # doctor's/internal/memhogs' own config-dir tests already use.
+    # 67.9% -> 86.2% measured. cleanLinux/cleanWindows stay at 0% on any
+    # one CI runner by construction (Apply's own runtime.GOOS switch —
+    # each OS in the 3-OS CI matrix naturally covers its own branch, the
+    # same class of OS-partitioned gap accepted elsewhere in this repo,
+    # e.g. internal/memhogs'). Remaining real gaps, not yet closed:
+    # freeSpace/History/appendCleanHistoryTo's own error branches
+    # (disk.Usage/os.Create failing) would need a real permission/IO
+    # failure to exercise honestly.
+    "vitals/internal/clean": 84,
     "vitals/internal/config": 99,  # 100.0% measured; 99 for float-rounding margin
     # dashboard: floor dropped from 98 with roadmap item 002 (the vitals
     # dashboard MVP), not a regression — Serve (dashboard.go) is new,

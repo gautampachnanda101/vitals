@@ -99,13 +99,18 @@ functions need an injectable seam.
       them needs several more `httptest` response-shape variations per
       provider, not a quick pattern application like the rest of this
       package got this pass.
-- [ ] `internal/clean` (67.9%, floor 50) — `Run`/`confirm`/`freeSpace`/
-      `cleanDevCaches`/`cleanLinux`/`cleanMacOS`/`cleanWindows`/
-      `ReclaimableSummary`/`optional` and the history file read/write
-      wrappers are live; pure decision functions are already ~100%.
-      `Apply` (added 2026-09-03) is a better seam than `Run` now exists
-      — the OS-specific `clean*` functions and `optional` (subprocess
-      exec for brew/docker/npm/etc.) still need their own injection.
+- [x] `internal/clean` (67.9% → 86.2%, floor 50 → 84) — `os.UserHomeDir`/
+      the confirm read injected via a `deps` struct; `optional`'s
+      package-manager exec injected via `lookPath`/`runCmd` fields added
+      to the existing `runner` struct (`Apply`'s constructor), so a
+      `recordingRunCmd` proves the exact argv without ever shelling out
+      to brew/docker/npm for real; `cleanHistoryPath`/`History`/
+      `recordRun` gained real `isolateConfigDir`-based tests. Remaining:
+      `cleanLinux`/`cleanWindows` stay 0% on any one CI runner by
+      construction (`Apply`'s own `runtime.GOOS` switch — the 3-OS CI
+      matrix naturally covers each branch on its own runner);
+      `freeSpace`/`History`/`appendCleanHistoryTo`'s own error branches
+      need a real permission/IO failure to exercise honestly, not done.
 - [x] `internal/dupes` (68.4% → 93.7%, floor 68 → 93) — `os.UserHomeDir`
       and the `os.Stdin` confirm read are both injected via a `deps`
       struct (`homeDir`, `confirmReader`), same shape `internal/tools`'

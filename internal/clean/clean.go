@@ -9,6 +9,7 @@ package clean
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -25,6 +26,18 @@ import (
 	"vitals/internal/ui"
 )
 
+// deps is the live OS surface Run/confirm read from, pulled out so a
+// test can substitute fakes — same shape as internal/tools'/internal/
+// dupes'/internal/metrics'/internal/guide's/internal/llm's deps
+// structs. defaultDeps wires the real calls; production always goes
+// through it via Run.
+type deps struct {
+	homeDir       func() (string, error)
+	confirmReader io.Reader
+}
+
+var defaultDeps = deps{homeDir: os.UserHomeDir, confirmReader: os.Stdin}
+
 // Options controls a cleanup run.
 type Options struct {
 	DryRun      bool // report what would be deleted, delete nothing
@@ -39,6 +52,17 @@ type runner struct {
 
 	recordsMu sync.Mutex
 	records   []PurgeRecord // one entry per non-empty purgeContents call, for the audit log
+
+	// lookPath/runCmd back optional()'s package-manager cleanup calls
+	// (brew/docker/npm/...) — injected so a test can prove the exact
+	// argv a call site builds (a recordingRunCmd, same shape internal/
+	// tools' does) without ever actually shelling out to a real package
+	// manager (a hung/networked optional() call was flagged as a real,
+	// accepted risk by this item's own dashboard write-action security
+	// review — see docs/roadmap/items/005-dashboard-write-actions/
+	// design.md §7 finding 2).
+	lookPath func(name string) (string, error)
+	runCmd   func(name string, args ...string) error
 }
 
 // Result is what a cleanup run actually did — the structured form Run
@@ -61,7 +85,11 @@ type Result struct {
 // logic, the same relationship doctor.Assess has to doctor.Collect+
 // Analyze.
 func Apply(home string, opts Options) Result {
-	r := &runner{opts: opts, home: home}
+	r := &runner{
+		opts: opts, home: home,
+		lookPath: exec.LookPath,
+		runCmd:   func(name string, args ...string) error { return exec.Command(name, args...).Run() },
+	}
 
 	freeBefore := freeSpace()
 
@@ -99,14 +127,16 @@ func Apply(home string, opts Options) Result {
 }
 
 // Run executes the cleanup and prints a report.
-func Run(opts Options) error {
+func Run(opts Options) error { return run(defaultDeps, opts) }
+
+func run(d deps, opts Options) error {
 	if opts.ShowHistory {
 		ui.Header("CLEAN HISTORY")
 		fmt.Print(renderCleanHistory(History()))
 		return nil
 	}
 
-	home, err := os.UserHomeDir()
+	home, err := d.homeDir()
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
@@ -115,7 +145,7 @@ func Run(opts Options) error {
 	fmt.Printf("  OS: %s/%s   Home: %s\n", runtime.GOOS, runtime.GOARCH, home)
 	if opts.DryRun {
 		ui.Warnf("dry-run: nothing will be deleted")
-	} else if !opts.Assume && !confirm() {
+	} else if !opts.Assume && !confirm(d.confirmReader) {
 		ui.Infof("aborted")
 		return nil
 	}
@@ -145,9 +175,9 @@ func Run(opts Options) error {
 	return nil
 }
 
-func confirm() bool {
+func confirm(r io.Reader) bool {
 	fmt.Print(ui.Yellow + "This permanently deletes cache/log/temp files. Continue? [y/N] " + ui.Reset)
-	sc := bufio.NewScanner(os.Stdin)
+	sc := bufio.NewScanner(r)
 	if !sc.Scan() {
 		return false
 	}
@@ -433,7 +463,7 @@ func removeTree(path string, dryRun bool) (int64, error) {
 }
 
 func (r *runner) optional(name string, args ...string) {
-	if _, err := exec.LookPath(name); err != nil {
+	if _, err := r.lookPath(name); err != nil {
 		return
 	}
 	if r.opts.DryRun {
@@ -441,5 +471,5 @@ func (r *runner) optional(name string, args ...string) {
 		return
 	}
 	fmt.Printf("    run: %s %s\n", name, strings.Join(args, " "))
-	_ = exec.Command(name, args...).Run()
+	_ = r.runCmd(name, args...)
 }
