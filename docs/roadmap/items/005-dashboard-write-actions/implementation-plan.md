@@ -63,19 +63,67 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       `TestPaletteMeetsWCAGAAAForNormalText` proved only reaches
       6.32:1/6.83:1 contrast, below the required 7:1 — fixed by
       switching to `--bg`, an already-verified-AAA combination.
-- [ ] A single-flight guard against concurrent `/clean/apply` calls
-      (same shape as `prepareAdviceCache`'s single-flight pattern in
-      `internal/dashboard/modules_advice.go`).
-- [ ] Only after the above ships and is reviewed: an actual apply/confirm
-      flow for `clean`, matching the CLI's own interactive-confirmation
-      safety default in spirit — including `/clean/apply`'s
-      non-blocking/progress-feedback story and the actual UX spec (what
-      preview shows, per-category exclusion, partial-failure display).
-- [ ] Consider a preview→apply single-use token as defense-in-depth
-      (security reviewer's recommendation, not a hard requirement — the
-      same-origin check is the real security boundary here).
-- [ ] `dupes`/`--hardlink` exposure, if still wanted at this point,
-      follows the same pattern.
+- [x] A security-focused review of the concrete `/clean/apply` design
+      (design.md §7), before implementation — see design.md's "Security
+      review outcome (2026-09-03)". Verdict: go-with-changes, nothing
+      blocking. Closed the preview→apply single-use token question
+      (not needed — see next item); flagged as an accepted, non-blocking
+      limitation that a hung `optional()` subprocess call (no timeout
+      anywhere in `internal/clean`) wedges the single-flight guard for
+      the life of the server process, confirmed live during this same
+      pass (`brew cleanup -s` made real network calls under a throwaway
+      `$HOME`); confirmed the confirm-body validation and request/
+      response shape are sound for a route that actually deletes.
+- [x] A single-flight guard against concurrent `/clean/apply` calls —
+      `cleanApplyMu sync.Mutex` + `TryLock`, `internal/dashboard/
+      modules_clean.go`, matching design.md §7's own sketch (simpler
+      than `prepareAdviceCache`'s TTL-cache shape: no caching semantics
+      wanted here, just outright rejection of a concurrent second call).
+      Concurrency itself is tested with two real goroutines racing
+      through `handleCleanApply`
+      (`TestHandleCleanApplyRejectsAConcurrentSecondCall`), not just a
+      pre-locked mutex.
+- [x] The actual apply/confirm flow for `clean` — `POST /clean/apply`
+      registered as a second `WriteAction` alongside `/clean/preview`,
+      `internal/dashboard/modules_clean.go`. Body must be exactly
+      `{"confirm": true}`; missing/false/malformed is rejected 400
+      before `clean.Apply` ever runs (via an injected `cleanApplyFn`,
+      swappable in tests — `clean.Apply` in non-dry-run mode is never
+      safe to call from an automated test on any OS, matching
+      `internal/clean/clean_test.go`'s own reasoning for why only
+      `DryRun: true` is exercised there). Response mirrors
+      `renderCleanPreview`'s `html/template` shape exactly
+      (`renderCleanApplyResult`), with its own crafted-path escaping
+      test. Client-side: an "Apply" button, hidden until a preview
+      response has rendered, gated by a `window.confirm()` prompt before
+      its own POST — the CLI's interactive y/N confirmation, in spirit,
+      on top of (not instead of) the same-origin check that's the actual
+      security boundary. Verified end to end against a real running
+      dashboard: `GET /clean` (button markup), `POST /clean/preview`,
+      `POST /clean/apply` with missing/false confirm (400), cross-origin
+      Origin header (403), and a real confirmed apply against a
+      throwaway `$HOME` that actually deleted the target file and
+      returned "Freed: 50.00 KB". `dashboard_smoke_test.go` gained cases
+      for the confirm-validation and cross-origin paths — deliberately
+      not a real same-origin apply, mirroring `cli_smoke_test.go`'s own
+      exclusion of `clean` without `--dry-run` (see this same commit's
+      `assertCrossOriginPostRejected`/`assertPostRouteWithBody`).
+- [x] Consider a preview→apply single-use token as defense-in-depth —
+      considered and **not implemented**, per the security review above:
+      `sameOriginOnly` is the real boundary (applied to every non-GET/
+      HEAD request on `ServeLocal` uniformly), and a same-origin replay
+      is the user's own browser doing what the user already asked it to
+      do, not a new threat a token would close. Adding one would give
+      the dashboard its first piece of server-side session state for a
+      threat §1 already excludes. This closes the question rather than
+      leaving it open.
+- [ ] `dupes`/`--hardlink` exposure — not picked up this pass. Left for
+      later, per this task's own conditional wording ("if still wanted
+      at this point"): `/clean/apply` was the item's concrete, scoped
+      deliverable; `dupes` exposure is a new write surface that would
+      want its own short design note (what does "confirm" mean for a
+      hardlink operation, what's the response shape) rather than being
+      freehanded as a drive-by addition here.
 
 ## Exit criteria
 

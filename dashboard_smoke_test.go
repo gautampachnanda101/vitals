@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+// cleanApplyConfirmBody is a valid, well-formed confirm body — used only
+// in a case that must still be rejected (cross-origin), never in a case
+// that would let the real handler call clean.Apply and actually delete
+// something on the machine running this test. See the /clean/apply
+// assertions inside TestDashboardSmoke below for why a real same-origin
+// /clean/apply call is deliberately never exercised here, mirroring
+// cli_smoke_test.go's own exclusion of `clean` without
+// --dry-run.
+const cleanApplyConfirmBody = `{"confirm": true}`
+
 // dashboardURLRE matches the "serving the dashboard at http://127.0.0.1:PORT/"
 // line ServeLocal (internal/guide/serve.go) prints once it's actually
 // listening — the only portable way to learn the ephemeral port --addr
@@ -67,6 +77,17 @@ func TestDashboardSmoke(t *testing.T) {
 	// fell through to the GET route and 404'd), invisible to any test
 	// that only called routeWrite directly.
 	assertPostRoute(t, url, "clean/preview", http.StatusOK, "Would reclaim")
+	// /clean/apply is deliberately never exercised here with a body that
+	// would let it actually run clean.Apply — see
+	// cleanApplyConfirmBody's own comment and design.md §7's testing
+	// section, mirroring cli_smoke_test.go's exclusion of `clean` without
+	// --dry-run. What IS safe, and is exercised below, never reaches
+	// clean.Apply at all: confirm-body validation (rejected before the
+	// single-flight guard) and the cross-origin same-origin check
+	// (rejected before the handler runs).
+	assertPostRouteWithBody(t, url, "clean/apply", "", http.StatusBadRequest, "confirm")
+	assertPostRouteWithBody(t, url, "clean/apply", `{"confirm": false}`, http.StatusBadRequest, "")
+	assertCrossOriginPostRejected(t, url, "clean/apply", cleanApplyConfirmBody)
 	assertHistoryWasRecorded(t, scratch)
 
 	assertGracefulShutdown(t, cmd)
@@ -171,6 +192,57 @@ func assertPostRoute(t *testing.T, base, path string, wantStatus int, wantBodyCo
 	}
 	if wantBodyContains != "" && !strings.Contains(string(body), wantBodyContains) {
 		t.Errorf("POST %s%s body missing %q:\n%s", base, path, wantBodyContains, body)
+	}
+}
+
+// assertPostRouteWithBody mirrors assertPostRoute but sends body as the
+// request payload — used for /clean/apply's confirm-body validation
+// cases, where the point of the assertion is that a bad body is rejected
+// with 400 before clean.Apply ever runs. Like assertPostRoute, no Origin
+// header is set, matching a same-machine caller.
+func assertPostRouteWithBody(t *testing.T, base, path, body string, wantStatus int, wantBodyContains string) {
+	t.Helper()
+	resp, err := http.Post(base+path, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Errorf("POST %s%s: %v", base, path, err)
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Errorf("POST %s%s (body %q) = %d, want %d:\n%s", base, path, body, resp.StatusCode, wantStatus, respBody)
+	}
+	if wantBodyContains != "" && !strings.Contains(string(respBody), wantBodyContains) {
+		t.Errorf("POST %s%s body missing %q:\n%s", base, path, wantBodyContains, respBody)
+	}
+}
+
+// assertCrossOriginPostRejected sends a POST carrying an Origin header
+// for a page this server never served, and asserts guide.ServeLocal's
+// sameOriginOnly middleware rejects it with 403 before the request ever
+// reaches the write action's own handler — the actual regression
+// design.md's whole same-origin model exists to prevent. body is a
+// deliberately valid confirm body: proving the *cross-origin* check
+// alone is what blocks this call (not a 400 from body validation) is the
+// point, and the request is still safe because sameOriginOnly runs
+// before routeWrite/handleCleanApply ever sees it.
+func assertCrossOriginPostRejected(t *testing.T, base, path, body string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Errorf("POST %s%s (cross-origin): %v", base, path, err)
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-origin POST %s%s = %d, want 403:\n%s", base, path, resp.StatusCode, respBody)
 	}
 }
 
