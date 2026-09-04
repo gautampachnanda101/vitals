@@ -171,17 +171,30 @@ functions need an injectable seam.
       port. Remaining gaps: the exported `Serve()` one-liner (a real
       blocking HTTP server, no clean in-test interrupt) and
       `trimFloat`'s unreachable defensive branch.
-- [ ] `main` / `vitals` package (40.9%, floor 40) — `run()`'s dispatch/
-      validation logic is already unit tested; the remaining gap is
-      each subcommand's actual `Run`/`RunFocus` call
+- [x] `main` / `vitals` package (40.9%, floor 40, unchanged — **design
+      question resolved, no code change**) — `run()`'s flag-parsing and
+      validation logic (unknown commands, missing args, `--schema`/
+      `--compare` handling) is already unit tested directly. The
+      remaining gap is each subcommand's one-line call into its own
+      package's already-well-tested `Run`/`RunFocus`/`Serve`
       (doctor/clean/dupes/tools/memhogs/memcheck/gpu/monitor/advice/
-      llm/metrics.Serve/mcp.Serve/guide --web/dashboard.Serve). Once
-      each of those packages' own `Run` becomes more injectable per the
-      tasks above, revisit whether `main`'s dispatch can inject through
-      to them too, or whether `cli_smoke_test.go`/`dashboard_smoke_test.go`
-      remain the right validation layer for this specific
-      one-line-per-subcommand dispatch code — a real design question,
-      not an assumed yes.
+      llm/metrics.Serve/mcp.Serve/guide --web/dashboard.Serve) — by now
+      every one of those packages has its own logic covered in
+      isolation via the per-package work above, so injecting through
+      `main`'s dispatch too would just re-exercise that same
+      already-tested logic a second time, via function-pointer
+      indirection added *only* to satisfy this package's own coverage
+      number. What that one-line call site actually needs proving is
+      that the wiring is right end to end — right flag parsed into the
+      right field, right package invoked, right exit code — which is
+      precisely what `cli_smoke_test.go` (execs the real compiled
+      binary for every read-only command, on all three OSes) and
+      `dashboard_smoke_test.go` (the one blocking-server exception)
+      already do. Conclusion: `cli_smoke_test.go`/`dashboard_smoke_test.go`
+      are the right validation layer for this dispatch code, not further
+      in-process injection — `main` stays the one explicit exception
+      the exit criteria below already carves out for `os.Exit`-driven
+      glue, with this as its reviewed justification.
 
 Already at or near the target, no work needed: `internal/config` (99%,
 gained a generated `DefaultFileContents()` alongside `info`'s config-block
