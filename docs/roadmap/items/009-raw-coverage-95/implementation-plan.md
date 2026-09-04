@@ -98,10 +98,18 @@ functions need an injectable seam.
       `Apply` (added 2026-09-03) is a better seam than `Run` now exists
       — the OS-specific `clean*` functions and `optional` (subprocess
       exec for brew/docker/npm/etc.) still need their own injection.
-- [ ] `internal/dupes` (68.4%, floor 68) — `Run`/
-      `applyHardlinksWithConfirmation`/`confirmHardlink` are live
-      (`os.Stdin` prompts, real hardlinking); `render` is already fully
-      tested via stdout-capture.
+- [x] `internal/dupes` (68.4% → 93.7%, floor 68 → 93) — `os.UserHomeDir`
+      and the `os.Stdin` confirm read are both injected via a `deps`
+      struct (`homeDir`, `confirmReader`), same shape `internal/tools`'
+      already uses; `Run`/`applyHardlinksWithConfirmation`/
+      `confirmHardlink` are now one-line wrappers over `run`/`.../
+      confirmHardlink(d, ...)`, tested against real `t.TempDir()`
+      fixtures (a real duplicate pair, a real hardlink applied, a real
+      aborted confirmation, a real failed `--output` write).
+      `hashPrefix`/`hashFile` gained their missing-file error case.
+      Remaining gap: `Scan`'s `WalkDir`-error branch and `linkOver`'s
+      `Link`/`Rename`-failure branches need a real OS-level permission/IO
+      failure to exercise honestly — not yet done.
 - [ ] `internal/mcp` (68.7%, floor 68) — `tools()` registers each
       tool's `Handler` closure, which calls live `doctor.Assess`/`llm`/
       `gpu` functions only when actually invoked; existing tests

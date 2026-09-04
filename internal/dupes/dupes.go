@@ -23,6 +23,18 @@ import (
 	"vitals/internal/ui"
 )
 
+// deps is the live OS surface Run/applyHardlinksWithConfirmation read
+// from, pulled out so a test can substitute fakes — same shape as
+// internal/tools' deps struct (lookPath/runCmd/confirmReader/goos).
+// defaultDeps wires the real calls; production code always goes through
+// it via Run.
+type deps struct {
+	homeDir       func() (string, error)
+	confirmReader io.Reader
+}
+
+var defaultDeps = deps{homeDir: os.UserHomeDir, confirmReader: os.Stdin}
+
 // Options configures a scan.
 type Options struct {
 	Root     string // directory to scan; defaults to the home directory
@@ -70,9 +82,11 @@ const partialHashBytes = 64 * 1024
 // anything — duplicates are a user's own data, unlike the regenerable caches
 // `vitals clean` removes, so the right "fix" is left to the person reviewing
 // the list, not an automated action.
-func Run(opts Options) error {
+func Run(opts Options) error { return run(defaultDeps, opts) }
+
+func run(d deps, opts Options) error {
 	if opts.Root == "" {
-		home, err := os.UserHomeDir()
+		home, err := d.homeDir()
 		if err != nil {
 			return fmt.Errorf("cannot determine home directory: %w", err)
 		}
@@ -101,7 +115,7 @@ func Run(opts Options) error {
 	}
 
 	if opts.Hardlink && len(result.Groups) > 0 {
-		if err := applyHardlinksWithConfirmation(result, opts.Yes); err != nil {
+		if err := applyHardlinksWithConfirmation(d, result, opts.Yes); err != nil {
 			return err
 		}
 	}
@@ -117,11 +131,11 @@ func Run(opts Options) error {
 // applyHardlinksWithConfirmation confirms (unless yes) then runs
 // ApplyHardlinks, printing a summary — the same UX bar `vitals clean` holds
 // its own destructive action to, even though hardlinking destroys nothing.
-func applyHardlinksWithConfirmation(result Result, yes bool) error {
+func applyHardlinksWithConfirmation(d deps, result Result, yes bool) error {
 	fmt.Println()
 	fmt.Printf("  %s hardlink %d duplicate group(s), reclaiming up to %s\n",
 		ui.Bold+"about to"+ui.Reset, len(result.Groups), ui.HumanBytes(result.WastedBytes))
-	if !yes && !confirmHardlink() {
+	if !yes && !confirmHardlink(d.confirmReader) {
 		ui.Infof("aborted")
 		return nil
 	}
@@ -134,9 +148,9 @@ func applyHardlinksWithConfirmation(result Result, yes bool) error {
 	return nil
 }
 
-func confirmHardlink() bool {
+func confirmHardlink(r io.Reader) bool {
 	fmt.Print(ui.Yellow + "This replaces duplicate files with hardlinks (no data is deleted). Continue? [y/N] " + ui.Reset)
-	sc := bufio.NewScanner(os.Stdin)
+	sc := bufio.NewScanner(r)
 	if !sc.Scan() {
 		return false
 	}

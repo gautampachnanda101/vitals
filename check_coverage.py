@@ -86,11 +86,19 @@ FLOORS = {
     # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
     # or near 100%.
     "vitals/internal/doctor": 54,
-    # dupes: Run/applyHardlinksWithConfirmation/confirmHardlink are live
-    # (os.Stdin prompts, real hardlinking); render (a print function
-    # despite its name) is now fully tested via the same stdout-capture
-    # pattern as internal/monitor/internal/memcheck.
-    "vitals/internal/dupes": 68,
+    # dupes (item 009): os.UserHomeDir and the os.Stdin confirm prompt are
+    # both injected via a deps struct (homeDir, confirmReader), same
+    # shape as internal/tools'; Run/applyHardlinksWithConfirmation/
+    # confirmHardlink are now one-line wrappers over run/.../confirmHardlink(d,
+    # ...), exercised against real temp-dir fixtures (real duplicate
+    # files, a real hardlink, a real aborted confirmation, a real failed
+    # --output write). Scan/hashPrefix/hashFile/linkOver were already
+    # real-filesystem-tested via t.TempDir(); hashPrefix/hashFile gained
+    # their missing-file error case. 93.7% measured; the remaining gaps
+    # (Scan's WalkDir-error branch, linkOver's Link/Rename-failure
+    # branches) need a real OS-level permission/IO failure to exercise
+    # honestly, not yet done here.
+    "vitals/internal/dupes": 93,
     # gpu: Probe (the actual nvidia-smi/rocm-smi/ioreg exec.Command calls)
     # is still genuinely live and untested. Run's printing half is no
     # longer bundled with it: printReport(devs []Device) is now the pure
