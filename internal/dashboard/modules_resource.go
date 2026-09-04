@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"strings"
 
 	"vitals/internal/doctor"
 	"vitals/internal/ui"
@@ -98,13 +99,30 @@ func renderPower(s doctor.Snapshot) string {
 	return out
 }
 
+// renderGPU mirrors internal/gpu/report.go's Run: it never prints a
+// telemetry field vitals didn't actually get a real reading for. A bare
+// "0% util, 0 B / 0 B VRAM" for a GPU with no discrete VRAM (every Apple
+// Silicon GPU — unified memory, no separate VRAM pool to report; doctor
+// tracks that pressure via the Memory page instead, see
+// internal/gpu/gpu.go's parseIORegApple) reads as broken telemetry, not
+// as "there's genuinely nothing separate to report here." A real user
+// saw exactly that and asked "that looks wrong?" — this is the fix.
 func renderGPU(s doctor.Snapshot) string {
 	if len(s.GPUs) == 0 {
 		return `<p class="unavailable">No GPU detected.</p>`
 	}
 	var out string
 	for _, g := range s.GPUs {
-		out += row(g.Name, fmt.Sprintf("%.0f%% util, %s / %s VRAM", g.UtilPct, ui.HumanBytes(int64(g.VRAMUsed)), ui.HumanBytes(int64(g.VRAMTotal))))
+		var detail string
+		switch {
+		case g.VRAMTotal > 0:
+			detail = fmt.Sprintf("%.0f%% util, %s / %s VRAM", g.UtilPct, ui.HumanBytes(int64(g.VRAMUsed)), ui.HumanBytes(int64(g.VRAMTotal)))
+		case strings.HasPrefix(g.Name, "Apple"):
+			detail = "uses unified memory, shared with system RAM — see the Memory page for RAM pressure"
+		default:
+			detail = "no utilisation/VRAM telemetry available for this GPU"
+		}
+		out += row(g.Name, detail)
 	}
 	return out
 }

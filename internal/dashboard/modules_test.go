@@ -135,6 +135,30 @@ func TestRenderGPUListsEveryDevice(t *testing.T) {
 	}
 }
 
+func TestRenderGPUExplainsUnifiedMemoryInsteadOfShowingZeroVRAM(t *testing.T) {
+	// A real user report: an Apple Silicon GPU (no discrete VRAM to
+	// report — see internal/gpu/gpu.go's parseIORegApple) rendered as
+	// "0% util, 0 B / 0 B VRAM", which reads as broken telemetry rather
+	// than "there's genuinely nothing separate to report here."
+	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{Name: "Apple M3 Pro"}}})
+	if strings.Contains(out, "0 B / 0 B") || strings.Contains(out, "0% util") {
+		t.Errorf("renderGPU should never print a bare zero VRAM/util reading, got: %s", out)
+	}
+	if !strings.Contains(out, "unified memory") {
+		t.Errorf("an Apple GPU with no VRAM reading should explain why (unified memory), got: %s", out)
+	}
+}
+
+func TestRenderGPUUnknownVendorWithNoTelemetrySaysSoRatherThanZero(t *testing.T) {
+	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{Name: "Some GPU"}}})
+	if strings.Contains(out, "0 B / 0 B") || strings.Contains(out, "0% util") {
+		t.Errorf("renderGPU should never print a bare zero VRAM/util reading, got: %s", out)
+	}
+	if !strings.Contains(out, "no utilisation/VRAM telemetry") {
+		t.Errorf("a non-Apple GPU with no telemetry should say so explicitly, got: %s", out)
+	}
+}
+
 func TestResourcePageHeadlinesTheWorstFindingWhenThereIsOne(t *testing.T) {
 	// The zero-findings path is already covered by
 	// TestResourcePageUsesAnalyzeResourceNotFullAnalyze; this covers the
