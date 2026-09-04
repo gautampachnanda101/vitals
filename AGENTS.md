@@ -203,6 +203,21 @@ to exist *before* implementation starts on anything non-trivial; the
   vitals defers to ncdu/gdu/dust/btop/htop/nvtop/jdupes/smartctl instead of
   rebuilding their specialty. If a feature request looks like "build a
   worse version of an established tool," point at `vitals tools` instead.
+- **`docs/user-guide.md` and the public site (`site/index.html`) describe
+  current behavior, not behavior as of whenever they were last touched.**
+  Any commit that changes a command's availability, output shape, or
+  default (a page that used to be conditionally hidden and is now always
+  shown, a JSON field renamed, a dependency added, a flag's default
+  changed) updates the matching prose in the same commit — not as a
+  follow-up once "someone notices." This drifted stale at least three
+  times in one session before being made explicit here (advice's
+  LLM-availability gating, `vitals llm`'s model-listing behavior, and the
+  dashboard's page list, all caught only because the user asked "is this
+  accurate?" rather than because the change's own commit updated the
+  docs it made false). Before considering a behavior-changing task done,
+  grep `docs/user-guide.md` and `site/index.html` for the command/feature
+  you touched and re-read what it currently claims — don't assume it's
+  still true.
 
 ## Testing conventions
 

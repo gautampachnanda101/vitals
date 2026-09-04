@@ -153,9 +153,10 @@ for any reason, `doctor` just skips it rather than failing the command.
 ## vitals dashboard
 
 `dashboard` serves the same correlation `doctor` prints in a terminal as
-browsable pages instead — an overview plus one page per resource. It binds
-`127.0.0.1` only and opens your default browser automatically; nothing
-leaves this machine, the same promise `vitals guide --web` makes.
+browsable pages instead — an overview, one page per resource, an advice
+page, and a clean page. It binds `127.0.0.1` only and opens your default
+browser automatically; nothing leaves this machine, the same promise
+`vitals guide --web` makes.
 
 ```bash
 vitals dashboard                # random port, opens your browser
@@ -164,9 +165,22 @@ vitals dashboard --no-open      # print the URL instead of launching a browser
 ```
 
 Each page only appears in the nav when this machine can actually offer it:
-no GPU page without a GPU, no power page without a battery, no advice page
-without a reachable local or cloud LLM. Press Ctrl+C in the terminal that
+no GPU page without a GPU, no power page without a battery. The advice
+page is always available — its rule-based findings need no LLM at all;
+an LLM, when reachable, only adds AI commentary on top (see
+[vitals advice](#vitals-advice)). Press Ctrl+C in the terminal that
 launched it to stop.
+
+The clean page mirrors `vitals clean` for the browser: a **Preview**
+button measures what a real cleanup would reclaim, with no filesystem
+mutation, and only once that's shown does an **Apply** button appear.
+Apply asks for confirmation in the browser before it runs, then
+performs the same cache/log/temp cleanup `vitals clean` does — this
+genuinely deletes files, the same as running the CLI command without
+`--dry-run`. Every mutating request the dashboard accepts is rejected
+unless it comes from the dashboard's own page (a same-origin check,
+independent of the in-page confirmation) — a browser tab from another
+site can never trigger a cleanup on your machine.
 
 ## Resource deep dives: cpu, mem, disk, net, power
 
