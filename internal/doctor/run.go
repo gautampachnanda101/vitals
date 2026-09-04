@@ -100,7 +100,7 @@ func Run(opts RunOptions) int {
 
 	ui.Header("DOCTOR")
 	fmt.Printf("  %s\n\n", ui.Key(time.Now().Format("2006-01-02 15:04:05")))
-	fmt.Printf("  %s\n\n", summaryLine(snap))
+	fmt.Printf("  %s\n\n", SummaryLine(snap))
 
 	PrintFindings(report.SortedBySeverity(), true)
 
@@ -157,10 +157,17 @@ func PrintFindings(findings []diag.Finding, spaced bool) {
 	}
 }
 
-// summaryLine renders the at-a-glance numbers behind the verdict — cpu/mem/
-// disk/power — so "healthy" is independently checkable instead of a bare
+// SummaryLine renders the at-a-glance numbers behind the verdict — cpu/mem/
+// disk/net/power — so "healthy" is independently checkable instead of a bare
 // assertion, and a warning has real numbers to compare against instantly.
-func summaryLine(s Snapshot) string {
+// Every resource doctor actually collects appears here unconditionally
+// (net included, even at zero traffic) specifically so a machine with no
+// findings for a resource still shows that it was measured, not silently
+// skipped — see vitals/internal/advice's own use of this for exactly that
+// reason (a heuristic answer with no LLM reachable used to show findings
+// only, with nothing at all confirming CPU/disk/network were even looked
+// at when they turned out healthy).
+func SummaryLine(s Snapshot) string {
 	parts := []string{
 		fmt.Sprintf("🖥️ cpu %s", pct(s.CPU.UsedPct, 70, 90)),
 		fmt.Sprintf("🧠 mem %s", pct(s.Memory.UsedPct, thresholds.RAMWarnPercent, thresholds.RAMHighPercent)),
@@ -168,6 +175,14 @@ func summaryLine(s Snapshot) string {
 	if d, ok := fullestDisk(s.Disks); ok {
 		parts = append(parts, fmt.Sprintf("💾 disk %s (%s)",
 			pct(d.UsedPct, thresholds.DiskWarnPercent, thresholds.DiskCriticalPercent), d.Mount))
+	}
+	if len(s.Net) > 0 {
+		var rx, tx float64
+		for _, n := range s.Net {
+			rx += n.RxBytesPerSec
+			tx += n.TxBytesPerSec
+		}
+		parts = append(parts, fmt.Sprintf("🌐 net ↓%s/s ↑%s/s", ui.HumanBytes(int64(rx)), ui.HumanBytes(int64(tx))))
 	}
 	if s.Power.OnBattery && s.Power.Percent > 0 {
 		parts = append(parts, fmt.Sprintf("🔋 battery %s", ui.GradeLow(fmt.Sprintf("%.0f%%", s.Power.Percent), s.Power.Percent, 20, 8)))

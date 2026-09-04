@@ -38,26 +38,48 @@ func TestFullestDiskPicksTheHighestUsagePercent(t *testing.T) {
 	}
 }
 
-func TestSummaryLineIncludesDiskAndBatteryWhenPresent(t *testing.T) {
+func TestSummaryLineIncludesDiskNetAndBatteryWhenPresent(t *testing.T) {
 	s := Snapshot{
 		CPU:    CPU{UsedPct: 10},
 		Memory: Memory{UsedPct: 20},
 		Disks:  []Disk{{Mount: "/", UsedPct: 30}, {Mount: "/data", UsedPct: 90}},
+		Net:    []NetIface{{Name: "en0", RxBytesPerSec: 1024, TxBytesPerSec: 512}},
 		Power:  Power{OnBattery: true, Percent: 55},
 	}
-	got := ui.StripANSI(summaryLine(s))
-	for _, want := range []string{"cpu 10%", "mem 20%", "disk 90% (/data)", "battery 55%"} {
+	got := ui.StripANSI(SummaryLine(s))
+	for _, want := range []string{"cpu 10%", "mem 20%", "disk 90% (/data)", "net", "battery 55%"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("summaryLine missing %q, got %q", want, got)
+			t.Errorf("SummaryLine missing %q, got %q", want, got)
 		}
 	}
 }
 
 func TestSummaryLineOmitsBatteryWhenOnACPower(t *testing.T) {
 	s := Snapshot{CPU: CPU{UsedPct: 10}, Memory: Memory{UsedPct: 20}}
-	got := summaryLine(s)
+	got := SummaryLine(s)
 	if strings.Contains(got, "battery") {
-		t.Errorf("summaryLine on AC power should not mention battery, got %q", got)
+		t.Errorf("SummaryLine on AC power should not mention battery, got %q", got)
+	}
+}
+
+func TestSummaryLineShowsNetEvenAtZeroTraffic(t *testing.T) {
+	// The whole point: an idle network interface must still show up here,
+	// so a healthy/idle network reads as "checked, nothing to report" —
+	// not indistinguishable from "never looked at" the way an omitted
+	// resource would be. See advice.Run's own use of SummaryLine for the
+	// exact complaint this closes.
+	s := Snapshot{Net: []NetIface{{Name: "en0", RxBytesPerSec: 0, TxBytesPerSec: 0}}}
+	got := ui.StripANSI(SummaryLine(s))
+	if !strings.Contains(got, "net") {
+		t.Errorf("SummaryLine should show net even at zero traffic, got %q", got)
+	}
+}
+
+func TestSummaryLineOmitsNetWhenNoInterfacesCollected(t *testing.T) {
+	s := Snapshot{CPU: CPU{UsedPct: 10}}
+	got := SummaryLine(s)
+	if strings.Contains(got, "net") {
+		t.Errorf("SummaryLine should not claim to have checked net with zero interfaces collected, got %q", got)
 	}
 }
 

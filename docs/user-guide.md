@@ -98,9 +98,10 @@ Get help without leaving the terminal: `vitals help <command>`,
 `doctor` samples CPU, memory, swap, disk, thermal, network, power, GPU, and
 any local LLM runtime, then correlates them into a ranked list of findings,
 each with a concrete fix. Every run prints an at-a-glance line —
-`cpu 4%  mem 74%  disk 59% (/)  battery 100%` — whether the verdict is
-healthy or not, so "healthy" is something you can check yourself instead of
-taking on faith.
+`cpu 4%  mem 74%  disk 59% (/)  net ↓12 KB/s ↑3 KB/s  battery 100%` —
+whether the verdict is healthy or not, so "healthy" is something you can
+check yourself instead of taking on faith, and a resource with nothing
+wrong still shows a real number here rather than going unmentioned.
 
 This is what the correlation catches that a plain gauge would miss:
 
@@ -228,7 +229,11 @@ vitals mem --output mem-snapshot.json
 
 `advice` answers in two parts, and the first one needs no LLM at all:
 `doctor`'s own rule-based findings and fixes print immediately, exactly
-as `vitals doctor` would show them. Then, if a local or cloud LLM is
+as `vitals doctor` would show them — including the same at-a-glance
+`cpu · mem · disk · net · battery` line, so it's clear every resource
+was actually checked even when only one of them has a finding worth
+raising; a resource with nothing wrong shows a healthy number here
+instead of just going unmentioned. Then, if a local or cloud LLM is
 reachable, its synthesis prints underneath as **AI commentary** — shared
 root causes across findings, what matters most when there's more than
 one issue — a complement to the heuristic answer, never a replacement

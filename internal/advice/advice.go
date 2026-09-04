@@ -110,7 +110,7 @@ func Run(opts Options) error {
 
 	if !opts.JSON {
 		ui.Header("ADVICE")
-		fmt.Println()
+		fmt.Printf("  %s\n\n", doctor.SummaryLine(snap))
 		if findings := report.SortedBySeverity(); len(findings) == 0 {
 			ui.Okf("no findings — this machine looks healthy")
 		} else {
