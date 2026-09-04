@@ -175,14 +175,14 @@ FLOORS = {
     # fails" branch would need a real OS-level process-table failure to
     # exercise honestly.
     "vitals/internal/monitor": 98,
-    # tools: Installed/detectManager (exec.LookPath), Run/List/Install/
-    # Launch/confirm (live subprocess exec, os.Stdin reads, real PATH
-    # checks) are the irreducible live-glue majority of this package — a
-    # package-manager launcher/installer is mostly "shell out and let the
-    # user's terminal take over." The pure logic sitting next to them
-    # (installCommand, withSudo, binary, firstOrEmpty, formatToolList) is
-    # at 100%.
-    "vitals/internal/tools": 44,
+    # tools (item 009): exec.LookPath and the subprocess exec are both
+    # injected via a `deps` struct (lookPath, runCmd, confirmReader, goos)
+    # — defaultDeps wires the real calls; Run/List/Install/Launch/confirm
+    # are now one-line wrappers over run/list/install/launch/confirm(d,
+    # ...), each fully exercised with fakes (a recordingRunCmd proves the
+    # exact argv without ever shelling out) plus one real end-to-end call
+    # per public wrapper. 100.0% measured; 99 for float-rounding margin.
+    "vitals/internal/tools": 99,
     "vitals/internal/ui": 96,
 }
 

@@ -39,13 +39,25 @@ functions need an injectable seam.
       built to handle a failing `sample()` are dead by construction, and
       `realProcesses()`'s `process.Processes()`-fails branch would need
       an actual OS-level process-table failure to exercise honestly.
-- [ ] `internal/tools` (44.6%, floor 44) — `Installed`/`detectManager`
-      (`exec.LookPath`), `Run`/`List`/`Install`/`Launch`/`confirm`
-      (subprocess exec, `os.Stdin` reads, real PATH checks). `LookPath`
-      and `exec.Command` both need injecting as function values;
-      `os.Stdin` reads need the same `bufio.Scanner`-over-an-injected-
-      `io.Reader` shape `confirm()`-style functions elsewhere in this
-      repo already use (see `internal/clean/clean.go`'s `confirm`).
+- [x] `internal/memhogs` (59.7% → 95.7%, floor 59 → 95) — not originally
+      listed as its own task (it was in the "already close" footer below);
+      turned out to need the same treatment as monitor/memcheck. Injected
+      `source` (`processes`/`readCgroup`/`virtualMemory`/`swapMemory`/
+      `newSignalContext`); `readCgroup` split into `readCgroupFor(goos,
+      pid, readFile)` so both the non-Linux short-circuit and the Linux
+      read/error paths are testable on any host. Residual gaps are
+      OS-partitioned switch arms and the same class of unreachable error
+      branches as monitor's.
+- [x] `internal/tools` (44.6% → 100.0%, floor 44 → 99) — `exec.LookPath`
+      and the subprocess exec are both injected via a `deps` struct
+      (`lookPath`, `runCmd`, `confirmReader`, `goos`); `Run`/`List`/
+      `Install`/`Launch`/`confirm` are now one-line wrappers over
+      `run`/`list`/`install`/`launch`/`confirm(d, ...)`. A
+      `recordingRunCmd` fake proves the exact argv (e.g. `brew install
+      ncdu`) without ever shelling out; `confirm`'s `io.Reader` is
+      injected the same way `internal/clean/clean.go`'s `confirm` already
+      does it. One real end-to-end call through each public wrapper
+      (`defaultDeps`) keeps the actual wiring exercised too.
 - [ ] `internal/gpu` (54.7%, floor 54) — `Probe`/`report.go`'s `Run`
       shell out to `nvidia-smi`/`rocm-smi`/`ioreg`. Parsers
       (`parseNvidiaSMI`/`Apps`, `attachNvidiaApps`, `parseRocmSMIJSON`,
@@ -118,13 +130,13 @@ functions need an injectable seam.
       one-line-per-subcommand dispatch code — a real design question,
       not an assumed yes.
 
-Already at or near the target, no work needed: `internal/config` (99%),
-`internal/help` (99%), `internal/diag` (96%), `internal/dashboard`
-(91% — see its own `check_coverage.py` comment for the two remaining
-genuinely-unreachable-defensive-code gaps), `internal/ui` (96%),
-`internal/memhogs` (59.7% — re-measure, may be closer than it looks
-since `describe`/`userFamilies` are already covered and `Run`/`once`/
-`readCgroup` may be the only real gap left).
+Already at or near the target, no work needed: `internal/config` (99%,
+gained a generated `DefaultFileContents()` alongside `info`'s config-block
+rework, still 100% measured), `internal/help` (99%), `internal/diag`
+(96%), `internal/dashboard` (91% — see its own `check_coverage.py`
+comment for the two remaining genuinely-unreachable-defensive-code gaps),
+`internal/ui` (96%), `internal/info` (99%, raised alongside the same
+config-block rework — see `check_coverage.py`'s comment).
 
 ## Exit criteria
 
