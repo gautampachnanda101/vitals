@@ -69,26 +69,31 @@ functions need an injectable seam.
       rest of the gap. Parsers (`parseNvidiaSMI`/`Apps`,
       `attachNvidiaApps`, `parseRocmSMIJSON`, `parseIORegApple`,
       `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`) already ~100%.
-- [ ] `internal/doctor` (54.6% → 56.6%, floor 54 → 56) — **barely
-      started; still the biggest lift in this item**. Done, this pass:
+- [x] `internal/doctor` (54.6% → 56.6% → 73.7%, floor 54 → 56 → 71) —
+      **two slices; second one closes the "biggest lift."** First slice:
       `checkDNSLatency`/`topRemotePeers` split into thin real wrappers
       over `checkDNSLatencyWith(lookupHost, ...)`/`topRemotePeersWith(
       connections, ...)`, branch-tested (slow/failing/timing-out lookup;
       connection ranking, capping, the error path) plus one real
-      end-to-end call each — a deliberately small, self-contained slice
-      chosen specifically *because* it needed no architectural decision,
-      unlike `Collect`. **Not done, and still needing the decomposition
-      decision below before starting**: `Collect` and its OS-level
-      helpers (`firstTimes`, `percoreTimes`, `topProcs`, `swapCounters`,
-      `diskCounters`, `netCounters`, `collectPower`, `runCmd`,
-      `readLinuxBattery`, `collectDisks`) remain fully live; so do the
-      CLI entrypoints (`Run`/`Assess`/`RunFocus` and their print
-      helpers). `Analyze`/`AnalyzeResource` and the small pure helpers
-      are already ~100%. Given the volume, consider whether `Collect`
-      itself can be decomposed into named per-signal collectors each
-      taking an injected data source, rather than one monolithic
-      injection point — matches how item 006 already extracted
-      `withDiskHistory` out of this same package.
+      end-to-end call each. Second slice (the decomposition decision
+      below, resolved as "named per-signal collectors"): `Collect` now
+      takes an injected `source` struct (same shape as
+      `internal/monitor`'s — see `source.go`'s `procSource`/`procHandle`
+      adapter, reused verbatim) and delegates Snapshot-building to
+      `collectCPU`/`collectMemory`/`collectGPUs`/`collectThermal`/
+      `collectLLM`, each independently fixture-tested (success,
+      error/zero-value, and counter-reset branches); `firstTimes`/
+      `percoreTimes`/`swapCounters`/`topProcs`/`netCounters` now take
+      that same injected source and are tested through it too, plus one
+      real end-to-end `realProcesses()` call and one full `collect()` run
+      over an all-fake source. **Still fully live, deliberately out of
+      scope for this pass** (see `source.go`'s own comment): `diskCounters`/
+      `collectDisks`/`collectPower`/`runCmd`/`readLinuxBattery` — Disk and
+      Power are their own bigger subsystems (per-mount filtering/cooldown
+      state, three platforms' battery reads) that deserve their own
+      decomposition pass. Also still untouched: the CLI entrypoints
+      (`Run`/`Assess`/`RunFocus` and their print helpers). `Analyze`/
+      `AnalyzeResource` and the small pure helpers are already ~100%.
 - [ ] `internal/llm` (62.6% → ~86-87%, floor 57 → 85) — **partial, not
       closed out**. Done: `Run`'s `--watch` loop split into
       `watch(ctx, opts)` with an injected `newSignalContext` (same

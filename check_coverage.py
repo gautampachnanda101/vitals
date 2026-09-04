@@ -84,27 +84,28 @@ FLOORS = {
     # unreachable defensive code already exempted elsewhere in this repo.
     "vitals/internal/dashboard": 91,
     "vitals/internal/diag": 96,
-    # doctor (item 009, partial — see its own roadmap task for why this
-    # is only a small first slice): checkDNSLatency/topRemotePeers are
-    # now split into thin real wrappers over checkDNSLatencyWith(lookupHost,
-    # ...)/topRemotePeersWith(connections, ...), branch-tested (slow/
-    # failing/timing-out lookup; connection ranking, capping, error) plus
-    # one real end-to-end call each. 54.6% -> 56.6%; a small, honest gain.
-    # Collect and its OS-level helpers (firstTimes, percoreTimes, topProcs,
-    # swapCounters, diskCounters, netCounters, collectPower, runCmd,
-    # readLinuxBattery, collectDisks) remain fully live and untouched —
-    # this is the item's own flagged "biggest lift," needing a real
-    # decomposition-strategy decision (a source struct the size of
-    # internal/monitor's, or several named per-signal collectors) before
-    # any injection starts, not a quick pattern application. The CLI
-    # entrypoints (Run/Assess/RunFocus and their print helpers
-    # focusDetail/printFindings/printReclaimable/listExcludedMounts) are
-    # also untouched. The correlation engine itself (Analyze/
-    # AnalyzeResource and every analyze* rule) and the small pure helpers
-    # (pct, throttleNote, fullestDisk, summaryLine,
-    # diskGrowthRate, procSuffix/quitFix/coreSpread/timeToFull/nz) are at
-    # or near 100%.
-    "vitals/internal/doctor": 56,
+    # doctor (item 009, second slice): Collect is now decomposed behind a
+    # source struct (same shape as internal/monitor's), with named
+    # per-signal collectors — collectCPU/collectMemory/collectGPUs/
+    # collectThermal/collectLLM — plus firstTimes/percoreTimes/
+    # swapCounters/topProcs/netCounters all taking that injected source.
+    # Each collector and helper is now fixture-tested (success, error/
+    # zero-value, and reset-counter branches), plus one real end-to-end
+    # realProcesses() call. 56.6% -> 73.7% raw; floor set a few points
+    # below the measured value for the usual cross-OS margin. Disk and
+    # Power stay on their existing collectDisks/collectPower call sites
+    # deliberately (see source.go's own comment) — both are their own
+    # bigger subsystems (per-mount filtering/cooldown state, three
+    # platforms' battery reads) that deserve their own decomposition pass
+    # rather than being folded into this one. readLinuxBattery (Linux-only
+    # sysfs reads) and the CLI entrypoints (Run/Assess/RunFocus and their
+    # print helpers focusDetail/printFindings/printReclaimable/
+    # listExcludedMounts) remain untouched — thin glue over already-tested
+    # pure logic, not this item's target. The correlation engine itself
+    # (Analyze/AnalyzeResource and every analyze* rule) and the small pure
+    # helpers (pct, throttleNote, fullestDisk, summaryLine, diskGrowthRate,
+    # procSuffix/quitFix/coreSpread/timeToFull/nz) are at or near 100%.
+    "vitals/internal/doctor": 71,
     # dupes (item 009): os.UserHomeDir and the os.Stdin confirm prompt are
     # both injected via a deps struct (homeDir, confirmReader), same
     # shape as internal/tools'; Run/applyHardlinksWithConfirmation/

@@ -8,13 +8,6 @@ import (
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
-	"github.com/shirou/gopsutil/v4/load"
-	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/shirou/gopsutil/v4/process"
-	"github.com/shirou/gopsutil/v4/sensors"
-
-	"vitals/internal/gpu"
-	"vitals/internal/llm"
 )
 
 // Options configures a doctor run.
@@ -25,61 +18,52 @@ type Options struct {
 
 // Collect builds a Snapshot from the live system. It is deliberately thin: all
 // judgement lives in Analyze, which is pure and fixture-tested.
-func Collect(opts Options) Snapshot {
+func Collect(opts Options) Snapshot { return collect(defaultSource, opts) }
+
+// collect is Collect's testable core: src is injected (defaultSource in
+// production) so a test can substitute fakes for each signal. Named
+// per-signal collectors below (collectCPU/collectMemory/collectGPUs/
+// collectThermal/collectLLM) turn the raw before/after readings this
+// function takes into their slice of the Snapshot — split out so each is
+// independently testable/reviewable, rather than one 100-line function
+// doing everything. Disk/Power are the deliberate exception, still
+// collected inline via the existing collectDisks/collectPower calls; see
+// source.go's own comment for why.
+func collect(src source, opts Options) Snapshot {
 	if opts.Window <= 0 {
 		opts.Window = 700 * time.Millisecond
 	}
 	var s Snapshot
 
-	// CPU: two Times readings across the window for per-state percentages, plus
-	// per-core times for imbalance detection and a primed process list for
-	// top-consumer attribution — all riding the same sleep, at no extra cost.
-	t0 := firstTimes()
-	pc0 := percoreTimes()
-	sw0 := swapCounters()
+	// Two readings across the window for every rate-based signal, plus a
+	// primed process list for top-consumer attribution — all riding the
+	// same sleep, at no extra cost. This shared window is why CPU/Memory/
+	// Net all get their raw before/after readings here in collect, not
+	// inside their own named collector: splitting the sampling itself
+	// across separate functions would mean either a shared window (no
+	// simpler than this) or one sleep per signal (multiplying the real
+	// wall-clock cost of every `vitals doctor` run by the number of
+	// signals) — collectCPU/collectMemory/etc. are shaped as pure
+	// functions over already-read data specifically to avoid that.
+	t0 := firstTimes(src)
+	pc0 := percoreTimes(src)
+	sw0 := swapCounters(src)
 	io0 := diskCounters()
-	net0 := netCounters()
-	allProcs, _ := process.Processes()
-	for _, p := range allProcs {
+	net0 := netCounters(src)
+	procs, _ := src.processes()
+	for _, p := range procs {
 		_, _ = p.Percent(0) // prime; the real reading comes after the sleep below
 	}
 	time.Sleep(opts.Window)
-	t1 := firstTimes()
-	pc1 := percoreTimes()
-	sw1 := swapCounters()
+	t1 := firstTimes(src)
+	pc1 := percoreTimes(src)
+	sw1 := swapCounters(src)
 	io1 := diskCounters()
-	net1 := netCounters()
+	net1 := netCounters(src)
+	topCPU, topMem := topProcs(procs)
 
-	used, iowait, steal := cpuStatePercents(t0, t1)
-	s.CPU.UsedPct, s.CPU.IOWaitPct, s.CPU.StealPct = used, iowait, steal
-	s.CPU.Cores, _ = cpu.Counts(true)
-	s.CPU.PerCorePct = perCorePercents(pc0, pc1)
-	if la, err := load.Avg(); err == nil {
-		s.CPU.Load1 = la.Load1
-	}
-	if info, err := cpu.Info(); err == nil && len(info) > 0 && info[0].Mhz >= 100 {
-		s.CPU.FreqMHz = info[0].Mhz // gopsutil reports a bogus tiny value on Apple silicon
-	}
-	s.CPU.TopProc, s.Memory.TopProc = topProcs(allProcs)
-
-	// Memory + swap rate.
-	if vm, err := mem.VirtualMemory(); err == nil {
-		s.Memory.UsedPct = vm.UsedPercent
-		if vm.Total > 0 {
-			s.Memory.AvailablePct = float64(vm.Available) / float64(vm.Total) * 100
-		}
-	}
-	if sm, err := mem.SwapMemory(); err == nil {
-		s.Memory.SwapUsedPct = sm.UsedPercent
-		s.Memory.SwapTotal = sm.Total
-	}
-	secs := opts.Window.Seconds()
-	if secs > 0 && sw1.in >= sw0.in {
-		s.Memory.SwapInPerSec = float64(sw1.in-sw0.in) / secs
-	}
-	if secs > 0 && sw1.out >= sw0.out {
-		s.Memory.SwapOutPerSec = float64(sw1.out-sw0.out) / secs
-	}
+	s.CPU = collectCPU(src, t0, t1, pc0, pc1, topCPU)
+	s.Memory = collectMemory(src, sw0, sw1, opts.Window, topMem)
 
 	// Disks: usage per real mount, plus a device-wide busy/latency estimate.
 	s.Disks = collectDisks(io0, io1, opts.Window)
@@ -90,9 +74,64 @@ func Collect(opts Options) Snapshot {
 	// Power / battery, best effort via the OS tools.
 	s.Power = collectPower()
 
-	// GPUs via the vendor CLIs (nvidia-smi / rocm-smi / ioreg); empty when none.
-	for _, g := range gpu.Probe() {
-		s.GPUs = append(s.GPUs, GPU{
+	s.GPUs = collectGPUs(src)
+	s.Thermal = collectThermal(src)
+	s.LLM = collectLLM(src, opts)
+
+	return s
+}
+
+// collectCPU turns two CPU-times readings (whole-machine and per-core)
+// plus the already-computed top CPU consumer into the CPU signal. Pure
+// over its arguments except for the three additional live reads
+// (cpuCounts/loadAvg/cpuInfo) that have no "before/after" shape of their
+// own.
+func collectCPU(src source, t0, t1 cpu.TimesStat, pc0, pc1 []cpu.TimesStat, topCPU ProcRef) CPU {
+	var c CPU
+	c.UsedPct, c.IOWaitPct, c.StealPct = cpuStatePercents(t0, t1)
+	c.Cores, _ = src.cpuCounts(true)
+	c.PerCorePct = perCorePercents(pc0, pc1)
+	if la, err := src.loadAvg(); err == nil {
+		c.Load1 = la.Load1
+	}
+	if info, err := src.cpuInfo(); err == nil && len(info) > 0 && info[0].Mhz >= 100 {
+		c.FreqMHz = info[0].Mhz // gopsutil reports a bogus tiny value on Apple silicon
+	}
+	c.TopProc = topCPU
+	return c
+}
+
+// collectMemory turns a virtual-memory reading, a swap-rate before/after
+// pair, and the already-computed top RSS consumer into the Memory signal.
+func collectMemory(src source, sw0, sw1 swapIO, window time.Duration, topMem ProcRef) Memory {
+	var m Memory
+	if vm, err := src.virtualMemory(); err == nil {
+		m.UsedPct = vm.UsedPercent
+		if vm.Total > 0 {
+			m.AvailablePct = float64(vm.Available) / float64(vm.Total) * 100
+		}
+	}
+	if sm, err := src.swapMemory(); err == nil {
+		m.SwapUsedPct = sm.UsedPercent
+		m.SwapTotal = sm.Total
+	}
+	secs := window.Seconds()
+	if secs > 0 && sw1.in >= sw0.in {
+		m.SwapInPerSec = float64(sw1.in-sw0.in) / secs
+	}
+	if secs > 0 && sw1.out >= sw0.out {
+		m.SwapOutPerSec = float64(sw1.out-sw0.out) / secs
+	}
+	m.TopProc = topMem
+	return m
+}
+
+// collectGPUs maps the vendor-neutral gpu.Probe() result (nvidia-smi /
+// rocm-smi / ioreg) onto this package's own GPU type; empty when none.
+func collectGPUs(src source) []GPU {
+	var out []GPU
+	for _, g := range src.gpuProbe() {
+		out = append(out, GPU{
 			Name:         g.Name,
 			VRAMUsed:     g.MemUsedB,
 			VRAMTotal:    g.MemTotalB,
@@ -102,34 +141,44 @@ func Collect(opts Options) Snapshot {
 			BaseClockMHz: g.ClockMaxMHz,
 		})
 	}
+	return out
+}
 
-	// Thermal (best effort; throttle detection is platform-specific and TODO).
-	if temps, err := sensors.SensorsTemperatures(); err == nil {
+// collectThermal reports the hottest sensor reading found, best effort;
+// throttle detection is platform-specific and TODO.
+func collectThermal(src source) Thermal {
+	var t Thermal
+	if temps, err := src.sensorsTemps(); err == nil {
 		for _, tp := range temps {
-			if tp.Temperature > s.Thermal.CPUTempC {
-				s.Thermal.CPUTempC = tp.Temperature
+			if tp.Temperature > t.CPUTempC {
+				t.CPUTempC = tp.Temperature
 			}
 		}
 	}
+	return t
+}
 
-	// LLM: Ollama per-model offload, correlated with runtime-process CPU.
-	models := llm.OllamaModels(opts.OllamaURL)
-	procs := llm.ScanProcesses()
+// collectLLM reports Ollama's per-model offload, correlated with the
+// runtime process's own host CPU usage — the "is this model actually
+// running on the GPU or quietly falling back to CPU" signal.
+func collectLLM(src source, opts Options) []LLMModel {
+	models := src.ollamaModels(opts.OllamaURL)
+	procs := src.scanProcesses()
 	var hostCPU float64
 	for _, p := range procs {
 		if p.Runtime == "ollama" && p.CPUPct > hostCPU {
 			hostCPU = p.CPUPct
 		}
 	}
+	var out []LLMModel
 	for _, m := range models {
-		s.LLM = append(s.LLM, LLMModel{
+		out = append(out, LLMModel{
 			Name:       m.Name,
 			OffloadPct: m.GPUOffload,
 			HostCPUPct: hostCPU,
 		})
 	}
-
-	return s
+	return out
 }
 
 // cpuStatePercents converts two cumulative CPU time readings into busy / iowait
@@ -158,16 +207,16 @@ func cpuStatePercents(a, b cpu.TimesStat) (used, iowait, steal float64) {
 	return busy / total * 100, dIowait / total * 100, dSteal / total * 100
 }
 
-func firstTimes() cpu.TimesStat {
-	ts, err := cpu.Times(false)
+func firstTimes(src source) cpu.TimesStat {
+	ts, err := src.cpuTimes(false)
 	if err != nil || len(ts) == 0 {
 		return cpu.TimesStat{}
 	}
 	return ts[0]
 }
 
-func percoreTimes() []cpu.TimesStat {
-	ts, err := cpu.Times(true)
+func percoreTimes(src source) []cpu.TimesStat {
+	ts, err := src.cpuTimes(true)
 	if err != nil {
 		return nil
 	}
@@ -196,16 +245,16 @@ func perCorePercents(a, b []cpu.TimesStat) []float64 {
 // topProcs scans a primed process list (Percent(0) already called once before
 // the caller's sample window elapsed) and returns the top CPU consumer and the
 // top RSS consumer in a single pass.
-func topProcs(procs []*process.Process) (topCPU, topMem ProcRef) {
+func topProcs(procs []procSource) (topCPU, topMem ProcRef) {
 	for _, p := range procs {
 		cpuPct, err := p.Percent(0)
 		if err == nil && cpuPct > topCPU.CPUPct {
 			name, _ := p.Name()
-			topCPU = ProcRef{PID: p.Pid, Name: name, CPUPct: cpuPct}
+			topCPU = ProcRef{PID: p.PID(), Name: name, CPUPct: cpuPct}
 		}
 		if mi, err := p.MemoryInfo(); err == nil && mi != nil && mi.RSS > topMem.RSSBytes {
 			name, _ := p.Name()
-			topMem = ProcRef{PID: p.Pid, Name: name, RSSBytes: mi.RSS}
+			topMem = ProcRef{PID: p.PID(), Name: name, RSSBytes: mi.RSS}
 		}
 	}
 	return
@@ -213,8 +262,8 @@ func topProcs(procs []*process.Process) (topCPU, topMem ProcRef) {
 
 type swapIO struct{ in, out uint64 }
 
-func swapCounters() swapIO {
-	sm, err := mem.SwapMemory()
+func swapCounters(src source) swapIO {
+	sm, err := src.swapMemory()
 	if err != nil {
 		return swapIO{}
 	}
