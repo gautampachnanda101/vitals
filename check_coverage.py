@@ -119,20 +119,22 @@ FLOORS = {
     # branches) need a real OS-level permission/IO failure to exercise
     # honestly, not yet done here.
     "vitals/internal/dupes": 93,
-    # gpu: Probe (the actual nvidia-smi/rocm-smi/ioreg exec.Command calls)
-    # is still genuinely live and untested. Run's printing half is no
-    # longer bundled with it: printReport(devs []Device) is now the pure
-    # seam (same live-vs-print split as internal/monitor's sample/emit),
-    # fully fixture-tested including the exact bug this was split out to
-    # fix — a real Apple Silicon reading (real UtilPct/VRAM from ioreg's
+    # gpu (item 009, closed out): Probe's nvidia-smi/rocm-smi/ioreg
+    # exec.Command calls are now behind an injected deps struct (goos/
+    # lookPath/runCmd — same shape as internal/tools'/internal/llm's
+    # gpuPreflightDeps), with probe(d)/run(d, ...) as the testable core.
+    # Branch-tested: nvidia-preferred, compute-apps attachment, fallthrough
+    # to rocm-smi on nvidia absent/empty-parse/failing, fallthrough to
+    # ioreg on darwin only, nothing-on-PATH, plus one real Probe()/Run()
+    # end-to-end call each (including Run's --json envelope). Run's
+    # printing half stays its own pure seam: printReport(devs []Device),
+    # fully fixture-tested including the bug this was split out to fix —
+    # a real Apple Silicon reading (real UtilPct/VRAM from ioreg's
     # PerformanceStatistics, see gpu.go's parseIORegApple) must never
     # print a bare "Temp 0°C"/"Power 0 W"/"Clock 0 MHz" alongside it, and
     # a real NVIDIA/AMD-shaped device (every field populated) must still
-    # show all of them together — both directions covered by fixture, not
-    # just the Apple case, so this doesn't regress on a real GPU machine.
-    # 74.8% measured (up from 54.7%); Probe itself is the only remaining
-    # gap.
-    "vitals/internal/gpu": 74,
+    # show all of them together. 74.8% -> 98.6%.
+    "vitals/internal/gpu": 96,
     # guide (item 009): signal.NotifyContext and openBrowser are both
     # injected via a deps struct; ServeLocal's real net.Listen + handler-
     # wrapping half is split into buildServer(handler, opts), returning

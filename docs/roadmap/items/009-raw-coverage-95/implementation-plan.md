@@ -58,17 +58,23 @@ functions need an injectable seam.
       injected the same way `internal/clean/clean.go`'s `confirm` already
       does it. One real end-to-end call through each public wrapper
       (`defaultDeps`) keeps the actual wiring exercised too.
-- [ ] `internal/gpu` (54.7% → 74.8%, floor 54 → 74) — partial: `Run`'s
-      printing half is split out as `printReport(devs []Device)`, the
-      same live-vs-print seam `internal/monitor`'s `sample`/`emit` uses,
-      fixture-tested for every per-field gate (this is also where the
-      real Apple-Silicon-VRAM/Temp-zero bug fixes landed — see git log).
-      `Probe` itself still shells out to `nvidia-smi`/`rocm-smi`/`ioreg`
-      directly and is still untested — inject the subprocess-exec call
-      the same way `internal/tools`' `deps.runCmd` does, to close the
-      rest of the gap. Parsers (`parseNvidiaSMI`/`Apps`,
-      `attachNvidiaApps`, `parseRocmSMIJSON`, `parseIORegApple`,
-      `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`) already ~100%.
+- [x] `internal/gpu` (54.7% → 74.8% → 98.6%, floor 54 → 74 → 96) —
+      **closed out**. `Run`'s printing half is split out as
+      `printReport(devs []Device)`, the same live-vs-print seam
+      `internal/monitor`'s `sample`/`emit` uses, fixture-tested for every
+      per-field gate (this is also where the real Apple-Silicon-VRAM/
+      Temp-zero bug fixes landed — see git log). `Probe`'s
+      `nvidia-smi`/`rocm-smi`/`ioreg` subprocess calls are now behind an
+      injected `deps` struct (`goos`/`lookPath`/`runCmd` — same shape as
+      `internal/tools`' and `internal/llm`'s `gpuPreflightDeps`), with
+      `probe(d)`/`run(d, ...)` as the testable core: nvidia-preferred,
+      compute-apps attachment, fallthrough to rocm-smi on nvidia
+      absent/empty-parse/failing, fallthrough to ioreg on darwin only,
+      nothing-on-PATH, plus one real `Probe()`/`Run()` end-to-end call
+      each (including `Run`'s `--json` envelope). Parsers
+      (`parseNvidiaSMI`/`Apps`, `attachNvidiaApps`, `parseRocmSMIJSON`,
+      `parseIORegApple`, `atoiOr`/`numOr`/`firstNonEmpty`/`strSort`)
+      already ~100%.
 - [x] `internal/doctor` (54.6% → 56.6% → 73.7%, floor 54 → 56 → 71) —
       **two slices; second one closes the "biggest lift."** First slice:
       `checkDNSLatency`/`topRemotePeers` split into thin real wrappers

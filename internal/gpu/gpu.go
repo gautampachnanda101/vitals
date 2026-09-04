@@ -56,15 +56,35 @@ func (d Device) MemUsedPct() float64 {
 	return float64(d.MemUsedB) / float64(d.MemTotalB) * 100
 }
 
+// deps is the live PATH/subprocess surface Probe reads from, pulled out so
+// a test can substitute fakes — same shape as internal/tools' and
+// internal/llm's gpuPreflightDeps. defaultDeps wires the real calls;
+// production always goes through it via Probe.
+type deps struct {
+	goos     string
+	lookPath func(file string) (string, error)
+	runCmd   func(ctx context.Context, name string, args ...string) ([]byte, error)
+}
+
+var defaultDeps = deps{
+	goos:     runtime.GOOS,
+	lookPath: exec.LookPath,
+	runCmd: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, name, args...).Output()
+	},
+}
+
 // Probe returns every GPU it can see. It tries, in order: nvidia-smi, rocm-smi,
 // and (macOS only) a minimal Apple-silicon device from ioreg. An empty result
 // means no supported GPU tooling is present — callers must degrade gracefully.
-func Probe() []Device {
-	if out, ok := run("nvidia-smi",
+func Probe() []Device { return probe(defaultDeps) }
+
+func probe(d deps) []Device {
+	if out, ok := run(d, "nvidia-smi",
 		"--query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu,power.draw,power.limit,clocks.current.graphics,clocks.max.graphics",
 		"--format=csv,noheader,nounits"); ok {
 		devs := parseNvidiaSMI(out)
-		if apps, ok := run("nvidia-smi",
+		if apps, ok := run(d, "nvidia-smi",
 			"--query-compute-apps=pid,process_name,used_memory",
 			"--format=csv,noheader,nounits"); ok {
 			attachNvidiaApps(devs, parseNvidiaApps(apps))
@@ -73,13 +93,13 @@ func Probe() []Device {
 			return devs
 		}
 	}
-	if out, ok := run("rocm-smi", "--showproductname", "--showmemuse", "--showuse", "--showtemp", "--showpower", "--json"); ok {
+	if out, ok := run(d, "rocm-smi", "--showproductname", "--showmemuse", "--showuse", "--showtemp", "--showpower", "--json"); ok {
 		if devs := parseRocmSMIJSON(out); len(devs) > 0 {
 			return devs
 		}
 	}
-	if runtime.GOOS == "darwin" {
-		if out, ok := run("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"); ok {
+	if d.goos == "darwin" {
+		if out, ok := run(d, "ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"); ok {
 			if devs := parseIORegApple(out); len(devs) > 0 {
 				return devs
 			}
@@ -88,13 +108,13 @@ func Probe() []Device {
 	return nil
 }
 
-func run(name string, args ...string) (string, bool) {
-	if _, err := exec.LookPath(name); err != nil {
+func run(d deps, name string, args ...string) (string, bool) {
+	if _, err := d.lookPath(name); err != nil {
 		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).Output()
+	out, err := d.runCmd(ctx, name, args...)
 	if err != nil {
 		return "", false
 	}
