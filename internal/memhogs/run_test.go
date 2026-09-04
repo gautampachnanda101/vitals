@@ -161,7 +161,7 @@ func TestRunWatchStopsWhenTheSignalContextIsDone(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- captureRunWatch(src)
+		done <- captureRunWatch(t, src)
 	}()
 	select {
 	case err := <-done:
@@ -173,13 +173,21 @@ func TestRunWatchStopsWhenTheSignalContextIsDone(t *testing.T) {
 	}
 }
 
-// captureRunWatch runs run() in --watch mode with output suppressed.
-func captureRunWatch(src source) error {
-	oldOut, oldErr := os.Stdout, os.Stderr
-	_, w, _ := os.Pipe()
-	os.Stdout, os.Stderr = w, w
-	defer func() { os.Stdout, os.Stderr = oldOut, oldErr; w.Close() }()
-	return run(src, Options{Watch: true, Interval: time.Millisecond})
+// captureRunWatch runs run() in --watch mode, draining stdout/stderr
+// concurrently via captureStdout so a run producing enough output to fill
+// the OS pipe buffer (a --watch loop can render dozens of times before its
+// context times out) can't deadlock on the write end — the exact "os.Pipe
+// deadlock in captureStdout helpers" class of bug this file's own
+// captureStdout exists to avoid; an earlier version of this helper swapped
+// os.Stdout for a pipe's write end without ever draining the read end,
+// which passed on macOS/Linux's larger default pipe buffers but deadlocked
+// for real on Windows CI.
+func captureRunWatch(t *testing.T, src source) error {
+	var runErr error
+	captureStdout(t, func() {
+		runErr = run(src, Options{Watch: true, Interval: time.Millisecond})
+	})
+	return runErr
 }
 
 func TestWatchLoopsThroughTheTickerThenStops(t *testing.T) {
@@ -189,12 +197,8 @@ func TestWatchLoopsThroughTheTickerThenStops(t *testing.T) {
 	src := stubSource([]procSource{fakeProc{pid: 1, rss: 10 << 20, name: "x", cmd: "x"}}, nil)
 	done := make(chan error, 1)
 	go func() {
-		oldOut, oldErr := os.Stdout, os.Stderr
-		_, w, _ := os.Pipe()
-		os.Stdout, os.Stderr = w, w
-		err := watch(ctx, src, Options{Interval: time.Millisecond})
-		os.Stdout, os.Stderr = oldOut, oldErr
-		w.Close()
+		var err error
+		captureStdout(t, func() { err = watch(ctx, src, Options{Interval: time.Millisecond}) })
 		done <- err
 	}()
 	select {

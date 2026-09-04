@@ -2,6 +2,7 @@ package info
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -222,13 +223,21 @@ func TestOverriddenKeysDetectsEachFieldAndReturnsNilForDefaults(t *testing.T) {
 func TestAbbrevHomeReplacesTheHomePrefixWithATilde(t *testing.T) {
 	old := homeDirFn
 	defer func() { homeDirFn = old }()
-	homeDirFn = func() (string, error) { return "/Users/x", nil }
+	// Built with filepath.Join/Separator, not hardcoded forward slashes —
+	// os.UserHomeDir() and config.Path() both return backslash paths on
+	// Windows, and a test asserting on "/Users/x/..." literals passed on
+	// macOS/Linux but failed for real on Windows CI for exactly that
+	// reason (a real cross-platform bug, though only in this test, not
+	// in abbrevHome itself, which already used os.PathSeparator).
+	sep := string(filepath.Separator)
+	home := sep + filepath.Join("Users", "x")
+	homeDirFn = func() (string, error) { return home, nil }
 
 	cases := map[string]string{
-		"/Users/x/Library/vitals/config.toml": "~/Library/vitals/config.toml",
-		"/Users/x":                            "~",
-		"/etc/vitals/config.toml":             "/etc/vitals/config.toml", // not under home — untouched
-		"/Users/xanadu/thing":                 "/Users/xanadu/thing",     // prefix-but-not-a-dir-boundary — untouched
+		filepath.Join(home, "Library", "vitals", "config.toml"): "~" + sep + filepath.Join("Library", "vitals", "config.toml"),
+		home: "~",
+		sep + filepath.Join("etc", "vitals", "config.toml"): sep + filepath.Join("etc", "vitals", "config.toml"), // not under home — untouched
+		sep + filepath.Join("Users", "xanadu", "thing"):     sep + filepath.Join("Users", "xanadu", "thing"),     // prefix-but-not-a-dir-boundary — untouched
 	}
 	for in, want := range cases {
 		if got := abbrevHome(in); got != want {
@@ -237,7 +246,7 @@ func TestAbbrevHomeReplacesTheHomePrefixWithATilde(t *testing.T) {
 	}
 
 	homeDirFn = func() (string, error) { return "", os.ErrNotExist }
-	if got := abbrevHome("/Users/x/f"); got != "/Users/x/f" {
+	if got := abbrevHome(filepath.Join(home, "f")); got != filepath.Join(home, "f") {
 		t.Errorf("with no home dir resolvable, abbrevHome should pass the path through, got %q", got)
 	}
 }

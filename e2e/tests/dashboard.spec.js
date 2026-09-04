@@ -33,18 +33,17 @@ test('unknown path 404s with the nav still rendered, not a bare error page', asy
   await expect(page.locator('nav[aria-label="Primary"]')).toBeVisible();
 });
 
-test('GPU page never shows a bare zero VRAM/util reading', async ({ page }) => {
+test('GPU page never shows the bare zero-VRAM placeholder', async ({ page }) => {
   // Regression guard for a real user report: an Apple Silicon GPU with a
   // real utilization/memory-in-use reading (see internal/gpu/gpu.go's
   // parseIORegApple) rendered as "0% util, 0 B / 0 B VRAM" -- meaningless
-  // telemetry masquerading as real data. This asserts against the live
-  // rendered page, not a Go string fixture, so it also catches a future
-  // regression introduced anywhere in the render path, template included.
+  // telemetry masquerading as real data. Only "0 B / 0 B" is asserted
+  // here: "0% util" alone is real, legitimate telemetry for a genuinely
+  // idle GPU (confirmed live on an unloaded CI runner, not a guess) and
+  // must not be flagged as if it were the placeholder.
   await page.goto('/gpu');
   const body = await page.locator('main').innerText();
   expect(body).not.toMatch(/0\s*B\s*\/\s*0\s*B/);
-  // (?<!\d) so a real "90% util" doesn't false-positive on the trailing "0".
-  expect(body).not.toMatch(/(?<!\d)0%\s*util/i);
 });
 
 test('Advice page resolves the AI-commentary fragment, never stays on the placeholder', async ({ page }) => {
@@ -53,8 +52,16 @@ test('Advice page resolves the AI-commentary fragment, never stays on the placeh
   // fetch() -- either real AI commentary or the "no LLM reachable"
   // message -- within a bounded time, not hang indefinitely (that hang
   // is exactly what a real user saw as "the Advice page is blank").
+  //
+  // The bound is generous, not tight: /advice/commentary's own budget is
+  // internal/llm's completeTimeout (60s) plus however long probing every
+  // local runtime (Ollama/LM Studio/llama.cpp/vLLM) takes first -- a CI
+  // runner reaching none of them quickly is the expected case, not a
+  // flake, so this must comfortably clear 60s rather than assume a fast
+  // failure.
+  test.setTimeout(90_000);
   await page.goto('/advice');
-  await expect(page.locator('#ai-commentary')).not.toContainText('Asking the LLM', { timeout: 20_000 });
+  await expect(page.locator('#ai-commentary')).not.toContainText('Asking the LLM', { timeout: 85_000 });
   const text = await page.locator('#ai-commentary').innerText();
   expect(text.length).toBeGreaterThan(0);
 });
