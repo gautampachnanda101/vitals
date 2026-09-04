@@ -78,6 +78,8 @@ header.hero p.lede{font-size:1.1rem;color:var(--muted);max-width:48ch;margin:0}
   .term .line:nth-child(4){animation-delay:1.05s}
   .term .line:nth-child(5){animation-delay:1.3s}
   .term .line:nth-child(6){animation-delay:1.5s}
+  .term .line:nth-child(7){animation-delay:1.7s}
+  .term .line:nth-child(8){animation-delay:1.95s}
   @keyframes term-reveal{ to{ opacity:1; transform:none } }
   .term .cursor{animation:blink 1s step-end infinite}
   @keyframes blink{ 50%{ opacity:0 } }
@@ -129,7 +131,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
   <div class="wrap">
     <div class="inner">
       <div class="copy">
-        <span class="eyebrow">vitals · v0.4.0 · macOS · Linux · Windows</span>
+        <span class="eyebrow">vitals · v0.5.0 · macOS · Linux · Windows</span>
         <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
         <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
         <div class="cta-row">
@@ -145,10 +147,12 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         </div>
         <div class="term">
 <div class="line"><span class="prompt">$</span> vitals doctor</div>
-<div class="line"><span class="crit">● CRITICAL</span>   Memory is your bottleneck — not CPU</div>
-<div class="line">             swap 91% full, paging out at 40 MB/s   <span class="muted">→ the machine is stalling on disk</span></div>
-<div class="line">  <span class="warn-arrow">→</span> free RAM now: <code>vitals memhogs</code> then quit the top consumers</div>
-<div class="line">  <span class="warn-arrow">→</span> macOS: <code>sudo purge</code></div>
+<div class="line"><span class="crit">✗ Swap thrashing</span></div>
+<div class="line">     <span class="muted">swap 91% full and paging out at 40.00 MB/s — the machine is stalling on disk,</span></div>
+<div class="line">     <span class="muted">not working — largest consumer: Chrome Helper (Renderer) (pid 4821), 1.20 GB RSS</span></div>
+<div class="line">     <span class="warn-arrow">→</span> quit or restart Chrome Helper (Renderer) (pid 4821) — the largest consumer, or run <code>vitals memhogs</code> for the full list</div>
+<div class="line">     <span class="warn-arrow">→</span> macOS: <code>sudo purge</code></div>
+<div class="line"><span class="crit">✗ verdict: CRITICAL — address the finding above now</span></div>
 <div class="line">  <span class="muted">exit 2</span><span class="cursor"></span></div>
         </div>
       </div>
@@ -230,7 +234,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         </tbody>
       </table>
     </div>
-    <p class="note">This table describes each tool's own core purpose as of vitals v0.4.0 — check each project's own docs for its current full feature set.</p>
+    <p class="note">This table describes each tool's own core purpose as of vitals v0.5.0 — check each project's own docs for its current full feature set.</p>
   </div>
 </section>
 

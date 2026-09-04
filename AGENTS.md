@@ -323,6 +323,17 @@ tagging:
 3. Semver: additive/backward-compatible → minor bump; a real bug fix to
    already-released behavior → patch bump; a breaking change (schema major
    bump, a renamed/removed flag) → major bump.
+4. Update `site/index.html`'s version eyebrow (`vitals · vX.Y.Z · ...`) and
+   the comparison table's "as of vitals vX.Y.Z" footnote to the new tag,
+   and spot-check its hero terminal example and feature cards against
+   `git log <last tag>..HEAD` — a real feature landing that the site
+   doesn't mention isn't a bug, but a card describing behavior that's
+   changed or a mockup showing text the tool doesn't actually produce is
+   (see the hero card's own history: it once showed a rewritten title/fix
+   wording no real `vitals doctor` run would print). Commit this in the
+   same commit the tag points at, not a follow-up after — a release should
+   never point at a commit whose own marketing copy already describes the
+   *next* thing being planned rather than what that tag actually ships.
 
 ## Committing
 
