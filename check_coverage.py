@@ -147,12 +147,26 @@ FLOORS = {
     # low/live. classify/capitalize/plural/nz/shortLocalName/
     # modelOrDefault/ollamaModelChoice's pure branches are now covered.
     "vitals/internal/llm": 57,
-    # mcp: tools() registers each tool's Handler closure, which calls live
-    # doctor.Assess/llm/gpu functions when actually invoked — only
-    # exercised by a real tools/call, which the existing tests
-    # deliberately avoid (would touch live system state). toolText/
-    # jsonString/ToolNames are now fully covered.
-    "vitals/internal/mcp": 68,
+    # mcp (item 009): the open design question this package's task noted
+    # ("accept doctor.Assess/etc. as injectable dependencies of each
+    # Handler closure" vs. "unit-test the JSON-RPC plumbing against a
+    # fake result only") is resolved in favor of the former —
+    # doctor.Assess/llm.OllamaModels/llm.ScanProcesses/gpu.Probe are all
+    # injected via a deps struct threaded through tools(d)/handle(...,d),
+    # so a fake now flows through a REAL tools/call for each of the 4
+    # tools (system_health, diagnose_bottleneck incl. its healthy/ok
+    # branch, llm_status, gpu_status), not a parallel test of the
+    # dispatch shape alone. Serve gained coverage for its blank-line skip
+    # and malformed-JSON parse-error reply; handle gained the untested
+    # "ping" method. 95.5% measured. Remaining gaps, left honest: Serve's
+    # enc.Encode-fails branch (needs a writer that succeeds once then
+    # fails, not yet built) and a tool's run() returning a non-nil error
+    # (unreachable in practice — every real deps function returns a
+    # concretely-typed, always-marshalable value, so jsonString never
+    # actually fails for any of the 4 tools; forcing a fake to simulate
+    # it would test the mock, not the code, per this item's own "don't
+    # fake it dishonestly" ground rule).
+    "vitals/internal/mcp": 95,
     # memcheck: the four gopsutil calls (host.Info, mem.VirtualMemory/
     # SwapMemory/SwapDevices) are now injected via a `source` struct (item
     # 009) — Run() is a one-line pass-through to run(defaultSource), and

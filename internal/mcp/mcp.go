@@ -47,13 +47,38 @@ type toolDef struct {
 	run         func(o Options) (string, error)
 }
 
-func tools() []toolDef {
+// deps is the live diagnostic surface each tool's run closure reads from,
+// pulled out so a test can substitute fakes and drive a real tools/call
+// through handle()/Serve() end to end — same shape as internal/tools'/
+// internal/dupes'/internal/metrics'/internal/guide's deps structs.
+// defaultDeps wires the real calls; production always goes through it via
+// Serve. This is the "accept doctor.Assess/etc. as injectable
+// dependencies of each Handler closure" option from item 009's own open
+// design question for this package, chosen over unit-testing the JSON-RPC
+// plumbing against a fake result only: it proves the exact same dispatch
+// path (tools/call -> find tool -> run -> toolText) a real MCP client
+// exercises, not a parallel one.
+type deps struct {
+	assess        func(doctor.RunOptions) (doctor.Snapshot, diag.Report)
+	ollamaModels  func(ollamaURL string) []llm.ModelState
+	scanProcesses func() []llm.ProcSnapshot
+	gpuProbe      func() []gpu.Device
+}
+
+var defaultDeps = deps{
+	assess:        doctor.Assess,
+	ollamaModels:  llm.OllamaModels,
+	scanProcesses: llm.ScanProcesses,
+	gpuProbe:      gpu.Probe,
+}
+
+func tools(d deps) []toolDef {
 	return []toolDef{
 		{
 			name:        "system_health",
 			description: "Full machine health check: the ranked findings (what is wrong and the fix) plus the overall verdict and exit code. Same schema as `vitals doctor --json`.",
 			run: func(o Options) (string, error) {
-				snap, rep := doctor.Assess(doctor.RunOptions{OllamaURL: o.OllamaURL})
+				snap, rep := d.assess(doctor.RunOptions{OllamaURL: o.OllamaURL})
 				return jsonString(doctor.JSONReport(snap, rep))
 			},
 		},
@@ -61,7 +86,7 @@ func tools() []toolDef {
 			name:        "diagnose_bottleneck",
 			description: "The single most severe finding right now — the current bottleneck and its fix — or a healthy verdict.",
 			run: func(o Options) (string, error) {
-				_, rep := doctor.Assess(doctor.RunOptions{OllamaURL: o.OllamaURL})
+				_, rep := d.assess(doctor.RunOptions{OllamaURL: o.OllamaURL})
 				sorted := rep.SortedBySeverity()
 				if len(sorted) == 0 || sorted[0].Severity == diag.OK {
 					return jsonString(map[string]any{"bottleneck": nil, "verdict": "ok"})
@@ -74,8 +99,8 @@ func tools() []toolDef {
 			description: "Local and cloud LLM endpoints, loaded models, and per-model GPU offload percentage.",
 			run: func(o Options) (string, error) {
 				return jsonString(map[string]any{
-					"models":    llm.OllamaModels(o.OllamaURL),
-					"processes": llm.ScanProcesses(),
+					"models":    d.ollamaModels(o.OllamaURL),
+					"processes": d.scanProcesses(),
 				})
 			},
 		},
@@ -83,7 +108,7 @@ func tools() []toolDef {
 			name:        "gpu_status",
 			description: "Per-GPU VRAM, utilisation, temperature, power and the processes holding VRAM.",
 			run: func(o Options) (string, error) {
-				return jsonString(map[string]any{"devices": gpu.Probe()})
+				return jsonString(map[string]any{"devices": d.gpuProbe()})
 			},
 		},
 	}
@@ -104,7 +129,7 @@ func Serve(in io.Reader, out io.Writer, opts Options) error {
 			_ = enc.Encode(response{JSONRPC: "2.0", Error: &rpcError{-32700, "parse error"}})
 			continue
 		}
-		resp, skip := handle(req, opts)
+		resp, skip := handle(req, opts, defaultDeps)
 		if skip {
 			continue
 		}
@@ -116,7 +141,7 @@ func Serve(in io.Reader, out io.Writer, opts Options) error {
 }
 
 // handle dispatches one request. skip is true for notifications (no reply).
-func handle(req request, opts Options) (response, bool) {
+func handle(req request, opts Options, d deps) (response, bool) {
 	base := response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
@@ -136,7 +161,7 @@ func handle(req request, opts Options) (response, bool) {
 
 	case "tools/list":
 		var list []map[string]any
-		for _, t := range tools() {
+		for _, t := range tools(d) {
 			list = append(list, map[string]any{
 				"name":        t.name,
 				"description": t.description,
@@ -151,7 +176,7 @@ func handle(req request, opts Options) (response, bool) {
 			Name string `json:"name"`
 		}
 		_ = json.Unmarshal(req.Params, &p)
-		for _, t := range tools() {
+		for _, t := range tools(d) {
 			if t.name == p.Name {
 				text, err := t.run(opts)
 				if err != nil {
@@ -189,7 +214,7 @@ func jsonString(v any) (string, error) {
 // ToolNames is exposed for docs/tests.
 func ToolNames() []string {
 	var n []string
-	for _, t := range tools() {
+	for _, t := range tools(defaultDeps) {
 		n = append(n, t.name)
 	}
 	return n

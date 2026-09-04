@@ -110,17 +110,18 @@ functions need an injectable seam.
       Remaining gap: `Scan`'s `WalkDir`-error branch and `linkOver`'s
       `Link`/`Rename`-failure branches need a real OS-level permission/IO
       failure to exercise honestly — not yet done.
-- [ ] `internal/mcp` (68.7%, floor 68) — `tools()` registers each
-      tool's `Handler` closure, which calls live `doctor.Assess`/`llm`/
-      `gpu` functions only when actually invoked; existing tests
-      deliberately avoid a real `tools/call` to dodge touching live
-      system state. This one needs a real design decision, not just
-      injection: either accept `doctor.Assess`/etc. as injectable
-      dependencies of each `Handler` closure (so a fake report can flow
-      through a real `tools/call`), or keep avoiding live state and
-      instead unit-test each `Handler`'s JSON-RPC plumbing against an
-      injected fake result. Decide before starting, don't improvise
-      mid-implementation.
+- [x] `internal/mcp` (68.7% → 95.5%, floor 68 → 95) — decided in favor of
+      the first option this task posed: `doctor.Assess`/`llm.OllamaModels`/
+      `llm.ScanProcesses`/`gpu.Probe` are all injected via a `deps` struct
+      threaded through `tools(d)`/`handle(req, opts, d)`, so a fake now
+      flows through a real `tools/call` for each of the 4 tools — proving
+      the actual dispatch path, not a parallel test of its shape.
+      `Serve` gained its blank-line-skip and malformed-JSON parse-error
+      branches; `handle` gained the untested `ping` method. Remaining
+      gaps, left honest: `Serve`'s `enc.Encode`-fails branch, and a
+      tool's `run()` returning a non-nil error (unreachable in practice —
+      every real `deps` function returns a concretely-typed,
+      always-marshalable value).
 - [x] `internal/guide` (72.0% → 94.8-95.2%, floor 72 → 93) — the split
       turned out to be possible: `buildServer(handler, opts)` now does
       the real `net.Listen` + Host/CSRF handler-wrapping and returns the
