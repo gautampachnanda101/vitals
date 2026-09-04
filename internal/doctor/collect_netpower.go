@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
 // --- network -----------------------------------------------------------------
@@ -21,8 +19,8 @@ type netReading struct {
 	rx, tx uint64
 }
 
-func netCounters() []netReading {
-	cs, err := gnet.IOCounters(true)
+func netCounters(src source) []netReading {
+	cs, err := src.netIOCounters(true)
 	if err != nil {
 		return nil
 	}
