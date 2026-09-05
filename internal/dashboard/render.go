@@ -51,6 +51,8 @@ var pageShellTmpl = template.Must(template.New("pageShell").Parse(`<!doctype htm
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 code,.mono{font:0.9em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 a{color:var(--accent)}
+h1,h2,h3{color:var(--accent);line-height:1.3;margin:1.1rem 0 .5rem}
+h1:first-child,h2:first-child,h3:first-child{margin-top:0}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .wrap{max-width:840px;margin:0 auto;padding:1.6rem 1.4rem 3rem}
 header.top{display:flex;align-items:baseline;justify-content:space-between;border-bottom:3px solid var(--accent);padding-bottom:.9rem;margin-bottom:1rem;flex-wrap:wrap;gap:.6rem}

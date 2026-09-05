@@ -74,6 +74,22 @@ func TestRenderTerminalHeadersAreDistinguishable(t *testing.T) {
 	}
 }
 
+// TestRenderTerminalEveryHeaderLevelGetsColor guards a real regression: ###
+// (h3) headers used to render with ui.Bold only, no color, so an LLM reply
+// structured with a top-level "## Prioritized Advice" section and "###"
+// sub-headings inside it (a common shape) showed its outer heading in cyan
+// but every sub-heading in plain white — indistinguishable from body text.
+// All three levels must carry ui.Cyan; h1 additionally gets an underline
+// rule, h2/h3 don't, but color itself must never be h1/h2-only.
+func TestRenderTerminalEveryHeaderLevelGetsColor(t *testing.T) {
+	out := RenderTerminal(sample)
+	for _, want := range []string{"vitals — user guide", "vitals doctor", "Trend detection"} {
+		if !strings.Contains(out, ui.Bold+ui.Cyan+want+ui.Reset) {
+			t.Errorf("header %q should render with ui.Bold+ui.Cyan, got:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderTerminalNeverPanicsOnEdgeCases(t *testing.T) {
 	for _, in := range []string{"", "#", "```", "**", "`", "[]()", "- \n- \n"} {
 		func() {
@@ -183,6 +199,21 @@ func TestRenderHTMLHeadersGetAnchorIDsMatchingSlugifiedText(t *testing.T) {
 	}
 	if !strings.Contains(out, `<h3 id="trend-detection">`) {
 		t.Errorf("expected an id on the h3 matching its slug, got:\n%s", out)
+	}
+}
+
+// TestRenderHTMLColorsEveryHeadingLevel guards the HTML-side counterpart
+// of the ### terminal regression above: h3 previously had no color rule
+// at all in pageTemplate (only h1/h2 got a colored border-bottom), so an
+// h3 in a real rendered page was visually indistinguishable from body
+// text — the exact "sub headings don't have color" complaint, just in
+// this medium instead of the terminal.
+func TestRenderHTMLColorsEveryHeadingLevel(t *testing.T) {
+	out := RenderHTML(sample, "t")
+	for _, selector := range []string{"h1, h2, h3 { line-height: 1.25; color: #2b5d53; }"} {
+		if !strings.Contains(out, selector) {
+			t.Errorf("expected every heading level to share a color rule, got:\n%s", out)
+		}
 	}
 }
 

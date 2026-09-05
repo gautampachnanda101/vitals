@@ -128,6 +128,22 @@ func TestLayoutShowsVersionInTheFooterAndFallsBackToDev(t *testing.T) {
 	}
 }
 
+// TestPageShellColorsHeadingTags guards a real regression: the page shell
+// used to carry no h1/h2/h3 CSS at all, so any Markdown-derived content
+// embedded via guide.RenderFragment (the AI-commentary card, currently
+// the only such content, and anything future) rendered its headings in
+// plain body-text color — no visual hierarchy at all, not even the
+// hardcoded "AI commentary" <h3> title got a real accent color. --accent
+// is already proven AAA-contrast as text color against both --bg and
+// --surface (TestPaletteMeetsWCAGAAAForNormalText), so reusing it here
+// needs no new contrast check.
+func TestPageShellColorsHeadingTags(t *testing.T) {
+	out := layout("t", "", "", nil, "<h3>x</h3>")
+	if !strings.Contains(out, "h1,h2,h3{color:var(--accent)") {
+		t.Errorf("page shell should style every heading level with the accent color, got:\n%s", out)
+	}
+}
+
 func TestVerdictBannerReflectsSeverity(t *testing.T) {
 	out := verdictBanner("All healthy", "cpu 4%  mem 40%", diag.OK)
 	if !strings.Contains(out, `verdict ok`) || !strings.Contains(out, "All healthy") {
