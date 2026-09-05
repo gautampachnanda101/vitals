@@ -4,13 +4,13 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Design reviewed (2026-09-05, [`design.md`](design.md) §12) —
-approved for implementation with five must-fix changes folded in, which
-**shrink** v1: no `SIGTERM`-to-top-consumer remedy (it was the one
-irreversible, racy one), interactive-TTY only, a compile-time exec
-allowlist, a lightweight pre-apply re-assess. Awaiting the maintainer's
-final go before `internal/heal` is built; `implementation-plan.md`
-holds the amended task list.
+**Status**: Shipped (2026-09-06) — `internal/heal`, `vitals heal`, the
+`diag.Remedy` type (`--json` schema 1.3.0 → 1.4.0), and the two v1
+remedies (`sudo purge`, `vitals clean` delegate). Built exactly to the
+§12-amended design: no `SIGTERM` remedy, interactive-TTY only, a
+compile-time exec allowlist, `doctor.QuickAssess` for the pre-apply
+re-check. See `implementation-plan.md` for the delivered task list and
+`design.md` §13 for the as-built notes.
 **Depends on**: [diag](../../../architecture/design.md) findings/fixes model (existing); logically follows `doctor`/`advice`
 **Target release**: not yet
 **Architecture**: [`design.md`](design.md) — the structured `Remedy`
