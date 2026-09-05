@@ -95,8 +95,9 @@ func TestBiggestPathsSectionSilentWhenEmptyOrError(t *testing.T) {
 }
 
 func TestToPathRowsShortensToTilde(t *testing.T) {
-	rows := toPathRows([]pathSize{{"/home/u/x/y", 2048}}, "/home/u")
-	if rows[0].Path != "~"+string(os.PathSeparator)+filepath.Join("x", "y") {
+	root := filepath.Join(string(os.PathSeparator)+"home", "u")
+	rows := toPathRows([]pathSize{{filepath.Join(root, "x", "y"), 2048}}, root)
+	if rows[0].Path != "~/x/y" { // always forward-slashed, every OS
 		t.Errorf("path not tilde-shortened: %q", rows[0].Path)
 	}
 	if rows[0].Size != "2.00 KB" {

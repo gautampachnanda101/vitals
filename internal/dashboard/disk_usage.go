@@ -235,9 +235,9 @@ type pathRow struct {
 func toPathRows(ps []pathSize, root string) []pathRow {
 	rows := make([]pathRow, len(ps))
 	for i, p := range ps {
-		disp := p.Path
+		disp := filepath.ToSlash(p.Path)
 		if rel, err := filepath.Rel(root, p.Path); err == nil && rel != "." {
-			disp = "~" + string(os.PathSeparator) + rel
+			disp = "~/" + filepath.ToSlash(rel) // forward slashes read fine on every OS
 		}
 		rows[i] = pathRow{Path: disp, Size: ui.HumanBytes(p.Size)}
 	}
