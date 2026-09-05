@@ -4,14 +4,19 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Designed, pending review — [`design.md`](design.md) drafted
-2026-09-04; needs a full `review-panel` pass before any code, per the
-"Why this needs a design doc and review panel" section below
+**Status**: Design reviewed (2026-09-05, [`design.md`](design.md) §12) —
+approved for implementation with five must-fix changes folded in, which
+**shrink** v1: no `SIGTERM`-to-top-consumer remedy (it was the one
+irreversible, racy one), interactive-TTY only, a compile-time exec
+allowlist, a lightweight pre-apply re-assess. Awaiting the maintainer's
+final go before `internal/heal` is built; `implementation-plan.md`
+holds the amended task list.
 **Depends on**: [diag](../../../architecture/design.md) findings/fixes model (existing); logically follows `doctor`/`advice`
 **Target release**: not yet
 **Architecture**: [`design.md`](design.md) — the structured `Remedy`
-type, the deliberately-tiny v1 remedy set, the confirmation model, and
-the stale-target trust-boundary analysis. Pre-review.
+type, the deliberately-tiny v1 remedy set (now `sudo purge` + a `clean`
+delegate only), the confirmation model, and the stale-target
+trust-boundary analysis. §12 is the review outcome.
 
 ## What
 

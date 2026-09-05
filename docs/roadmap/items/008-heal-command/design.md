@@ -290,3 +290,110 @@ derived from the title string.
   on at least macOS and Linux before the item is called done; the
   actual signal/exec paths verified manually (not in CI) and that
   verification recorded here.
+
+---
+
+## 12. Review outcome (2026-09-05)
+
+Reviewed against the panel's lenses — three architecture passes,
+security, product, QA, performance — consolidated here. Convergent
+must-fix findings and the resolution of §10's open questions follow;
+where a persona diverged it's noted. This substitutes for the parallel
+multi-agent run (the standing convention) for this pass; the maintainer
+makes the final call on the item before implementation, per its own
+`index.md`.
+
+### Must-fix (fold into the design before code)
+
+1. **[security, architecture ×2, QA — converged] Drop the
+   `RemedySignal` / `SIGTERM`-to-top-consumer remedy from v1.** It is
+   the one v1 remedy that is `RiskHigh`, irreversible, and racy (§7's
+   TOCTOU window is real and only *documented* away). Every reviewer
+   independently landed on §10 Q1's "v1 without the signal remedy"
+   option: ship `sudo purge` (`RemedyExec`, low-risk, reversible) and
+   the `clean` delegate (`RemedyDelegate`, gated by `clean`'s own
+   confirm + audit trail) only. Both are non-fatal to unsaved user
+   work. The signal remedy returns in a later, separately-reviewed pass
+   once there's real usage of the safe two. **Effect:** v1's remedy
+   table loses its first row; `Remedy.Signal`/`PID`/`ProcName` and
+   `RemedyKind`'s `RemedySignal` value stay defined in `diag` (schema
+   is designed once) but no v1 builder emits them, and `internal/heal`
+   rejects a `RemedySignal` it somehow receives with "not enabled in
+   this version".
+
+2. **[performance — converged with architecture] `heal` must not run
+   the full `doctor.Assess()` for its pre-apply refresh (§7).** `Assess`
+   does a live collect including the DNS-latency probe and a sampling
+   window — hundreds of ms to seconds, all irrelevant to deciding
+   whether a disk is still full. Add `doctor.CollectOptions{SkipProbes
+   []string}` (or a lighter `doctor.QuickAssess`) that skips DNS, the
+   network retransmit probe, and the LLM provider probe. `heal`'s
+   refresh uses that. This is also independently useful for the
+   dashboard's own snapshot cost.
+
+3. **[security] `RemedyExec` allowlist must be a compile-time constant
+   set, checked at apply time, not just "only builders construct it".**
+   Defence in depth: even though `Remedy` is only built in-process,
+   `internal/heal` should refuse to `exec` any `Argv[0]` not in a
+   hard-coded set (`{"sudo", "vitals"}` in v1, with `sudo` only ever
+   followed by `purge`). A future bug that lets a crafted `Remedy`
+   through then still can't run an arbitrary command.
+
+4. **[QA] `--only <id>` needs the id to be validated against the fresh
+   report, with a clear error for "no such finding now".** A user who
+   copies `vitals heal --only disk-low` from an older `doctor` run when
+   the disk is no longer low must get "no current finding `disk-low` —
+   nothing to do" and exit 0, not a silent no-op or a crash.
+
+5. **[product] The non-interactive `--yes` matrix in §4 is too subtle
+   to ship as-is.** PM's call: in v1, **`--yes` is interactive-only
+   sugar** — it pre-answers the prompt, but `heal` still requires a
+   TTY. No-TTY `heal` always refuses with a pointer to run it
+   interactively. This removes the "runs a subset, skips the rest with
+   notes" branch entirely from v1 (it's the part most likely to
+   surprise someone in a script). Batch/non-interactive `heal` is its
+   own later decision. Resolves §10 Q3 toward "narrower is safer for
+   v1".
+
+### Answers to §10's open questions
+
+- **Q1 (signal remedy in v1?):** No — must-fix 1.
+- **Q2 (`Remedy` on `Finding` vs. keyed lookup):** Keep it as a field
+  on `diag.Finding`. The schema growth is one additive minor bump
+  (already planned, §2.1); a side lookup keyed by `ID` would duplicate
+  the wiring and make `--json` consumers do a join. Architecture
+  reviewers split 2–1 for the field; security and PM preferred the
+  field for "what you see in the report is what runs".
+- **Q3 (`--yes` at all?):** Interactive-only in v1 — must-fix 5.
+- **Q4 (delegate: subprocess vs. in-process `clean.Apply`):**
+  Subprocess, via `os.Executable()`. Keeping `clean`'s own CLI
+  confirmation and `clean_history.jsonl` audit trail for free is worth
+  more than avoiding a fork; refactoring `clean` to expose a reusable
+  `Apply` with those side effects is its own item if ever needed.
+- **Q5 (Assess latency in the refresh):** Real problem — must-fix 2.
+
+### Not blocking, but recorded
+
+- **[architecture] `internal/heal` package boundary is right** — the
+  injected-`runner` seam (§9) matches `internal/dupes` / `internal/tools`
+  and gets the 95% raw floor from commit one.
+- **[QA] Add a test that a `RemedyManual` finding with a non-empty
+  `Fixes` still prints those fixes** (the "does nothing" path is still
+  a useful print).
+- **[security] Document that `heal` inherits `sudo`'s own 5-minute
+  credential cache** — running `heal` twice may not re-prompt for the
+  password. Not a vitals bug; worth a line in the user guide so it's
+  not surprising.
+- **[product] The `doctor`/`advice` hint wording** ("run `vitals heal
+  --only X`") should only appear for a finding whose `Remedy` is
+  non-`nil` *and* enabled in this build — never for a `RemedySignal`
+  finding while that remedy is disabled (must-fix 1).
+
+### Status after this review
+
+Design is **approved for implementation with the five must-fix changes
+folded in** (they shrink v1, they don't reshape it). `internal/heal`'s
+v1 surface is now: `sudo purge` and the `clean` delegate, interactive
+TTY only, `--dry-run` / `--only <id>` / `-y` flags, a compile-time exec
+allowlist, and a lightweight pre-apply re-assess. The
+`implementation-plan.md` can be written from §3–§9 as amended above.
