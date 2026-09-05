@@ -4,9 +4,19 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Not started — deliberately unscheduled, see "Trigger" below
+**Status**: Delivered incrementally, not as one big feature. The v0.8.0
+dashboard redesign shipped both halves within its scope boundary: the
+**machine-identity** block (hostname, OS, arch, core count — the exact
+allowlist below) as the new **System** page, and a **visually
+distinctive overview** as the severity-coloured resource-card grid.
+Overview **trend sparklines** (CPU/memory/disk, from `doctor`'s
+existing history) landed on top of that. What's genuinely still open:
+richer historical charts (a real time axis, hover values, a resource
+page's own history view) — those still want the design doc + review
+this item's "Trigger" describes before they're built.
 **Depends on**: [002](../002-dashboard-mvp/)
-**Target release**: not yet — see Trigger
+**Target release**: sparklines + System page in v0.8.0+; anything beyond
+that, not yet — see Trigger
 **Architecture**: not yet written; the seven-agent review that created
 this item (2026-09-03, on the maintainer's request to re-litigate
 deferring this) is the record of what shaped its scope, until a real

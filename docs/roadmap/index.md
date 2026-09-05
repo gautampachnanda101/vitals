@@ -41,7 +41,7 @@ depends on.
 | [004](items/004-native-launcher/) | Native double-click launcher | Mostly done (macOS verified; Linux/Windows unverified) | 002 | v0.6.0 |
 | [005](items/005-dashboard-write-actions/) | Dashboard write actions | Done | 001, 002, 004 | v0.7.0+ |
 | [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | Done | — (cross-cutting, ongoing) | ongoing |
-| [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Not started — unscheduled, see its Trigger | 002 | not yet |
+| [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Delivered incrementally — System page + overview cards + sparklines in v0.8.0+; richer charts still gated | 002 | v0.8.0+ |
 | [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Not started — captured as a followup, not yet designed | diag findings/fixes model | not yet |
 | [009](items/009-raw-coverage-95/) | Raw 95%+ coverage, no live-glue exemption | Done | — (cross-cutting) | ongoing |
 | [010](items/010-companion-tools-integration/) | Companion tools: real integration, not just a catalog | In progress — `nvtop` shipped; `jdupes`/`smartctl` scoped, not implemented | `internal/tools` (existing) | not yet |

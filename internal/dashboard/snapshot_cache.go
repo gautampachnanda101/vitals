@@ -27,6 +27,11 @@ type cachedSnapshot struct {
 	Snapshot  doctor.Snapshot
 	Report    diag.Report
 	Providers []llm.Provider
+	// History is the recorded 24h trend (doctor.LoadHistory), read here
+	// in the refresh — never in a Render function — so the Overview's
+	// sparklines (roadmap 007) cost nothing per request. doctor.Assess
+	// above has just appended the current point, so this includes it.
+	History []doctor.HistoryPoint
 }
 
 // snapshotCache serves the most recent cachedSnapshot, refreshing it at
@@ -70,6 +75,7 @@ func newSnapshotCache(ollamaURL string) *snapshotCache {
 				Snapshot:  snap,
 				Report:    report,
 				Providers: llm.ProbeProviders(llm.Options{OllamaURL: ollamaURL}),
+				History:   doctor.LoadHistory(),
 			}
 		},
 	}
