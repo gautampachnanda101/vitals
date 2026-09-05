@@ -117,23 +117,47 @@ been in `main` for at least one full CI cycle. (Met — item 001 is done.)
       the dashboard its first piece of server-side session state for a
       threat §1 already excludes. This closes the question rather than
       leaving it open.
-- [ ] `dupes`/`--hardlink` exposure — design note drafted
-      ([`design-dupes.md`](design-dupes.md), 2026-09-04): a fixed
-      server-side scope enum (no client-chosen paths, unlike
-      `/clean/apply` which takes none), a preview→apply pair of
-      `WriteAction`s re-running `Scan` server-side on apply, a
-      `context`/budget bound added to `Scan` so an expensive walk can't
-      wedge the single-flight mutex, and `html/template` responses
-      mirroring the `clean` ones. **Still open**: a security-persona
-      pass on that note (four open questions listed in it), then the
-      `Scan` `context`/`Truncated` refactor, then the two routes +
-      client buttons + tests.
+- [x] `dupes`/`--hardlink` exposure — **shipped** (2026-09-05).
+      [`design-dupes.md`](design-dupes.md)'s security-persona pass
+      closed all four open questions against the actual
+      `internal/dupes` implementation (`Scan` already unconditionally
+      skipped symlinks; duplicate matching was already full-SHA-256
+      content-verified, safe against preview/apply re-scan divergence;
+      `home` stays in the v1 scope enum given `ApplyHardlinks`' already-low
+      blast radius; a dual wall-clock+file-count budget replaces a bare
+      timeout) — verdict go-with-changes, nothing blocking. Implemented
+      per that review: `dupes.Scan` gained a context/budget-aware core,
+      `ScanContext(ctx, root, minSize, maxFiles)`, with `Scan` itself now
+      a thin unbounded wrapper and a new `Result.Truncated` field;
+      `internal/dashboard/modules_dupes.go` registers `/dupes/preview`
+      and `/dupes/hardlink` as a preview→apply `WriteAction` pair
+      (`resolveScope`'s fixed enum: `home`/`downloads`/`caches`, the
+      latter OS-gated to macOS/Linux), a `dupesApplyMu` single-flight
+      guard identical in shape to `cleanApplyMu`, `html/template`
+      responses mirroring the `clean` ones with crafted-path escaping
+      tests, and — per this repo's own standing rule that every
+      destructive action needs an explicit confirm step on both
+      surfaces — a `{"confirm": true}` server-side check plus a
+      client-side `window.confirm()` before the one POST that actually
+      links anything, exactly matching `/clean/apply`'s own two-layer
+      gate. Duplicate file paths render split into a dimmed directory
+      and a prominent filename (`dupesPathDisplay`), a file-explorer-style
+      readability fix made after the first version shipped a flat
+      full-path line. Tested per §6: `resolveScope` table-driven on every
+      OS from one machine, confirm/scope validation, the single-flight
+      guard, render escaping, an httptest end-to-end (same-origin
+      preview finds a real duplicate pair; cross-origin hardlink gets
+      403; a same-origin confirmed apply actually links two temp files
+      and `os.SameFile` proves it), and `dashboard_smoke_test.go`
+      exercising `/dupes/preview` against the real running binary
+      (the real hardlink apply deliberately excluded there, same
+      reasoning as `/clean/apply`'s own exclusion).
 
 ## Exit criteria
 
 A security-focused review (at minimum a dedicated security-architect-
 persona agent pass, per `AGENTS.md`) signs off on the CSRF/auth model
-specifically, before any write route ships. **Met** for the
-`sameOriginOnly`/`WriteAction` foundation; a real mutating write action
-(`clean` apply) still needs its own pass before it ships, per the tasks
-above.
+specifically, before any write route ships. **Met**: the
+`sameOriginOnly`/`WriteAction` foundation, `/clean/apply`, and
+`/dupes/preview`+`/dupes/hardlink` have each had their own pass before
+shipping, per the tasks above.

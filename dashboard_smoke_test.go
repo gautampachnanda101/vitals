@@ -40,6 +40,7 @@ var dashboardURLRE = regexp.MustCompile(`serving .* at (http://127\.0\.0\.1:\d+/
 func TestDashboardSmoke(t *testing.T) {
 	bin := buildCLIOnce(t)
 	scratch := t.TempDir()
+	writeDupesFixture(t, scratch)
 
 	cmd := exec.Command(bin, "dashboard", "--addr", "127.0.0.1:0", "--no-open")
 	cmd.Env = append(os.Environ(), "HOME="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=", "NO_COLOR=1")
@@ -95,9 +96,71 @@ func TestDashboardSmoke(t *testing.T) {
 	assertPostRouteWithBody(t, url, "clean/apply", "", http.StatusBadRequest, "confirm")
 	assertPostRouteWithBody(t, url, "clean/apply", `{"confirm": false}`, http.StatusBadRequest, "")
 	assertCrossOriginPostRejected(t, url, "clean/apply", cleanApplyConfirmBody)
+
+	assertRoute(t, url, "dupes", http.StatusOK, "dupes-preview-btn")
+	// A real preview against the fixture pair writeDupesFixture wrote into
+	// scratch (this process's HOME) above — proves the write-action HTTP
+	// path for /dupes/preview end to end, same reasoning as /clean/preview
+	// above. /dupes/hardlink is deliberately never exercised here with a
+	// body that would let it actually run — see dupesHardlinkConfirmBody's
+	// own comment, mirroring cleanApplyConfirmBody's.
+	assertPostRouteWithBody(t, url, "dupes/preview", `{"scope":"home"}`, http.StatusOK, "reclaimable")
+	assertPostRouteWithBody(t, url, "dupes/hardlink", "", http.StatusBadRequest, "confirm")
+	assertPostRouteWithBody(t, url, "dupes/hardlink", `{"confirm": false, "scope":"home"}`, http.StatusBadRequest, "")
+	assertCrossOriginPostRejected(t, url, "dupes/hardlink", dupesHardlinkConfirmBody)
+
 	assertHistoryWasRecorded(t, scratch)
 
 	assertGracefulShutdown(t, cmd)
+
+	assertDupesFixtureUntouched(t, scratch)
+}
+
+// dupesHardlinkConfirmBody is a valid, well-formed confirm+scope body —
+// used only in a case that must still be rejected (cross-origin), never
+// in a case that would let the real handler call ApplyHardlinks and
+// actually hardlink something on the machine running this test. Mirrors
+// cleanApplyConfirmBody's own reasoning.
+const dupesHardlinkConfirmBody = `{"confirm": true, "scope": "home"}`
+
+// dupesFixtureMinSize matches the dashboard's own dupes.go "home" scope
+// minSize (1 MiB) — a smaller pair would be silently filtered out before
+// ever becoming a scan candidate.
+const dupesFixtureMinSize = 1 << 20
+
+// writeDupesFixture writes a real byte-identical pair under home so
+// /dupes/preview above has something genuine to find, not an empty scan.
+func writeDupesFixture(t *testing.T, home string) {
+	t.Helper()
+	content := make([]byte, dupesFixtureMinSize)
+	for i := range content {
+		content[i] = byte(i)
+	}
+	for _, name := range []string{"vitals-smoke-a.bin", "vitals-smoke-b.bin"} {
+		if err := os.WriteFile(filepath.Join(home, name), content, 0o644); err != nil {
+			t.Fatalf("writing dupes fixture %s: %v", name, err)
+		}
+	}
+}
+
+// assertDupesFixtureUntouched confirms the fixture pair writeDupesFixture
+// wrote is still two separate files, not hardlinked together — this test
+// never sends a real confirmed /dupes/hardlink call (see
+// dupesHardlinkConfirmBody's own comment), so nothing should have
+// changed on disk.
+func assertDupesFixtureUntouched(t *testing.T, home string) {
+	t.Helper()
+	a, err := os.Stat(filepath.Join(home, "vitals-smoke-a.bin"))
+	if err != nil {
+		t.Fatalf("stat fixture a: %v", err)
+	}
+	b, err := os.Stat(filepath.Join(home, "vitals-smoke-b.bin"))
+	if err != nil {
+		t.Fatalf("stat fixture b: %v", err)
+	}
+	if os.SameFile(a, b) {
+		t.Error("the dupes fixture pair should still be two separate files — no real /dupes/hardlink call was ever sent")
+	}
 }
 
 // assertHistoryWasRecorded confirms the GET above actually wrote a point to

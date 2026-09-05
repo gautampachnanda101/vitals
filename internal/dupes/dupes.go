@@ -9,6 +9,7 @@ package dupes
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -63,6 +64,12 @@ type Result struct {
 	ScannedBytes int64   `json:"scanned_bytes"`
 	Groups       []Group `json:"groups"`
 	WastedBytes  int64   `json:"wasted_bytes"`
+	// Truncated is true when the walk stopped early — its context was
+	// cancelled, or a caller-supplied file budget (ScanContext) was hit —
+	// before the whole tree was seen. Groups/WastedBytes above still
+	// reflect everything found up to that point; this just says there
+	// may have been more.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // skipDirNames are directories not worth walking into: version control,
@@ -178,12 +185,34 @@ func writeResultToFile(path string, r Result) error {
 // Scan walks root and returns every group of files sharing a full SHA-256
 // hash, largest wasted-space group first. Only regular files at or above
 // minSize are considered; a size-then-partial-hash prefilter keeps it from
-// fully hashing files that can't possibly match.
+// fully hashing files that can't possibly match. Unbounded — see
+// ScanContext for a cancellable, budget-capped walk.
 func Scan(root string, minSize int64) (Result, error) {
+	return ScanContext(context.Background(), root, minSize, 0)
+}
+
+// ScanContext is Scan's context/budget-aware core. ctx is checked during
+// the walk so a caller can bound how long a scan runs — an in-process,
+// cancellable walk, unlike internal/clean's untimed subprocess calls (see
+// docs/roadmap/items/005-dashboard-write-actions/design.md §7 finding 2,
+// accepted there specifically because clean's calls are NOT cancellable
+// the way this one is designed to be from the start). maxFiles caps how
+// many regular files at-or-above minSize are considered before the walk
+// stops early; <=0 means unlimited, Scan's own existing behavior. Either
+// limit hit sets Result.Truncated, so a caller can tell "no duplicates"
+// apart from "didn't get to see everything."
+func ScanContext(ctx context.Context, root string, minSize int64, maxFiles int) (Result, error) {
 	sizeGroups := map[int64][]string{}
 	var scannedFiles, scannedBytes int64
+	truncated := false
 
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		select {
+		case <-ctx.Done():
+			truncated = true
+			return fs.SkipAll
+		default:
+		}
 		if err != nil {
 			return nil // unreadable entry (permissions, race) — skip, don't abort the scan
 		}
@@ -199,6 +228,10 @@ func Scan(root string, minSize int64) (Result, error) {
 		info, err := d.Info()
 		if err != nil || !info.Mode().IsRegular() || info.Size() < minSize {
 			return nil
+		}
+		if maxFiles > 0 && scannedFiles >= int64(maxFiles) {
+			truncated = true
+			return fs.SkipAll
 		}
 		scannedFiles++
 		scannedBytes += info.Size()
@@ -226,7 +259,7 @@ func Scan(root string, minSize int64) (Result, error) {
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].WastedBytes() > groups[j].WastedBytes() })
 
-	return Result{Root: root, ScannedFiles: scannedFiles, ScannedBytes: scannedBytes, Groups: groups, WastedBytes: wasted}, nil
+	return Result{Root: root, ScannedFiles: scannedFiles, ScannedBytes: scannedBytes, Groups: groups, WastedBytes: wasted, Truncated: truncated}, nil
 }
 
 // confirmDuplicates takes same-size candidates and returns them grouped by
