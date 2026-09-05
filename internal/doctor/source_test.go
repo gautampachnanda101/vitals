@@ -15,6 +15,7 @@ import (
 
 	"vitals/internal/gpu"
 	"vitals/internal/llm"
+	"vitals/internal/smart"
 )
 
 // fakeProc is a canned procSource for topProcs tests, mirroring
@@ -390,7 +391,61 @@ func TestDefaultSourceFieldsAreAllWired(t *testing.T) {
 	if defaultSource.cpuTimes == nil || defaultSource.cpuCounts == nil || defaultSource.cpuInfo == nil ||
 		defaultSource.loadAvg == nil || defaultSource.processes == nil || defaultSource.virtualMemory == nil ||
 		defaultSource.swapMemory == nil || defaultSource.netIOCounters == nil || defaultSource.gpuProbe == nil ||
+		defaultSource.smartProbe == nil ||
 		defaultSource.sensorsTemps == nil || defaultSource.ollamaModels == nil || defaultSource.scanProcesses == nil {
 		t.Error("defaultSource has a nil field")
+	}
+}
+
+func TestMatchSMARTCopiesHealthOntoTheRightDisk(t *testing.T) {
+	disks := []Disk{{Mount: "/"}, {Mount: "/data"}, {Mount: "/boot"}}
+	matchSMART(disks, []smart.Health{
+		{Mount: "/", Passed: true, TempC: 40, WearPct: 12},
+		{Mount: "/data", Passed: false, WearPct: -1}, // ATA: no wear indicator
+		{Mount: "/nonexistent", Passed: true},        // no matching disk — ignored
+	})
+	if disks[0].SMART == nil || !disks[0].SMART.Passed || disks[0].SMART.TempC != 40 || disks[0].SMART.WearPct != 12 {
+		t.Errorf("disk / = %+v", disks[0].SMART)
+	}
+	if disks[1].SMART == nil || disks[1].SMART.Passed {
+		t.Errorf("disk /data should carry a failing verdict, got %+v", disks[1].SMART)
+	}
+	if disks[1].SMART.WearPct != 0 {
+		t.Errorf("a -1 wear reading must not leak through as a real 0-100 value: %+v", disks[1].SMART)
+	}
+	if disks[2].SMART != nil {
+		t.Errorf("disk /boot had no probe result; SMART should stay nil, got %+v", disks[2].SMART)
+	}
+}
+
+func TestAttachSMARTNoOpWhenProbeMissing(t *testing.T) {
+	disks := []Disk{{Mount: "/"}}
+	attachSMART(source{smartProbe: nil}, disks) // no smartctl wired
+	if disks[0].SMART != nil {
+		t.Errorf("attachSMART with no probe should leave SMART nil, got %+v", disks[0].SMART)
+	}
+}
+
+func TestAttachSMARTMapsProbeResultsForRealMounts(t *testing.T) {
+	disks := collectDisks(nil, nil, time.Millisecond)
+	if len(disks) == 0 {
+		t.Skip("no real disks on this runner")
+	}
+	want := disks[0].Mount
+	attachSMART(source{smartProbe: func(ts []smart.Target) []smart.Health {
+		// prove real mounts reached the probe, then answer for the first
+		var hit bool
+		for _, tt := range ts {
+			if tt.Mount == want {
+				hit = true
+			}
+		}
+		if !hit {
+			return nil
+		}
+		return []smart.Health{{Mount: want, Passed: true, TempC: 37, WearPct: -1}}
+	}}, disks)
+	if disks[0].SMART == nil || !disks[0].SMART.Passed {
+		t.Errorf("expected SMART attached to %s, got %+v", want, disks[0].SMART)
 	}
 }

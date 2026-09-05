@@ -61,9 +61,40 @@ This file shows what's **left**. Check off a task as it lands.
         means fully trusting jdupes' walk before filtering rather than
         pruning early) — not yet decided which.
 
-- [ ] `smartctl` → real S.M.A.R.T. health/wear data on `vitals disk`.
-      **Real output validated this session** (`smartctl -a -j` against
-      this machine's real NVMe SSD):
+- [x] `smartctl` → real S.M.A.R.T. health/wear on `vitals disk` and the
+      dashboard — shipped as the `internal/smart` package
+      (`smart.Probe`), wired into `doctor` via `source.smartProbe` and
+      `attachSMART`. `doctor.Disk` gained an optional `SMART *DiskSMART`
+      (`--json` schema **1.2.0 → 1.3.0**, additive `snapshot.disks[].smart`).
+      New findings in `analyzeDisks`: `smart_status.passed == false` →
+      **critical** ("back up now, plan replacement"); NVMe
+      `percentage_used >= 90` → warn, `>= 100` → critical. `vitals disk`
+      and the dashboard Disk page each show a S.M.A.R.T. line when data
+      is available.
+      - **Resolved — device resolution.** macOS: `diskutil info <mount>`
+        → "Part of Whole" → `/dev/diskN` (the validated path; smartctl
+        rejects the gopsutil `/dev/diskNsM` partition node). Linux:
+        strip the partition suffix off the gopsutil device
+        (`linuxWholeDisk` — `/dev/sda1`→`/dev/sda`,
+        `/dev/nvme0n1p1`→`/dev/nvme0n1`, `/dev/mmcblk0p1`→`/dev/mmcblk0`;
+        an unrecognised shape like an LVM/mapper path is passed through
+        unchanged and simply fails the probe if smartctl can't address
+        it). The regex is CI-tested; the live Linux `smartctl` call
+        itself still hasn't run on real hardware this project has
+        access to, but a wrong device just yields no `smart_status` and
+        the mount is skipped — it can't produce a wrong reading.
+      - **Resolved — Windows scope.** `probe` returns nothing on
+        `windows`: `\\.\PhysicalDriveN` addressing is unvalidated, so
+        rather than guess, the Disk page/`vitals disk` simply show no
+        S.M.A.R.T. line there. Revisit with a real Windows box.
+      - **Resolved — ATA wear.** Not parsed (vendor-inconsistent
+        attribute table, no SATA hardware to validate). `Health.WearPct`
+        is `-1` for non-NVMe drives and `matchSMART` maps that to "no
+        wear value" rather than a bogus 0; only `smart_status` /
+        `temperature` apply to ATA drives.
+
+      **Original validated output** (`smartctl -a -j` against this
+      machine's real NVMe SSD):
       - `smart_status.passed` (bool) is documented and confirmed as the
         universal pass/fail field across NVMe *and* ATA/SATA smartctl
         JSON output — the safe baseline signal for any drive type.

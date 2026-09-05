@@ -368,6 +368,26 @@ func TestRenderDiskListsEveryMount(t *testing.T) {
 	}
 }
 
+func TestRenderDiskShowsSMARTWhenPresent(t *testing.T) {
+	stubResourceExtras(t)
+	ok := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{
+		{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30, SMART: &doctor.DiskSMART{Passed: true, TempC: 41, WearPct: 8}},
+	}})
+	if !strings.Contains(ok, "S.M.A.R.T.") || !strings.Contains(ok, "passed") || !strings.Contains(ok, "8%") {
+		t.Errorf("healthy SMART line missing detail: %s", ok)
+	}
+	bad := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{
+		{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30, SMART: &doctor.DiskSMART{Passed: false}},
+	}})
+	if !strings.Contains(bad, "FAILED") {
+		t.Errorf("a failing SMART verdict must say FAILED: %s", bad)
+	}
+	none := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30}}})
+	if strings.Contains(none, "S.M.A.R.T.") {
+		t.Errorf("no SMART data -> no SMART line: %s", none)
+	}
+}
+
 func TestRenderDiskEmptyIsFriendly(t *testing.T) {
 	out := renderDisk(doctor.Snapshot{})
 	if !strings.Contains(strings.ToLower(out), "no disks") {

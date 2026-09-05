@@ -145,6 +145,20 @@ func focusDetail(resource string, s Snapshot, verbose bool) {
 				secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
 				fmt.Printf("  %s\n", ui.Key(fmt.Sprintf("  filling at %s/hr — %s", ui.HumanBytes(int64(d.GrowthBytesPerSec*3600)), timeToFull(secs))))
 			}
+			if d.SMART != nil {
+				status := "PASSED"
+				if !d.SMART.Passed {
+					status = "FAILED"
+				}
+				line := fmt.Sprintf("  S.M.A.R.T. %s", status)
+				if d.SMART.TempC > 0 {
+					line += fmt.Sprintf(" — %.0f°C", d.SMART.TempC)
+				}
+				if d.SMART.WearPct > 0 {
+					line += fmt.Sprintf(", %.0f%% life used", d.SMART.WearPct)
+				}
+				fmt.Printf("  %s\n", ui.Key(line))
+			}
 		}
 		printReclaimable(verbose)
 		if verbose {

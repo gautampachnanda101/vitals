@@ -4,9 +4,11 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: In progress — `nvtop` shipped (2026-09-05); `jdupes` and
-`smartctl` scoped with real validated findings, implementation not
-started, per this item's own "Ground rules" below
+**Status**: Done (2026-09-05) — `nvtop` (`vitals gpu --live`), `jdupes`
+(`vitals dupes --fast`) and `smartctl` (`internal/smart` → S.M.A.R.T.
+health on `vitals disk` and the dashboard) all shipped, each with its
+open questions resolved and recorded in the implementation plan. Adding
+a further companion tool is a fresh item, not a reopening of this one.
 **Depends on**: `internal/tools`' registry/`Launch` (existing)
 **Target release**: not yet
 **Architecture**: this item's own [`implementation-plan.md`](implementation-plan.md)
