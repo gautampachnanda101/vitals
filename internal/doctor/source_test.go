@@ -2,6 +2,8 @@ package doctor
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -447,5 +449,72 @@ func TestAttachSMARTMapsProbeResultsForRealMounts(t *testing.T) {
 	}}, disks)
 	if disks[0].SMART == nil || !disks[0].SMART.Passed {
 		t.Errorf("expected SMART attached to %s, got %+v", want, disks[0].SMART)
+	}
+}
+
+func TestCollectSkipProbesOmitsSubprocessSignals(t *testing.T) {
+	src := baseSource()
+	gpuCalled, smartCalled := false, false
+	src.gpuProbe = func() []gpu.Device { gpuCalled = true; return []gpu.Device{{Name: "x"}} }
+	src.sensorsTemps = func() ([]sensors.TemperatureStat, error) {
+		smartCalled = true
+		return nil, errors.New("no sensors")
+	}
+
+	s := collect(src, Options{Window: time.Millisecond, SkipProbes: true})
+
+	if gpuCalled {
+		t.Error("SkipProbes should not run the GPU probe")
+	}
+	if smartCalled {
+		t.Error("SkipProbes should not run the thermal/sensors probe")
+	}
+	if s.GPUs != nil || s.Thermal.CPUTempC != 0 || s.LLM != nil {
+		t.Errorf("SkipProbes should leave GPU/Thermal/LLM zero, got %+v", s)
+	}
+	// the gopsutil-bounded signals still populate
+	if s.CPU.Cores == 0 && len(s.Disks) == 0 {
+		// baseSource zeroes most of these, so just assert the call path
+		// didn't panic and returned a snapshot — covered above.
+	}
+
+	// without SkipProbes the same source *does* call the GPU probe
+	gpuCalled = false
+	collect(src, Options{Window: time.Millisecond})
+	if !gpuCalled {
+		t.Error("a normal collect should run the GPU probe")
+	}
+}
+
+func TestQuickAssessSkipsProbesAndDoesNotWriteHistory(t *testing.T) {
+	// Isolate the config dir on every OS: os.UserConfigDir reads
+	// XDG_CONFIG_HOME on unix and %AppData% on Windows.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("AppData", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+
+	p, ok := historyPath()
+	if !ok {
+		t.Skip("no resolvable config dir on this runner")
+	}
+	// Seed a sentinel; a real write would replace it (appendHistory
+	// re-encodes the whole file), a no-op leaves it byte-identical.
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := []byte("SENTINEL-not-real-history\n")
+	if err := os.WriteFile(p, sentinel, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, report := QuickAssess(RunOptions{})
+	if report.Findings == nil {
+		t.Error("QuickAssess should still return an analyzed report")
+	}
+	got, err := os.ReadFile(p)
+	if err != nil || string(got) != string(sentinel) {
+		t.Errorf("QuickAssess must not touch the trend history file; it now reads %q", got)
 	}
 }

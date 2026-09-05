@@ -25,6 +25,12 @@ import (
 	"vitals/internal/ui"
 )
 
+// maxCommandRunes caps a captured process command line. A pathological
+// argv (a Java classpath, a container runtime's arg list) can be tens of
+// KB; unbounded, it breaks any fixed-width layout and bloats --json.
+// Long enough to keep the useful head of a real command.
+const maxCommandRunes = 512
+
 // Options configures a snapshot.
 type Options struct {
 	Top      int           // processes to show
@@ -391,8 +397,15 @@ func topProcesses(src source, opts Options) []ProcInfo {
 		if cmd == "" {
 			cmd = name
 		}
+		// A process names itself; a hostile one can put terminal-driving
+		// escape sequences in its comm or argv. Sanitise at the boundary
+		// so every downstream renderer (top, doctor findings, the
+		// console view) is safe, and cap the command line so one giant
+		// argv can't blow a fixed-width layout.
+		name = ui.Sanitize(name)
+		cmd = ui.Truncate(ui.Sanitize(cmd), maxCommandRunes)
 		out = append(out, ProcInfo{
-			PID: p.PID(), User: user, CPUPct: cpuPct, MemPct: memPct,
+			PID: p.PID(), User: ui.Sanitize(user), CPUPct: cpuPct, MemPct: memPct,
 			RSSBytes: mi.RSS, Threads: nthreads, Name: name, Command: cmd,
 		})
 	}
