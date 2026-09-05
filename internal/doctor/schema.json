@@ -3,7 +3,7 @@
   "$id": "https://github.com/gautampachnanda101/vitals/schema/doctor.json",
   "title": "vitals doctor --json payload",
   "description": "Envelope emitted by `vitals doctor --json` and the resource deep-dive commands, and carried in the MCP system_health tool result.",
-  "x-schema-version": "1.3.0",
+  "x-schema-version": "1.4.0",
   "type": "object",
   "required": ["schema_version", "timestamp", "verdict", "exit_code", "findings", "snapshot"],
   "additionalProperties": false,
@@ -20,9 +20,24 @@
         "additionalProperties": false,
         "properties": {
           "severity": { "type": "string", "enum": ["ok", "warning", "critical"] },
+          "id": { "type": "string", "description": "Stable kebab-case key for this finding kind; `vitals heal --only <id>` targets it." },
           "title": { "type": "string" },
           "detail": { "type": "string" },
-          "fixes": { "type": "array", "items": { "type": "string" } }
+          "fixes": { "type": "array", "items": { "type": "string" } },
+          "remedy": {
+            "type": "object",
+            "description": "The machine-executable fix `vitals heal` would run; absent when there is no safe automatable action.",
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string", "enum": ["manual", "exec", "delegate", "signal"] },
+              "label": { "type": "string" },
+              "argv": { "type": "array", "items": { "type": "string" } },
+              "signal": { "type": "string" },
+              "pid": { "type": "integer" },
+              "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+              "reversible": { "type": "boolean" }
+            }
+          }
         }
       }
     },

@@ -29,6 +29,7 @@ the plain `vitals guide` terminal view) without one:
 - [vitals dashboard](#vitals-dashboard)
 - [Resource deep dives: cpu, mem, disk, net, power](#resource-deep-dives-cpu-mem-disk-net-power)
 - [vitals advice](#vitals-advice)
+- [vitals heal](#vitals-heal)
 - [vitals llm](#vitals-llm)
 - [vitals top, memhogs, memcheck](#vitals-top-memhogs-memcheck)
 - [vitals clean, dupes, tools, explore, live](#vitals-clean-dupes-tools-explore-live)
@@ -292,6 +293,38 @@ vitals advice --json | jq -r .llm_advice         # present only when a provider 
 `llm_error` is set instead of `llm_advice` when no provider answered —
 the payload always has something to show, it just tells you honestly
 which half of it is present.
+
+## vitals heal
+
+`heal` is the third step: `doctor` diagnoses, `advice` explains, `heal`
+**acts** — it runs the machine-executable fix a finding carries, after
+showing you the exact command and asking. It re-checks the machine
+itself first (a fast pass, no probes, no history write), so it acts on
+what's true now, not on a report from earlier.
+
+It runs in an **interactive terminal only** — a piped or scripted run
+refuses (`--dry-run` works anywhere and changes nothing). The v1 remedy
+set is deliberately tiny: `sudo purge` (macOS — frees the drop-on-demand
+file cache) for the "RAM high (likely reclaimable)" finding, and a
+`vitals clean` delegate for a "disk nearly full" / "out of inodes"
+finding. The delegate runs `vitals clean --dry-run` first, shows it, and
+asks again before the real cleanup — so `clean`'s own preview,
+confirmation and audit history all still apply. Anything else prints its
+fixes and does nothing.
+
+```bash
+vitals heal --dry-run              # show every remedy and its risk; run nothing
+vitals heal                        # step through each, confirming one at a time
+vitals heal --only disk-low        # just the remedy for that finding id (see `vitals doctor --json`)
+vitals heal --yes                  # pre-answer the prompt (still needs a real terminal)
+```
+
+Every finding in `vitals doctor --json` now carries a stable `id`, and a
+finding with an automatable fix carries a `remedy` object (`kind`,
+`argv`, `risk`, `reversible`). `heal` will only ever run `sudo purge` or
+a `vitals` subcommand — it refuses anything else even if a crafted
+report somehow reached it. Note that `sudo` caches your password for a
+few minutes, so a second `heal` in quick succession may not re-prompt.
 
 ## vitals llm
 

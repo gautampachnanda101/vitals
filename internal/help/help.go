@@ -144,6 +144,24 @@ var commands = []Command{
 		},
 	},
 	{
+		Name:     "heal",
+		Synopsis: "apply a finding's suggested fix, with confirmation",
+		Long: "The third step after `doctor` diagnoses and `advice` explains: run the\n" +
+			"machine-executable remedy a finding carries. Interactive terminal only.\n" +
+			"v1 remedies: `sudo purge` (macOS) and a `vitals clean` delegate. Each is\n" +
+			"shown with its exact command and risk, and confirmed, before it runs.",
+		Flags: []Flag{
+			{"dry-run", "", "print what each remedy would do; change nothing"},
+			{"only", "<id>", "apply only the remedy for the finding with this id"},
+			{"yes", "", "pre-answer the prompt (still needs an interactive terminal)"},
+			{"ollama-url", "<url>", "Ollama base URL for the pre-apply re-check"},
+		},
+		Examples: []string{
+			"vitals heal --dry-run",
+			"vitals heal --only disk-low",
+		},
+	},
+	{
 		Name:     "dupes",
 		Synopsis: "find byte-identical duplicate files (report only)",
 		Long: "Walks a directory tree (default: your home directory), groups files by size\n" +
