@@ -261,5 +261,5 @@ var pathTableTmpl = template.Must(template.New("paths").Parse(`<table style="wid
 	`<th style="text-align:right;padding:.5rem .8rem;font-size:.7rem;color:var(--muted);text-transform:uppercase">Size</th></tr>` +
 	`{{range .}}<tr>` +
 	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line)" class="mono">{{.Path}}</td>` +
-	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);text-align:right" class="mono">{{.Size}}</td>` +
+	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);text-align:right;white-space:nowrap" class="mono">{{.Size}}</td>` +
 	`</tr>{{end}}</table>`))
