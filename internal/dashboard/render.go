@@ -74,6 +74,10 @@ nav a[aria-current="page"]{color:var(--accent);border-color:var(--accent);font-w
 .row{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:none}
 .row .k{color:var(--muted)}
+.path{padding:.35rem 0 .35rem 1rem;border-bottom:1px solid var(--line)}
+.path:last-child{border-bottom:none}
+.path .dir{color:var(--muted);font-size:.8em;overflow-wrap:anywhere}
+.path .name{font-weight:600;overflow-wrap:anywhere}
 .unavailable{color:var(--muted);font-style:italic}
 .btn{font:inherit;font-weight:600;color:var(--accent);background:transparent;border:1px solid var(--accent);border-radius:8px;padding:.5rem 1.1rem;cursor:pointer}
 .btn:hover{background:var(--bg)}
