@@ -32,6 +32,22 @@ func Assess(opts RunOptions) (Snapshot, diag.Report) {
 	return finishAssess(snap)
 }
 
+// QuickAssess is a fast, read-only variant of Assess for callers that
+// need a predictable, low-latency pass and neither the subprocess/
+// network signals nor a trend-history write: `vitals heal`'s pre-apply
+// re-check (roadmap 008) and the console at-a-glance view (roadmap
+// 011). It sets Options.SkipProbes (no GPU/power/thermal/LLM probe) and
+// deliberately does NOT call recordHistory — so running it on a loop (a
+// shell prompt, `watch vitals`) can't evict real hourly points from the
+// 2000-point/24h budget. It still reads the existing history for the
+// memory-growth finding.
+func QuickAssess(opts RunOptions) (Snapshot, diag.Report) {
+	snap := Collect(Options{OllamaURL: opts.OllamaURL, SkipProbes: true})
+	report := Analyze(snap)
+	addLeakFinding(&report, LoadHistory())
+	return snap, report
+}
+
 // finishAssess is the non-live remainder of Assess, split out so it can be
 // exercised against a fixture Snapshot in tests without a real Collect()
 // call. It records the snapshot into the trend history (best effort) and

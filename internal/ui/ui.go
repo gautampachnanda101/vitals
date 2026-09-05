@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
@@ -108,10 +109,26 @@ const DefaultWrapWidth = 92
 // findings/output printed together should wrap consistently even if
 // something changed mid-print, which is unlikely but free to guarantee.
 func TermWidth() int {
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 20 {
-		return w
+	w, _, _ := TermSize()
+	return w
+}
+
+// DefaultTermHeight is the row count TermSize falls back to when the real
+// terminal height can't be determined — the classic 80x24 default's
+// height half.
+const DefaultTermHeight = 24
+
+// TermSize returns stdout's current (columns, rows) and whether a real
+// terminal size was read. On failure — output redirected, or the query
+// itself failing on a real TTY — it returns (DefaultWrapWidth,
+// DefaultTermHeight, false) so a caller can tell "genuine size" from
+// "fell back" and choose to render unbounded rather than trust a guessed
+// height.
+func TermSize() (cols, rows int, ok bool) {
+	if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 20 && h > 0 {
+		return w, h, true
 	}
-	return DefaultWrapWidth
+	return DefaultWrapWidth, DefaultTermHeight, false
 }
 
 // Wrap breaks text into lines no wider than width, breaking only at word
@@ -195,6 +212,67 @@ var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 // output against golden files without color noise.
 func StripANSI(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
+}
+
+// escSeqRE matches the escape sequences a hostile string could carry to
+// drive the terminal: a full CSI sequence (`\x1b[ ... final-byte`,
+// intermediate bytes allowed), an OSC sequence (`\x1b] ... BEL` or
+// `\x1b] ... \x1b\`, e.g. window-title and OSC-8 hyperlinks), and a
+// bare two-byte escape (`\x1bX`) including the C1 CSI byte `\x9b`.
+var escSeqRE = regexp.MustCompile(`\x1b\[[0-\?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x9b[0-\?]*[ -/]*[@-~]|\x1b[@-Z\\-_]`)
+
+// Sanitize makes an externally-sourced string safe to print to a
+// terminal. It is the single choke point for anything vitals didn't
+// author itself — process names and command lines, file and mount
+// paths, usernames, reverse-DNS peer hosts, config-file values — none of
+// which vitals controls and any of which a hostile local process can
+// stuff with terminal-driving escape sequences (cursor moves that
+// repaint vitals' own verdict, OSC-8 phishing hyperlinks, title
+// rewrites).
+//
+// It strips: every escape/CSI/OSC sequence (escSeqRE); every remaining
+// C0 control byte except that a tab becomes a single space; DEL; and the
+// lone C1 range (\x80-\x9f). Printable text — including non-ASCII,
+// combining marks, and emoji — is left untouched; callers that also need
+// a display-width bound apply Truncate on top.
+func Sanitize(s string) string {
+	s = escSeqRE.ReplaceAllString(s, "")
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			i++ // drop an invalid byte (a raw C1 like 0x9b lands here)
+			continue
+		}
+		i += size
+		switch {
+		case r == '\t':
+			b.WriteByte(' ')
+		case r == 0x7f, r < 0x20, r >= 0x80 && r <= 0x9f:
+			// drop: C0 controls, DEL, the C1 range
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// GradeSeverity colours text by a diag severity word ("ok"/"warning"/
+// "critical", i.e. diag.Severity.String()). The one place a severity is
+// mapped to a terminal colour — the verdict banner, PrintFindings, and
+// the console at-a-glance view (roadmap 011) all go through here rather
+// than open-coding the switch. "ok" and anything unrecognised get no
+// colour (the default terminal foreground already reads as "fine").
+func GradeSeverity(severityWord, text string) string {
+	switch severityWord {
+	case "warning":
+		return Yellow + text + Reset
+	case "critical":
+		return Red + text + Reset
+	default:
+		return text
+	}
 }
 
 // Truncate shortens s to at most n runes, appending a single-character ellipsis

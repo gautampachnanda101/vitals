@@ -303,9 +303,14 @@ func TestMeasureDirsRespectsBudget(t *testing.T) {
 	for i := range dirs {
 		dirs[i] = mktree(t)
 	}
-	_, complete := measureDirs(dirs, 0)
+	// A negative budget puts the deadline unambiguously in the past, so
+	// the loop's first `time.Now().After(deadline)` check is guaranteed
+	// true. A literal 0 flaked on Windows CI: two consecutive time.Now()
+	// calls can return the same coarse-tick value, making After() false
+	// on the first iteration and letting a fast run reach every dir.
+	_, complete := measureDirs(dirs, -time.Second)
 	if complete {
-		t.Errorf("a zero budget should not be able to reach every directory")
+		t.Errorf("an already-expired budget should not be able to reach every directory")
 	}
 }
 

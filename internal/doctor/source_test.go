@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -447,5 +448,58 @@ func TestAttachSMARTMapsProbeResultsForRealMounts(t *testing.T) {
 	}}, disks)
 	if disks[0].SMART == nil || !disks[0].SMART.Passed {
 		t.Errorf("expected SMART attached to %s, got %+v", want, disks[0].SMART)
+	}
+}
+
+func TestCollectSkipProbesOmitsSubprocessSignals(t *testing.T) {
+	src := baseSource()
+	gpuCalled, smartCalled := false, false
+	src.gpuProbe = func() []gpu.Device { gpuCalled = true; return []gpu.Device{{Name: "x"}} }
+	src.sensorsTemps = func() ([]sensors.TemperatureStat, error) {
+		smartCalled = true
+		return nil, errors.New("no sensors")
+	}
+
+	s := collect(src, Options{Window: time.Millisecond, SkipProbes: true})
+
+	if gpuCalled {
+		t.Error("SkipProbes should not run the GPU probe")
+	}
+	if smartCalled {
+		t.Error("SkipProbes should not run the thermal/sensors probe")
+	}
+	if s.GPUs != nil || s.Thermal.CPUTempC != 0 || s.LLM != nil {
+		t.Errorf("SkipProbes should leave GPU/Thermal/LLM zero, got %+v", s)
+	}
+	// the gopsutil-bounded signals still populate
+	if s.CPU.Cores == 0 && len(s.Disks) == 0 {
+		// baseSource zeroes most of these, so just assert the call path
+		// didn't panic and returned a snapshot — covered above.
+	}
+
+	// without SkipProbes the same source *does* call the GPU probe
+	gpuCalled = false
+	collect(src, Options{Window: time.Millisecond})
+	if !gpuCalled {
+		t.Error("a normal collect should run the GPU probe")
+	}
+}
+
+func TestQuickAssessSkipsProbesAndDoesNotWriteHistory(t *testing.T) {
+	// Point the config dir at a scratch location and prove QuickAssess
+	// leaves no history file behind (Assess would create one).
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+
+	_, report := QuickAssess(RunOptions{})
+	if report.Findings == nil {
+		t.Error("QuickAssess should still return an analyzed report")
+	}
+	if p, ok := historyPath(); ok {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("QuickAssess must not write the trend history file (%s)", p)
+		}
 	}
 }

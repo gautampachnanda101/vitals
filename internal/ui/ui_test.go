@@ -280,3 +280,66 @@ func TestTermWidthFallsBackWhenNotATerminal(t *testing.T) {
 		t.Errorf("TermWidth() = %d, want the DefaultWrapWidth fallback %d when stdout isn't a terminal", got, DefaultWrapWidth)
 	}
 }
+
+func TestTermSizeFallsBackWhenNotATerminal(t *testing.T) {
+	// Tests run with stdout as a pipe, so GetSize fails and ok is false.
+	cols, rows, ok := TermSize()
+	if ok {
+		t.Skip("stdout is a real terminal in this environment")
+	}
+	if cols != DefaultWrapWidth || rows != DefaultTermHeight {
+		t.Errorf("TermSize() = (%d,%d,%v), want (%d,%d,false)", cols, rows, ok, DefaultWrapWidth, DefaultTermHeight)
+	}
+}
+
+func TestSanitizeStripsTerminalControlSequences(t *testing.T) {
+	cases := map[string]string{
+		"plain text":                      "plain text",
+		"tab\there":                       "tab here",
+		"cursor\x1b[1Aup":                 "cursorup",
+		"clear\x1b[2Jscreen":              "clearscreen",
+		"title\x1b]0;pwned\x07set":        "titleset",
+		"link\x1b]8;;http://evil\x07here": "linkhere",
+		"c1\x9b31mcsi":                    "c131mcsi", // raw C1 byte dropped; inert payload leaks as plain text, no terminal effect on a UTF-8 terminal
+		"bare\x1bMesc":                    "bareesc",
+		"carriage\rreturn":                "carriagereturn",
+		"del\x7fchar":                     "delchar",
+		"bell\x07gone":                    "bellgone",
+		"unicode 微信 ✓ é stays":            "unicode 微信 ✓ é stays",
+	}
+	for in, want := range cases {
+		if got := Sanitize(in); got != want {
+			t.Errorf("Sanitize(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSanitizeLeavesPrintableUnicodeIntact(t *testing.T) {
+	// combining marks, emoji with VS16, CJK — all printable, must survive
+	in := "é \U0001F600️ 日本語"
+	if got := Sanitize(in); got != in {
+		t.Errorf("Sanitize mangled printable unicode: %q -> %q", in, got)
+	}
+}
+
+func TestGradeSeverity(t *testing.T) {
+	// colour is disabled under `go test` (stdout not a tty), so the
+	// wrappers are empty strings and output == text regardless — assert
+	// the mapping shape by forcing the codes.
+	if got := GradeSeverity("ok", "fine"); got != "fine" {
+		t.Errorf(`GradeSeverity("ok",...) should not colour, got %q`, got)
+	}
+	if got := GradeSeverity("nonsense", "x"); got != "x" {
+		t.Errorf("unrecognised severity should pass text through, got %q", got)
+	}
+	// with colour on, warning->Yellow, critical->Red
+	saveY, saveR, saveRe := Yellow, Red, Reset
+	Yellow, Red, Reset = "<Y>", "<R>", "<0>"
+	defer func() { Yellow, Red, Reset = saveY, saveR, saveRe }()
+	if got := GradeSeverity("warning", "w"); got != "<Y>w<0>" {
+		t.Errorf(`GradeSeverity("warning") = %q`, got)
+	}
+	if got := GradeSeverity("critical", "c"); got != "<R>c<0>" {
+		t.Errorf(`GradeSeverity("critical") = %q`, got)
+	}
+}

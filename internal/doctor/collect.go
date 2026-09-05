@@ -10,12 +10,23 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 
 	"vitals/internal/smart"
+	"vitals/internal/ui"
 )
 
 // Options configures a doctor run.
 type Options struct {
 	OllamaURL string
 	Window    time.Duration // sampling window for rate-based signals
+	// SkipProbes drops the four signals that cost a subprocess or a
+	// network round-trip — GPU (nvidia-smi/ioreg), power (pmset/upower),
+	// thermal (sensors), and loaded LLM models (HTTP to the runtime) —
+	// keeping only the gopsutil-bounded CPU/mem/swap/net/disk collect.
+	// Used by callers that need a fast, predictable pass and don't need
+	// those signals: `vitals heal`'s pre-apply re-assess (item 008), the
+	// console at-a-glance view (item 011). The dropped GPU/power/thermal/
+	// LLM slices are simply nil/zero, and Analyze skips them the same way
+	// it does on a machine that has none.
+	SkipProbes bool
 }
 
 // Collect builds a Snapshot from the live system. It is deliberately thin: all
@@ -75,12 +86,14 @@ func collect(src source, opts Options) Snapshot {
 	// Network: per-interface throughput over the window.
 	s.Net = netDelta(net0, net1, opts.Window)
 
-	// Power / battery, best effort via the OS tools.
-	s.Power = collectPower()
+	if !opts.SkipProbes {
+		// Power / battery, best effort via the OS tools.
+		s.Power = collectPower()
 
-	s.GPUs = collectGPUs(src)
-	s.Thermal = collectThermal(src)
-	s.LLM = collectLLM(src, opts)
+		s.GPUs = collectGPUs(src)
+		s.Thermal = collectThermal(src)
+		s.LLM = collectLLM(src, opts)
+	}
 
 	return s
 }
@@ -259,11 +272,11 @@ func topProcs(procs []procSource) (topCPU, topMem ProcRef) {
 		cpuPct, err := p.Percent(0)
 		if err == nil && cpuPct > topCPU.CPUPct {
 			name, _ := p.Name()
-			topCPU = ProcRef{PID: p.PID(), Name: name, CPUPct: cpuPct}
+			topCPU = ProcRef{PID: p.PID(), Name: ui.Sanitize(name), CPUPct: cpuPct}
 		}
 		if mi, err := p.MemoryInfo(); err == nil && mi != nil && mi.RSS > topMem.RSSBytes {
 			name, _ := p.Name()
-			topMem = ProcRef{PID: p.PID(), Name: name, RSSBytes: mi.RSS}
+			topMem = ProcRef{PID: p.PID(), Name: ui.Sanitize(name), RSSBytes: mi.RSS}
 		}
 	}
 	return
@@ -398,7 +411,7 @@ func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration)
 			if !isRealFilesystem(p.Fstype, p.Mountpoint, u.Total) {
 				continue
 			}
-			d := Disk{Mount: p.Mountpoint, UsedPct: u.UsedPercent, FreeBytes: u.Free, InodesUsedPct: u.InodesUsedPercent}
+			d := Disk{Mount: ui.Sanitize(p.Mountpoint), UsedPct: u.UsedPercent, FreeBytes: u.Free, InodesUsedPct: u.InodesUsedPercent}
 			d.GrowthBytesPerSec = diskGrowthRate(hist, p.Mountpoint, u.Free, now)
 			if c0, ok0 := io0[p.Device]; ok0 {
 				if c1, ok1 := io1[p.Device]; ok1 {
