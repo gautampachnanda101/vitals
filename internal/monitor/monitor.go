@@ -216,6 +216,26 @@ func Run(opts Options) error {
 	return run(defaultSource, opts)
 }
 
+// Sample produces one real Snapshot against the live machine — exported
+// for `vitals dashboard`'s Processes page, which wants the same process
+// table `vitals top`/`vitals monitor` prints, not a terminal report.
+// Blocks for opts.sampleWindow() (bounded at 500ms once Interval is
+// defaulted below, the same class of cost doctor.Collect's own snapshot
+// cache already budgets for) — the dashboard caches this call's result
+// itself rather than calling it fresh on every page load.
+func Sample(opts Options) (Snapshot, error) {
+	if opts.Top <= 0 {
+		opts.Top = 15
+	}
+	if opts.Interval <= 0 {
+		opts.Interval = 2 * time.Second
+	}
+	if opts.SortBy != "mem" {
+		opts.SortBy = "cpu"
+	}
+	return sample(defaultSource, opts)
+}
+
 func run(src source, opts Options) error {
 	if opts.Top <= 0 {
 		opts.Top = 15

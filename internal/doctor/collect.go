@@ -131,6 +131,10 @@ func collectMemory(src source, sw0, sw1 swapIO, window time.Duration, topMem Pro
 func collectGPUs(src source) []GPU {
 	var out []GPU
 	for _, g := range src.gpuProbe() {
+		var procs []GPUProc
+		for _, p := range g.Processes {
+			procs = append(procs, GPUProc{PID: p.PID, Name: p.Name, VRAMUsed: p.MemUseB})
+		}
 		out = append(out, GPU{
 			Name:         g.Name,
 			VRAMUsed:     g.MemUsedB,
@@ -139,6 +143,7 @@ func collectGPUs(src source) []GPU {
 			TempC:        g.TempC,
 			ClockMHz:     g.ClockMHz,
 			BaseClockMHz: g.ClockMaxMHz,
+			Processes:    procs,
 		})
 	}
 	return out

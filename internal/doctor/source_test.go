@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -164,8 +165,46 @@ func TestCollectGPUsMapsProbeResultsAndIsEmptyWhenNone(t *testing.T) {
 		t.Fatalf("want 1 GPU, got %d", len(got))
 	}
 	want := GPU{Name: "Apple M3 Max", VRAMUsed: 1 << 30, VRAMTotal: 32 << 30, UtilPct: 42, TempC: 55, ClockMHz: 1200, BaseClockMHz: 1500}
-	if got[0] != want {
+	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("collectGPUs = %+v, want %+v", got[0], want)
+	}
+}
+
+// TestCollectGPUsMapsPerProcessVRAM guards a real gap: gpu.Device.Processes
+// (populated for NVIDIA GPUs via nvidia-smi's compute-apps query, see
+// internal/gpu/gpu.go's attachNvidiaApps) used to be silently dropped
+// when mapped into doctor.GPU — the data was already being collected,
+// just never surfaced past this package.
+func TestCollectGPUsMapsPerProcessVRAM(t *testing.T) {
+	src := baseSource()
+	src.gpuProbe = func() []gpu.Device {
+		return []gpu.Device{{
+			Name: "RTX 4090",
+			Processes: []gpu.Proc{
+				{PID: 4821, Name: "python", MemUseB: 4 << 30},
+				{PID: 5190, Name: "ollama", MemUseB: 2 << 30},
+			},
+		}}
+	}
+	got := collectGPUs(src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 GPU, got %d", len(got))
+	}
+	want := []GPUProc{
+		{PID: 4821, Name: "python", VRAMUsed: 4 << 30},
+		{PID: 5190, Name: "ollama", VRAMUsed: 2 << 30},
+	}
+	if !reflect.DeepEqual(got[0].Processes, want) {
+		t.Errorf("collectGPUs Processes = %+v, want %+v", got[0].Processes, want)
+	}
+}
+
+func TestCollectGPUsNoProcessesYieldsNilNotEmptySlice(t *testing.T) {
+	src := baseSource()
+	src.gpuProbe = func() []gpu.Device { return []gpu.Device{{Name: "Apple M3 Max"}} }
+	got := collectGPUs(src)
+	if len(got) != 1 || got[0].Processes != nil {
+		t.Errorf("collectGPUs Processes = %+v, want nil when the device reports none", got)
 	}
 }
 
