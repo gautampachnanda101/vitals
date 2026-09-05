@@ -23,6 +23,18 @@ func withFakeDupesApply(t *testing.T, fn func([]dupes.Group) (int, int64, []stri
 	t.Cleanup(func() { dupesApplyFn = old })
 }
 
+// setHomeEnv isolates the "home" scope's os.UserHomeDir() to dir on every
+// OS this repo tests on: Go's own documented behavior is $HOME on Unix,
+// %USERPROFILE% on Windows — setting only HOME leaves os.UserHomeDir()
+// pointed at the real Windows CI runner's actual profile directory, a
+// real bug (not just a test gap) this exact class of test once shipped
+// with: a "home" scope scan silently scanning the wrong tree on Windows.
+func setHomeEnv(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 // --- resolveScope: pure, table-driven, every OS from one machine -----------
 
 func TestResolveScopeKnownKeysOnEveryOS(t *testing.T) {
@@ -92,9 +104,16 @@ func TestRenderDupesPreviewShowsTotalAndGroups(t *testing.T) {
 }
 
 func TestNewDupesPathDisplaySplitsDirAndFilename(t *testing.T) {
-	d := newDupesPathDisplay("/home/x/Downloads/report.pdf")
-	if d.Dir != "/home/x/Downloads" {
-		t.Errorf("Dir = %q, want /home/x/Downloads", d.Dir)
+	// filepath.Join/Dir build (and expect) the platform's own separator
+	// — filepath.Dir normalizes to "\" on Windows even when given a
+	// "/"-separated input, so the expected value must go through the
+	// same filepath functions newDupesPathDisplay itself uses, not a
+	// hardcoded forward-slash string.
+	path := filepath.Join("home", "x", "Downloads", "report.pdf")
+	d := newDupesPathDisplay(path)
+	wantDir := filepath.Join("home", "x", "Downloads")
+	if d.Dir != wantDir {
+		t.Errorf("Dir = %q, want %q", d.Dir, wantDir)
 	}
 	if d.Name != "report.pdf" {
 		t.Errorf("Name = %q, want report.pdf", d.Name)
@@ -198,7 +217,7 @@ func TestDupesWriteActionsAreRegistered(t *testing.T) {
 
 func TestHandleDupesPreviewScansARealTempTreeUnderHomeScope(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	setHomeEnv(t, dir)
 	content := []byte("duplicate content for the dashboard preview test")
 	writeFile(t, dir, "a.txt", content)
 	writeFile(t, dir, "b.txt", content)
@@ -291,7 +310,7 @@ func TestHandleDupesHardlinkRejectsUnknownScope(t *testing.T) {
 
 func TestHandleDupesHardlinkReturns200AndLinksARealDuplicate(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	setHomeEnv(t, dir)
 	// The "home" scope's minSize is a real 1 MiB (dupesMinSize, matching
 	// design-dupes.md's own scope table) — a small test file would be
 	// silently filtered out before it ever became a scan candidate, the
@@ -327,7 +346,7 @@ func TestHandleDupesHardlinkReturns200AndLinksARealDuplicate(t *testing.T) {
 // --- /dupes/hardlink: single-flight guard ------------------------------------
 
 func TestHandleDupesHardlinkRejectsAConcurrentSecondCall(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // keep the scan fast and deterministic, not the real home
+	setHomeEnv(t, t.TempDir()) // keep the scan fast and deterministic, not the real home
 	release := make(chan struct{})
 	started := make(chan struct{})
 	withFakeDupesApply(t, func([]dupes.Group) (int, int64, []string) {

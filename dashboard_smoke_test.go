@@ -43,7 +43,15 @@ func TestDashboardSmoke(t *testing.T) {
 	writeDupesFixture(t, scratch)
 
 	cmd := exec.Command(bin, "dashboard", "--addr", "127.0.0.1:0", "--no-open")
-	cmd.Env = append(os.Environ(), "HOME="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=", "NO_COLOR=1")
+	// USERPROFILE, not HOME, is what os.UserHomeDir() actually reads on
+	// Windows (Go's own documented behavior) — the dupes "home" scope
+	// (internal/dashboard/modules_dupes.go's resolveScopeOnThisHost) is
+	// the first thing in this dashboard to call os.UserHomeDir() from a
+	// live subprocess reachable over HTTP, so this gap was real but
+	// latent until then: HOME alone isolates nothing on that OS, and a
+	// /dupes/preview or /dupes/hardlink call below would silently scan
+	// this runner's real profile directory instead of scratch.
+	cmd.Env = append(os.Environ(), "HOME="+scratch, "USERPROFILE="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=", "NO_COLOR=1")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
