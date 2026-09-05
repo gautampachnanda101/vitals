@@ -44,6 +44,7 @@ depends on.
 | [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Not started — unscheduled, see its Trigger | 002 | not yet |
 | [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Not started — captured as a followup, not yet designed | diag findings/fixes model | not yet |
 | [009](items/009-raw-coverage-95/) | Raw 95%+ coverage, no live-glue exemption | Done | — (cross-cutting) | ongoing |
+| [010](items/010-companion-tools-integration/) | Companion tools: real integration, not just a catalog | In progress — `nvtop` shipped; `jdupes`/`smartctl` scoped, not implemented | `internal/tools` (existing) | not yet |
 
 ## Releases
 
