@@ -86,6 +86,19 @@ type Disk struct {
 	AwaitMS           float64 `json:"await_ms"`
 	IOPS              float64 `json:"iops"`
 	InodesUsedPct     float64 `json:"inodes_used_percent"`
+	// SMART is the physical disk's S.M.A.R.T. summary when smartctl is
+	// installed and could assess the device this mount lives on; nil
+	// otherwise (no smartctl, unsupported OS, unresolvable device).
+	SMART *DiskSMART `json:"smart,omitempty"`
+}
+
+// DiskSMART mirrors smart.Health's reportable fields. WearPct is the
+// NVMe percentage-used indicator (0–100); it's omitted from JSON when
+// negative, which smart.Health uses for "no wear indicator available".
+type DiskSMART struct {
+	Passed  bool    `json:"passed"`
+	TempC   float64 `json:"temp_c,omitempty"`
+	WearPct float64 `json:"wear_percent,omitempty"`
 }
 
 type GPU struct {
@@ -371,6 +384,28 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 				Detail: fmt.Sprintf("%.0f%% utilised with %.0fms average latency (%.0f IOPS) — I/O is queueing",
 					d.UtilPct, d.AwaitMS, d.IOPS),
 				Fixes: []string{"identify the top reader/writer with `vitals top --sort mem`", "throttle or reschedule the heavy job"},
+			})
+		}
+		if d.SMART != nil && !d.SMART.Passed {
+			r.Add(diag.Finding{
+				Severity: diag.Critical,
+				Title:    fmt.Sprintf("Disk %s failing S.M.A.R.T. self-assessment", d.Mount),
+				Detail: fmt.Sprintf("the drive behind %s reports S.M.A.R.T. status FAILED — the firmware itself predicts imminent failure; this is not a usage warning",
+					d.Mount),
+				Fixes: []string{"back up anything not already backed up now, before doing anything else", "run `smartctl -a <device>` for the full attribute detail", "plan to replace the drive"},
+			})
+		}
+		if d.SMART != nil && d.SMART.WearPct >= 90 {
+			sev := diag.Warn
+			if d.SMART.WearPct >= 100 {
+				sev = diag.Critical
+			}
+			r.Add(diag.Finding{
+				Severity: sev,
+				Title:    fmt.Sprintf("SSD behind %s near end of rated life", d.Mount),
+				Detail: fmt.Sprintf("%.0f%% of the drive's rated write endurance is used (S.M.A.R.T. percentage-used) — it still passes health checks, but write performance and reliability degrade past this point",
+					d.SMART.WearPct),
+				Fixes: []string{"ensure backups are current", "plan a replacement before it reaches 100%"},
 			})
 		}
 		if d.InodesUsedPct >= 90 {

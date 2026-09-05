@@ -22,6 +22,9 @@ snapshot.disks.growth_bytes_per_sec
 snapshot.disks.inodes_used_percent
 snapshot.disks.iops
 snapshot.disks.mount
+snapshot.disks.smart.passed
+snapshot.disks.smart.temp_c
+snapshot.disks.smart.wear_percent
 snapshot.disks.used_percent
 snapshot.disks.util_percent
 snapshot.gpus.base_clock_mhz

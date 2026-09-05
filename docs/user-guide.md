@@ -227,7 +227,11 @@ a bare gauge:
   look fine while new files still fail to create), a tracked growth rate
   with projected time-to-full, and a reclaimable-cache estimate — the same
   directories `vitals clean` would touch, actually measured and capped to
-  a short time budget so a huge cache can't stall the command.
+  a short time budget so a huge cache can't stall the command. When
+  `smartctl` (smartmontools) is installed, each physical disk's
+  S.M.A.R.T. pass/fail, temperature, and — on NVMe — the percentage of
+  rated write life used are shown too; a FAILED verdict or wear at/over
+  90% raises a finding. macOS and Linux only for now.
 - **net** — per-interface rx/tx, the top remote peers by established TCP
   connection count, and a DNS-resolution latency check, which tells apart
   "DNS is slow" from "the link is slow" without needing raw-socket

@@ -135,6 +135,14 @@ FLOORS = {
     # a real NVIDIA/AMD-shaped device (every field populated) must still
     # show all of them together. 74.8% -> 98.6%.
     "vitals/internal/gpu": 96,
+    # smart (item 010): parsers (parseHealth / parsePartOfWhole /
+    # linuxWholeDisk) are pure and fixture-tested against real
+    # smartctl -a -j and diskutil info output; probe()'s deps
+    # (lookPath / smartctl exec / diskutil exec) are injected and the
+    # real closures are exercised once each. The residual gap is the
+    # OS-branch arms in resolveDevice that can't all run on one runner.
+    # 96.4%.
+    "vitals/internal/smart": 95,
     # guide (item 009): signal.NotifyContext and openBrowser are both
     # injected via a deps struct; ServeLocal's real net.Listen + handler-
     # wrapping half is split into buildServer(handler, opts), returning

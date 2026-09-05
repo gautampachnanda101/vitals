@@ -101,12 +101,31 @@ func renderDisk(s doctor.Snapshot) string {
 	var out string
 	for _, d := range s.Disks {
 		out += row(d.Mount, fmt.Sprintf("%.0f%% used, %s free", d.UsedPct, ui.HumanBytes(int64(d.FreeBytes))))
+		if d.SMART != nil {
+			out += row(d.Mount+" — S.M.A.R.T.", smartLine(d.SMART))
+		}
 	}
 	// Per-process disk-I/O rate isn't available cross-platform (zero on
 	// macOS via gopsutil — roadmap 012), so the disk-appropriate "what's
 	// using it" answer is by path: a bounded scan of the home folder for
 	// the biggest directories and files.
 	return card(out) + biggestPathsSection()
+}
+
+// smartLine summarises a disk's S.M.A.R.T. health for the Disk page.
+func smartLine(h *doctor.DiskSMART) string {
+	status := "passed"
+	if !h.Passed {
+		status = "FAILED — the drive predicts imminent failure"
+	}
+	out := status
+	if h.TempC > 0 {
+		out += fmt.Sprintf(", %.0f°C", h.TempC)
+	}
+	if h.WearPct > 0 {
+		out += fmt.Sprintf(", %.0f%% of rated write life used", h.WearPct)
+	}
+	return out
 }
 
 func renderNet(s doctor.Snapshot) string {

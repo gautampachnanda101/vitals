@@ -8,6 +8,8 @@ import (
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
+
+	"vitals/internal/smart"
 )
 
 // Options configures a doctor run.
@@ -65,8 +67,10 @@ func collect(src source, opts Options) Snapshot {
 	s.CPU = collectCPU(src, t0, t1, pc0, pc1, topCPU)
 	s.Memory = collectMemory(src, sw0, sw1, opts.Window, topMem)
 
-	// Disks: usage per real mount, plus a device-wide busy/latency estimate.
+	// Disks: usage per real mount, plus a device-wide busy/latency estimate,
+	// plus S.M.A.R.T. health when smartctl is installed.
 	s.Disks = collectDisks(io0, io1, opts.Window)
+	attachSMART(src, s.Disks)
 
 	// Network: per-interface throughput over the window.
 	s.Net = netDelta(net0, net1, opts.Window)
@@ -416,4 +420,53 @@ func collectDisks(io0, io1 map[string]disk.IOCountersStat, window time.Duration)
 		}
 	})
 	return out
+}
+
+// attachSMART fills in each Disk.SMART by resolving every local mount to
+// a physical device and probing it with smartctl (src.smartProbe). A
+// no-op when smartctl isn't installed / the OS is unsupported — the
+// probe just returns nothing and every Disk.SMART stays nil.
+func attachSMART(src source, disks []Disk) {
+	if src.smartProbe == nil || len(disks) == 0 {
+		return
+	}
+	parts, err := disk.Partitions(false) // local devices only — SMART is meaningless for NFS/SMB
+	if err != nil {
+		return
+	}
+	deviceOf := map[string]string{}
+	for _, p := range parts {
+		deviceOf[p.Mountpoint] = p.Device
+	}
+	var targets []smart.Target
+	for _, d := range disks {
+		if dev := deviceOf[d.Mount]; dev != "" {
+			targets = append(targets, smart.Target{Mount: d.Mount, Device: dev})
+		}
+	}
+	if len(targets) == 0 {
+		return
+	}
+	matchSMART(disks, src.smartProbe(targets))
+}
+
+// matchSMART copies each probe result onto the Disk it belongs to,
+// matched by mount. Pure, so the mapping is testable without a live
+// probe.
+func matchSMART(disks []Disk, health []smart.Health) {
+	byMount := map[string]smart.Health{}
+	for _, h := range health {
+		byMount[h.Mount] = h
+	}
+	for i := range disks {
+		h, ok := byMount[disks[i].Mount]
+		if !ok {
+			continue
+		}
+		s := &DiskSMART{Passed: h.Passed, TempC: h.TempC}
+		if h.WearPct >= 0 {
+			s.WearPct = h.WearPct
+		}
+		disks[i].SMART = s
+	}
 }

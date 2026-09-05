@@ -12,6 +12,7 @@ import (
 
 	"vitals/internal/gpu"
 	"vitals/internal/llm"
+	"vitals/internal/smart"
 )
 
 // procSource is the subset of *process.Process's method set topProcs
@@ -73,6 +74,7 @@ type source struct {
 	swapMemory    func() (*mem.SwapMemoryStat, error)
 	netIOCounters func(pernic bool) ([]gnet.IOCountersStat, error)
 	gpuProbe      func() []gpu.Device
+	smartProbe    func([]smart.Target) []smart.Health
 	sensorsTemps  func() ([]sensors.TemperatureStat, error)
 	ollamaModels  func(ollamaURL string) []llm.ModelState
 	scanProcesses func() []llm.ProcSnapshot
@@ -88,6 +90,7 @@ var defaultSource = source{
 	swapMemory:    mem.SwapMemory,
 	netIOCounters: gnet.IOCounters,
 	gpuProbe:      gpu.Probe,
+	smartProbe:    smart.Probe,
 	sensorsTemps:  sensors.SensorsTemperatures,
 	ollamaModels:  llm.OllamaModels,
 	scanProcesses: llm.ScanProcesses,

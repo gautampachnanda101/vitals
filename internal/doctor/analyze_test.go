@@ -242,6 +242,44 @@ func TestAnalyzeDiskTimeToFull(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDiskSMARTFailure(t *testing.T) {
+	r := Analyze(Snapshot{
+		Disks: []Disk{{Mount: "/", UsedPct: 40, SMART: &DiskSMART{Passed: false, TempC: 52}}},
+	})
+	f := find(r, "S.M.A.R.T.")
+	if f.Severity != diag.Critical {
+		t.Fatalf("a failing SMART verdict must be critical, got %+v", r.Findings)
+	}
+	if !strings.Contains(strings.ToLower(f.Detail), "back up") && !hasFix(f, "back up") {
+		t.Errorf("the fix should lead with backing up: %+v", f)
+	}
+}
+
+func TestAnalyzeDiskSMARTWear(t *testing.T) {
+	warn := Analyze(Snapshot{Disks: []Disk{{Mount: "/", UsedPct: 40, SMART: &DiskSMART{Passed: true, WearPct: 92}}}})
+	if find(warn, "end of rated life").Severity != diag.Warn {
+		t.Errorf("92%% wear should warn, got %+v", warn.Findings)
+	}
+	crit := Analyze(Snapshot{Disks: []Disk{{Mount: "/", UsedPct: 40, SMART: &DiskSMART{Passed: true, WearPct: 101}}}})
+	if find(crit, "end of rated life").Severity != diag.Critical {
+		t.Errorf(">=100%% wear should be critical, got %+v", crit.Findings)
+	}
+	// a healthy, low-wear drive raises nothing
+	ok := Analyze(Snapshot{Disks: []Disk{{Mount: "/", UsedPct: 40, SMART: &DiskSMART{Passed: true, WearPct: 5}}}})
+	if find(ok, "S.M.A.R.T.").Title != "" || find(ok, "rated life").Title != "" {
+		t.Errorf("a healthy drive should raise no SMART finding, got %+v", ok.Findings)
+	}
+}
+
+func hasFix(f diag.Finding, sub string) bool {
+	for _, fix := range f.Fixes {
+		if strings.Contains(strings.ToLower(fix), strings.ToLower(sub)) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAnalyzeNetSaturation(t *testing.T) {
 	r := Analyze(Snapshot{
 		Net: []NetIface{{
