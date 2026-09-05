@@ -379,7 +379,11 @@ around and decide myself":
   the one opt-in action, and it destroys no data even if it's wrong —
   every path keeps working and keeps reading the same bytes, now sharing
   one inode instead of two. It confirms first, same as `clean`, unless
-  `--yes` is set.
+  `--yes` is set. `--fast` uses `jdupes` as the backend when it's
+  installed — much faster on a large tree; it reports no scanned-file
+  total (jdupes doesn't expose one) and vitals re-applies its own
+  skip-list (`.git`, `node_modules`, caches, trash) to the results. If
+  `jdupes` isn't installed or errors, the built-in scan runs instead.
 - **tools** — lists the companion tools vitals complements rather than
   reimplements (ncdu, gdu, dust, btop, htop, nvtop, jdupes, smartctl) and
   whether each is on PATH. `--install <name>` runs your platform's own
