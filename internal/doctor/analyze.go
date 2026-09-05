@@ -89,13 +89,25 @@ type Disk struct {
 }
 
 type GPU struct {
-	Name         string  `json:"name"`
-	VRAMUsed     uint64  `json:"vram_used_bytes"`
-	VRAMTotal    uint64  `json:"vram_total_bytes"`
-	UtilPct      float64 `json:"util_percent"`
-	TempC        float64 `json:"temp_c"`
-	ClockMHz     float64 `json:"clock_mhz"`
-	BaseClockMHz float64 `json:"base_clock_mhz"`
+	Name         string    `json:"name"`
+	VRAMUsed     uint64    `json:"vram_used_bytes"`
+	VRAMTotal    uint64    `json:"vram_total_bytes"`
+	UtilPct      float64   `json:"util_percent"`
+	TempC        float64   `json:"temp_c"`
+	ClockMHz     float64   `json:"clock_mhz"`
+	BaseClockMHz float64   `json:"base_clock_mhz"`
+	Processes    []GPUProc `json:"processes,omitempty"` // processes holding VRAM; NVIDIA only today (nvidia-smi's compute-apps query) — empty elsewhere, not an error
+}
+
+// GPUProc is one process holding VRAM on a GPU — vitals' own type, not a
+// re-export of gpu.Proc, matching this package's own convention (e.g.
+// internal/info's Config_) of not letting a JSON shape silently change
+// just because an upstream package's own struct grows a field this one
+// hasn't decided to show yet.
+type GPUProc struct {
+	PID      int32  `json:"pid"`
+	Name     string `json:"name"`
+	VRAMUsed uint64 `json:"vram_used_bytes"`
 }
 
 type LLMModel struct {

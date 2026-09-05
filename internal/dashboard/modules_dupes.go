@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	Register(Module{Slug: "dupes", NavLabel: "Duplicates", Order: 90, Available: Always, Render: renderDupesPage})
+	Register(Module{Slug: "dupes", NavLabel: "Duplicates", Group: "Tools", Icon: iconDuplicates, Order: 90, Available: Always, Render: renderDupesPage})
 	RegisterWrite(WriteAction{Path: "/dupes/preview", Handler: handleDupesPreview})
 	RegisterWrite(WriteAction{Path: "/dupes/hardlink", Handler: handleDupesHardlink})
 }

@@ -10,7 +10,7 @@ const { test, expect } = require('@playwright/test');
 // CI runner has no battery -- exercising it here would just be testing
 // unavailablePage() again, already covered by internal/dashboard's own
 // Go tests (TestRouteRendersUnavailablePageWithItsReasonNotA404).
-const PAGES = ['/', '/cpu', '/mem', '/disk', '/net', '/gpu', '/advice', '/clean'];
+const PAGES = ['/', '/cpu', '/mem', '/disk', '/net', '/gpu', '/advice', '/clean', '/dupes', '/processes', '/llm', '/system'];
 
 for (const path of PAGES) {
   test(`page ${path || '/'} loads with no console error`, async ({ page }) => {
@@ -86,6 +86,34 @@ test('a cross-origin POST to a write action is rejected, not silently accepted',
   });
   expect(res.status()).toBe(403);
 });
+
+test('the sidebar groups nav links into real sections and highlights the current page', async ({ page }) => {
+  await page.goto('/cpu');
+  const sidebar = page.locator('nav[aria-label="Primary"]');
+  await expect(sidebar.locator('h4')).toContainText(['Overview', 'Resources', 'Intelligence', 'Tools', 'System']);
+  await expect(sidebar.locator('a[aria-current="page"]')).toHaveText('CPU');
+});
+
+test('clicking a Resources link navigates to that page', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('nav[aria-label="Primary"] a', { hasText: 'Processes' }).click();
+  await expect(page).toHaveURL(/\/processes$/);
+  await expect(page.locator('main')).toContainText(/CPU|No processes to show/);
+});
+
+// Every resource page must answer "what's using this" with a top-processes
+// table, even when the resource itself is healthy -- a maintainer
+// requirement. The per-renderer HTML is asserted deterministically in
+// internal/dashboard's Go tests (with a fake process cache); here we just
+// confirm it survives a real page load on the two pages that reach it via
+// data the CI runner reliably has. A generous timeout because the first
+// hit blocks on a real ~500ms process sample.
+for (const path of ['/cpu', '/mem']) {
+  test(`resource page ${path} shows a top-processes section`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page.locator('main')).toContainText(/Top processes/, { timeout: 15000 });
+  });
+}
 
 test('dark mode renders the page without breaking the layout', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });

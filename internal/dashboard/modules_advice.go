@@ -17,7 +17,7 @@ func init() {
 	// needs no LLM at all, so the page itself shouldn't disappear from the
 	// nav just because none is reachable; only the LLM commentary section
 	// is conditional on that.
-	Register(Module{Slug: "advice", NavLabel: "Advice", Order: 70, Available: Always, Render: renderAdvice})
+	Register(Module{Slug: "advice", NavLabel: "Advice", Group: "Intelligence", Icon: iconAdvice, Order: 70, Available: Always, Render: renderAdvice})
 	// The LLM call is registered as a separate AsyncFragment, not part of
 	// this page's own render — see AsyncFragment's own doc comment for why
 	// (it replaces an earlier Module.Prepare hook that blocked the whole
@@ -151,7 +151,7 @@ const adviceCommentaryScript = `<script>
 func renderAdvice(ctx PageContext) string {
 	headline := reportHeadline(ctx.Report, "Healthy — nothing needs attention")
 	body := verdictBanner(headline, "What vitals doctor's own rule-based checks found", ctx.Report.Worst())
-	body += `<div class="card">` + findingsList(ctx.Report.SortedBySeverity()) + `</div>`
+	body += findingsCard(ctx.Report.SortedBySeverity())
 	body += `<div id="ai-commentary" class="card"><p class="unavailable">Asking the LLM for further commentary&hellip;</p></div>`
 	body += adviceCommentaryScript
 	return body

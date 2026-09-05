@@ -567,6 +567,20 @@ func TestDefaultSourceNewSignalContextWiresRealSignalNotify(t *testing.T) {
 	}
 }
 
+func TestSampleExercisesTheRealGopsutilWiringAndAppliesDefaults(t *testing.T) {
+	snap, err := Sample(Options{Interval: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("Sample() = %v, want nil on a real host", err)
+	}
+	if len(snap.Processes) > 15 {
+		t.Errorf("Sample() with Top unset should default to 15, got %d processes", len(snap.Processes))
+	}
+	// The test binary itself is always at least one running process.
+	if len(snap.Processes) == 0 {
+		t.Error("Sample() returned no processes at all")
+	}
+}
+
 func TestRunWithDefaultSourceExercisesTheRealGopsutilWiring(t *testing.T) {
 	// Run is a thin pass-through to run(defaultSource, opts); this exercises
 	// the real gopsutil calls (including realProcesses/procHandle, since the

@@ -27,6 +27,9 @@ snapshot.disks.util_percent
 snapshot.gpus.base_clock_mhz
 snapshot.gpus.clock_mhz
 snapshot.gpus.name
+snapshot.gpus.processes.name
+snapshot.gpus.processes.pid
+snapshot.gpus.processes.vram_used_bytes
 snapshot.gpus.temp_c
 snapshot.gpus.util_percent
 snapshot.gpus.vram_total_bytes
