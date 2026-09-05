@@ -32,6 +32,7 @@ nav:
           - 010 Companion tools integration: roadmap/items/010-companion-tools-integration/index.md
           - 011 Console at-a-glance view: roadmap/items/011-console-at-a-glance-view/index.md
           - 012 Disk consumers detail: roadmap/items/012-disk-consumers-detail/index.md
+          - 013 Container & Kubernetes awareness: roadmap/items/013-container-runtime-awareness/index.md
 
 plugins:
   - techdocs-core
