@@ -185,6 +185,7 @@ func run(argv []string, version string) int {
 		output := fs.String("output", "", "also write the full JSON result to this file")
 		hardlink := fs.Bool("hardlink", false, "replace duplicates with hardlinks to reclaim space (destroys no data)")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt before applying --hardlink")
+		fast := fs.Bool("fast", false, "use the jdupes backend if it's installed (faster; reports no scanned-file total)")
 		_ = fs.Parse(args)
 		return must(dupes.Run(dupes.Options{
 			Root:     *root,
@@ -194,6 +195,7 @@ func run(argv []string, version string) int {
 			Output:   *output,
 			Hardlink: *hardlink,
 			Yes:      *yes,
+			Fast:     *fast,
 		}))
 
 	case "tools":

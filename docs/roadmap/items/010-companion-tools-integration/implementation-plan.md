@@ -19,8 +19,36 @@ This file shows what's **left**. Check off a task as it lands.
       `--live` correctly reports "not installed" on those OSes, which is
       the tool's real absence, not a vitals gap.
 
-- [ ] `jdupes` as an optional accelerated `vitals dupes` backend.
-      **Real output validated this session** (`jdupes -r -j`,
+- [x] `jdupes` as an optional accelerated `vitals dupes` backend —
+      shipped as `vitals dupes --fast` (`internal/dupes/jdupes.go`).
+      Opt-in per run, not automatic: the built-in `Scan` stays the
+      default because the two aren't perfectly equivalent (see the two
+      open questions below and how each was resolved). The **dashboard**
+      dupes path is deliberately *not* wired to jdupes — it uses
+      `dupes.ScanContext` with a hard file budget (`dupesFileBudget`)
+      that jdupes has no equivalent for; losing that bound to gain
+      speed on a background web request is the wrong trade.
+      - **Resolved — scanned-file/byte total:** `Result` gained a
+        `Backend` field (`"jdupes"` vs `""`/built-in). When jdupes ran,
+        `ScannedFiles`/`ScannedBytes` stay 0 and every renderer
+        (`render`, and `--json` consumers via the field) shows
+        `scanned <root> via jdupes (fast backend — no file/byte total
+        reported)` instead of a "scanned 0 files" line. No fabricated
+        number, and the `--json` shape gains only an additive
+        `backend` field.
+      - **Resolved — `skipDirNames` parity:** a Go-side post-filter
+        over jdupes' `matchSets` (`pathHasSkippedDir`), keeping
+        `skipDirNames` the single source of truth rather than a
+        parallel set of `-X nostr:` flags to keep in sync. A group
+        whose surviving path count drops below 2 after filtering is
+        dropped entirely. Accepts that jdupes still walks those dirs
+        (wasted work, not wrong output).
+      - Fallback: a jdupes error (non-zero exit, or output that
+        doesn't parse as the expected JSON) makes `run` fall through
+        to the built-in `Scan` silently rather than surface a partial
+        result — validated behaviour from the plan below.
+
+      **Original validated output** (`jdupes -r -j`,
       `jdupes -r -j -X size+=:<n>` against real temp trees, both
       duplicate-found and no-duplicates-found cases, and a hard error
       on a nonexistent path):

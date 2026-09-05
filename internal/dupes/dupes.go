@@ -32,9 +32,19 @@ import (
 type deps struct {
 	homeDir       func() (string, error)
 	confirmReader io.Reader
+	// jdupesAvail / jdupesRun are the opt-in fast-backend surface
+	// (roadmap 010), injectable so run()'s backend-selection branch is
+	// tested without the binary installed.
+	jdupesAvail func() bool
+	jdupesRun   jdupesRunner
 }
 
-var defaultDeps = deps{homeDir: os.UserHomeDir, confirmReader: os.Stdin}
+var defaultDeps = deps{
+	homeDir:       os.UserHomeDir,
+	confirmReader: os.Stdin,
+	jdupesAvail:   jdupesAvailable,
+	jdupesRun:     defaultJdupesRunner,
+}
 
 // Options configures a scan.
 type Options struct {
@@ -45,6 +55,7 @@ type Options struct {
 	Output   string // if set, also write the full JSON result here
 	Hardlink bool   // after reporting, replace duplicates with hardlinks to reclaim space
 	Yes      bool   // skip the confirmation prompt before applying --hardlink
+	Fast     bool   // opt in to the jdupes backend when it's installed (roadmap 010)
 }
 
 // Group is one set of byte-identical files.
@@ -64,6 +75,12 @@ type Result struct {
 	ScannedBytes int64   `json:"scanned_bytes"`
 	Groups       []Group `json:"groups"`
 	WastedBytes  int64   `json:"wasted_bytes"`
+	// Backend names the engine that produced this result: "" (or
+	// "builtin") for the native Scan, "jdupes" when the opt-in fast
+	// backend ran. When "jdupes", ScannedFiles/ScannedBytes are 0 —
+	// jdupes reports no total-scanned count — and renderers say so
+	// rather than printing a zero.
+	Backend string `json:"backend,omitempty"`
 	// Truncated is true when the walk stopped early — its context was
 	// cancelled, or a caller-supplied file budget (ScanContext) was hit —
 	// before the whole tree was seen. Groups/WastedBytes above still
@@ -106,9 +123,18 @@ func run(d deps, opts Options) error {
 		opts.Top = 20
 	}
 
-	result, err := Scan(opts.Root, opts.MinSize)
-	if err != nil {
-		return err
+	var result Result
+	if opts.Fast && d.jdupesAvail != nil && d.jdupesAvail() {
+		if r, ok := scanWithJdupes(d.jdupesRun, opts.Root, opts.MinSize); ok {
+			result = r
+		}
+	}
+	if result.Backend == "" { // fast backend not requested, not installed, or it fell back
+		var err error
+		result, err = Scan(opts.Root, opts.MinSize)
+		if err != nil {
+			return err
+		}
 	}
 
 	if opts.Output != "" {
@@ -315,7 +341,11 @@ func hashFile(path string) (string, error) {
 
 func render(r Result, top int) {
 	ui.Header("DUPLICATE FILES")
-	fmt.Printf("  scanned %d files (%s) under %s\n", r.ScannedFiles, ui.HumanBytes(r.ScannedBytes), r.Root)
+	if r.Backend == "jdupes" {
+		fmt.Printf("  scanned %s via jdupes (fast backend — no file/byte total reported)\n", r.Root)
+	} else {
+		fmt.Printf("  scanned %d files (%s) under %s\n", r.ScannedFiles, ui.HumanBytes(r.ScannedBytes), r.Root)
+	}
 
 	if len(r.Groups) == 0 {
 		fmt.Println()
