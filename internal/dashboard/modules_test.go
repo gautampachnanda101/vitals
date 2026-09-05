@@ -245,6 +245,7 @@ func TestRenderPowerOnACWithNoEstimate(t *testing.T) {
 }
 
 func TestRenderNetShowsActiveInterfaces(t *testing.T) {
+	stubResourceExtras(t)
 	out := renderNet(doctor.Snapshot{Net: []doctor.NetIface{
 		{Name: "en0", RxBytesPerSec: 2 << 20, TxBytesPerSec: 1 << 20},
 		{Name: "lo0", RxBytesPerSec: 0, TxBytesPerSec: 0}, // idle, should be skipped
@@ -354,6 +355,7 @@ func TestResourcePageHeadlinesTheWorstFindingWhenThereIsOne(t *testing.T) {
 }
 
 func TestRenderDiskListsEveryMount(t *testing.T) {
+	stubResourceExtras(t)
 	out := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30}}})
 	if !strings.Contains(out, "/") || !strings.Contains(out, "50%") {
 		t.Errorf("renderDisk = %s", out)
@@ -374,6 +376,7 @@ func TestRenderDiskEmptyIsFriendly(t *testing.T) {
 }
 
 func TestRenderNetSkipsIdleInterfaces(t *testing.T) {
+	stubResourceExtras(t)
 	out := renderNet(doctor.Snapshot{Net: []doctor.NetIface{{Name: "lo0", RxBytesPerSec: 0, TxBytesPerSec: 0}}})
 	if !strings.Contains(strings.ToLower(out), "no interface") {
 		t.Errorf("an all-idle interface list should say so, got: %s", out)

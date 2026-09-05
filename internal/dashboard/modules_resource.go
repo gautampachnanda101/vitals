@@ -102,11 +102,11 @@ func renderDisk(s doctor.Snapshot) string {
 	for _, d := range s.Disks {
 		out += row(d.Mount, fmt.Sprintf("%.0f%% used, %s free", d.UsedPct, ui.HumanBytes(int64(d.FreeBytes))))
 	}
-	// No per-process disk-I/O table: it isn't available from the snapshot
-	// source on macOS (gopsutil returns zero) and needs rate sampling on
-	// Linux/Windows — roadmap item 012. A CPU-ranked list here would be
-	// mislabelled, not useful.
-	return card(out)
+	// Per-process disk-I/O rate isn't available cross-platform (zero on
+	// macOS via gopsutil — roadmap 012), so the disk-appropriate "what's
+	// using it" answer is by path: a bounded scan of the home folder for
+	// the biggest directories and files.
+	return card(out) + biggestPathsSection()
 }
 
 func renderNet(s doctor.Snapshot) string {
@@ -122,9 +122,10 @@ func renderNet(s doctor.Snapshot) string {
 	if shown == 0 {
 		out = `<p class="unavailable">No interface is currently transferring data.</p>`
 	}
-	// No per-process network table: gopsutil exposes a process's sockets,
-	// not its transferred bytes, on any platform — roadmap item 012.
-	return card(out)
+	// Per-process byte counts aren't available (gopsutil gives sockets,
+	// not bytes — roadmap 012), so the network-appropriate detail is the
+	// live connection list itself: who's talking to which remote host.
+	return card(out) + activeConnectionsSection()
 }
 
 func renderPower(s doctor.Snapshot) string {
