@@ -54,16 +54,8 @@ func extractHeadings(md string) []heading {
 			continue
 		}
 
-		var level int
-		var text string
-		switch {
-		case strings.HasPrefix(t, "### "):
-			level, text = 3, strings.TrimPrefix(t, "### ")
-		case strings.HasPrefix(t, "## "):
-			level, text = 2, strings.TrimPrefix(t, "## ")
-		case strings.HasPrefix(t, "# "):
-			level, text = 1, strings.TrimPrefix(t, "# ")
-		default:
+		level, text, ok := headingLevel(t)
+		if !ok {
 			continue
 		}
 
@@ -150,19 +142,17 @@ func renderBodyHTML(md string, headings []heading) string {
 			continue
 		}
 
-		switch {
-		case strings.HasPrefix(trimmed, "### "):
+		switch level, text, ok := headingLevel(trimmed); {
+		case ok:
 			flushPara()
 			closeList()
-			fmt.Fprintf(&body, "<h3 id=\"%s\">%s</h3>\n", nextSlug(), renderInlineHTML(strings.TrimPrefix(trimmed, "### ")))
-		case strings.HasPrefix(trimmed, "## "):
-			flushPara()
-			closeList()
-			fmt.Fprintf(&body, "<h2 id=\"%s\">%s</h2>\n", nextSlug(), renderInlineHTML(strings.TrimPrefix(trimmed, "## ")))
-		case strings.HasPrefix(trimmed, "# "):
-			flushPara()
-			closeList()
-			fmt.Fprintf(&body, "<h1 id=\"%s\">%s</h1>\n", nextSlug(), renderInlineHTML(strings.TrimPrefix(trimmed, "# ")))
+			// The tag name itself IS the level (<h1>/<h2>/<h3>) — HTML's
+			// own semantic heading elements already encode what
+			// headingEmphasis's Bold/Color/Rule policy exists to keep
+			// the terminal renderer in sync with; see pageTemplate's
+			// h1/h2/h3 CSS rules, which implement that same policy for
+			// this medium.
+			fmt.Fprintf(&body, "<h%d id=\"%s\">%s</h%d>\n", level, nextSlug(), renderInlineHTML(text), level)
 		case strings.HasPrefix(trimmed, "- "):
 			flushPara()
 			if !inList {
@@ -282,9 +272,10 @@ const pageTemplate = `<html>
     font: 16px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #1b1f23; background: #ffffff;
   }
-  h1, h2, h3 { line-height: 1.25; }
+  h1, h2, h3 { line-height: 1.25; color: #2b5d53; }
   h1 { border-bottom: 2px solid #2b5d53; padding-bottom: .3rem; }
   h2 { border-bottom: 1px solid #d9d7d0; padding-bottom: .2rem; margin-top: 2.2rem; }
+  h3 { margin-top: 1.6rem; }
   code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #f0efe9; padding: .1em .35em; border-radius: 3px; }
   pre { background: #f0efe9; padding: .9rem 1rem; border-radius: 6px; overflow-x: auto; }
   pre code { background: none; padding: 0; }
@@ -299,6 +290,8 @@ const pageTemplate = `<html>
   @media (prefers-color-scheme: dark) {
     body { color: #e9eaea; background: #14171a; }
     code, pre { background: #20252a; }
+    h1, h2, h3 { color: #6fbfa8; }
+    h1 { border-bottom-color: #6fbfa8; }
     h2 { border-bottom-color: #2a2e33; }
     a { color: #6fbfa8; }
     nav.toc { background: #1b1f23; border-color: #2a2e33; }

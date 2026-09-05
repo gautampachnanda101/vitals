@@ -40,22 +40,39 @@ func RenderTerminal(md string) string {
 			continue
 		}
 
-		switch {
-		case strings.HasPrefix(trimmed, "### "):
-			title := strings.TrimPrefix(trimmed, "### ")
-			b.WriteString("\n" + ui.Bold + title + ui.Reset + "\n")
-		case strings.HasPrefix(trimmed, "## "):
-			title := strings.TrimPrefix(trimmed, "## ")
-			b.WriteString("\n" + ui.Bold + ui.Cyan + title + ui.Reset + "\n")
-		case strings.HasPrefix(trimmed, "# "):
-			title := strings.TrimPrefix(trimmed, "# ")
-			rule := strings.Repeat("═", len([]rune(title)))
-			b.WriteString(ui.Bold + ui.Cyan + title + ui.Reset + "\n" + ui.Cyan + rule + ui.Reset + "\n")
-		case strings.HasPrefix(trimmed, "- "):
+		if level, title, ok := headingLevel(trimmed); ok {
+			b.WriteString(renderHeadingTerminal(level, title))
+		} else if strings.HasPrefix(trimmed, "- ") {
 			b.WriteString("  • " + renderInlineTerminal(strings.TrimPrefix(trimmed, "- ")) + "\n")
-		default:
+		} else {
 			b.WriteString(renderInlineTerminal(line) + "\n")
 		}
+	}
+	return b.String()
+}
+
+// renderHeadingTerminal renders one heading per headingEmphasis(level)'s
+// policy. Level 1 gets no leading blank line (it's always a document's
+// very first line) and an underline rule; every other level gets a
+// leading blank line to separate it from what came before, no rule.
+func renderHeadingTerminal(level int, title string) string {
+	e := headingEmphasis(level)
+	style := ""
+	if e.Bold {
+		style += ui.Bold
+	}
+	if e.Color {
+		style += ui.Cyan
+	}
+
+	var b strings.Builder
+	if !e.Rule {
+		b.WriteString("\n")
+	}
+	b.WriteString(style + title + ui.Reset + "\n")
+	if e.Rule {
+		rule := strings.Repeat("═", len([]rune(title)))
+		b.WriteString(ui.Cyan + rule + ui.Reset + "\n")
 	}
 	return b.String()
 }
