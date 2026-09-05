@@ -30,6 +30,8 @@ nav:
           - 008 vitals heal: roadmap/items/008-heal-command/index.md
           - 009 Raw 95%+ coverage: roadmap/items/009-raw-coverage-95/index.md
           - 010 Companion tools integration: roadmap/items/010-companion-tools-integration/index.md
+          - 011 Console at-a-glance view: roadmap/items/011-console-at-a-glance-view/index.md
+          - 012 Disk consumers detail: roadmap/items/012-disk-consumers-detail/index.md
 
 plugins:
   - techdocs-core
