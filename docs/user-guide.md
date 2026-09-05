@@ -156,8 +156,7 @@ for any reason, `doctor` just skips it rather than failing the command.
 ## vitals dashboard
 
 `dashboard` serves the same correlation `doctor` prints in a terminal as
-browsable pages instead — an overview, one page per resource, an advice
-page, and a clean page. It binds `127.0.0.1` only and opens your default
+browsable pages instead. It binds `127.0.0.1` only and opens your default
 browser automatically; nothing leaves this machine, the same promise
 `vitals guide --web` makes.
 
@@ -167,10 +166,34 @@ vitals dashboard --addr :8080   # a stable port to bookmark — still 127.0.0.1 
 vitals dashboard --no-open      # print the URL instead of launching a browser
 ```
 
-Each page only appears in the nav when this machine can actually offer it:
-no GPU page without a GPU, no power page without a battery. The advice
-page is always available — its rule-based findings need no LLM at all;
-an LLM, when reachable, only adds AI commentary on top (see
+A grouped sidebar organises the pages into **Overview**, **Resources**
+(CPU, Processes, Memory, Disk, Network, Power, GPU), **Intelligence**
+(Advice, LLM Insight), **Tools** (Clean, Duplicates) and **System**.
+Each page only appears when this machine can actually offer it: no GPU
+page without a GPU, no Power page without a battery.
+
+Every resource page carries a "what's using it" section, appropriate to
+that resource:
+
+- **CPU / Memory** — the top processes by CPU% and by resident memory.
+- **Processes** — the full `vitals top` table as a page.
+- **Disk** — the biggest directories and biggest single files under your
+  home folder, from a time-bounded scan (results are marked partial if
+  the scan didn't finish).
+- **Network** — the active connections: which process is talking to
+  which remote host, and in what state.
+- **Power** — a CPU-ranked "likely energy impact" list, labelled plainly
+  as a CPU-based estimate rather than a real power reading.
+- **GPU** — processes holding VRAM where that reading is available
+  (NVIDIA), or the memory pressure itself on an Apple unified-memory GPU.
+
+**LLM Insight** shows local runtimes and their per-model GPU offload
+alongside cloud-provider reachability. **System** shows the machine
+identity, the effective config (with each value marked as set-in-file or
+a built-in default), and which companion tools are installed.
+
+The Advice page is always available — its rule-based findings need no
+LLM at all; an LLM, when reachable, only adds AI commentary on top (see
 [vitals advice](#vitals-advice)). Press Ctrl+C in the terminal that
 launched it to stop.
 
