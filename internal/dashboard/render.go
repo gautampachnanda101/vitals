@@ -99,6 +99,7 @@ header.top h1{font-size:1.28rem;margin:0;font-weight:800}
 .bar>span{display:block;height:100%;background:var(--accent);border-radius:4px}
 .bar.warn>span{background:var(--warn)}
 .bar.crit>span{background:var(--crit)}
+.rescard .spark{display:block;width:100%;height:24px;margin:.1rem 0 .5rem;opacity:.85}
 .rescard .detail{font-size:.76rem;color:var(--muted)}
 .qa{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.7rem}
 .qa a{display:flex;flex-direction:column;gap:.3rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.85rem .9rem;text-decoration:none;color:inherit}
@@ -249,6 +250,7 @@ var resourceCardTmpl = template.Must(template.New("resourceCard").Parse(
 	`<a class="rescard" href="/{{.Slug}}"><h3>{{if .Icon}}<svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;vertical-align:-2px;margin-right:.3rem">{{.Icon}}</svg>{{end}}{{.Label}}</h3>` +
 		`<div class="val{{if eq .Severity "warning"}} warn{{else if eq .Severity "critical"}} crit{{end}}">{{.Value}}</div>` +
 		`<div class="bar{{if eq .Severity "warning"}} warn{{else if eq .Severity "critical"}} crit{{end}}"><span style="width:{{.Pct}}%"></span></div>` +
+		`{{.Spark}}` +
 		`<div class="detail">{{.Detail}}</div></a>`))
 
 type resourceCardData struct {
@@ -256,8 +258,9 @@ type resourceCardData struct {
 	Label    string
 	Icon     template.HTML
 	Value    string
-	Pct      float64 // 0-100, clamped by the caller — the bar's fill width
-	Severity string  // "ok" | "warning" | "critical", matching diag.Severity.String()
+	Pct      float64       // 0-100, clamped by the caller — the bar's fill width
+	Severity string        // "ok" | "warning" | "critical", matching diag.Severity.String()
+	Spark    template.HTML // optional trend sparkline (sparkline()); "" renders nothing
 	Detail   string
 }
 

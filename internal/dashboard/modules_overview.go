@@ -24,10 +24,10 @@ func renderOverview(ctx PageContext) string {
 	body := verdictBanner(headline, summaryLine(s), ctx.Report.Worst())
 
 	body += `<div class="sectiontitle">Resources</div><div class="grid">`
-	body += cpuCard(s)
-	body += memCard(s)
+	body += cpuCard(s, ctx.History)
+	body += memCard(s, ctx.History)
 	if d, ok := fullestDisk(s.Disks); ok {
-		body += diskCard(d)
+		body += diskCard(d, ctx.History)
 	}
 	if n, ok := busiestNet(s.Net); ok {
 		body += netCard(n)
@@ -68,31 +68,36 @@ func resourceSeverity(s doctor.Snapshot, resource string) string {
 	return doctor.AnalyzeResource(s, resource).Worst().String()
 }
 
-func cpuCard(s doctor.Snapshot) string {
+func cpuCard(s doctor.Snapshot, hist []doctor.HistoryPoint) string {
 	detail := fmt.Sprintf("load %.2f on %d cores", s.CPU.Load1, s.CPU.Cores)
 	if s.CPU.TopProc.Name != "" {
 		detail = fmt.Sprintf("%s — %.0f%%", s.CPU.TopProc.Name, s.CPU.TopProc.CPUPct)
 	}
+	sev := resourceSeverity(s, "cpu")
 	return resourceCard(resourceCardData{
 		Slug: "cpu", Label: "CPU", Icon: iconCPU,
 		Value: fmt.Sprintf("%.0f%%", s.CPU.UsedPct), Pct: s.CPU.UsedPct,
-		Severity: resourceSeverity(s, "cpu"), Detail: detail,
+		Severity: sev, Spark: sparkline(historySeries(hist, cpuAt), 0, 100, sev),
+		Detail: detail,
 	})
 }
 
-func memCard(s doctor.Snapshot) string {
+func memCard(s doctor.Snapshot, hist []doctor.HistoryPoint) string {
 	detail := fmt.Sprintf("swap %.0f%% used", s.Memory.SwapUsedPct)
 	if s.Memory.TopProc.Name != "" {
 		detail = fmt.Sprintf("%s — %s RSS", s.Memory.TopProc.Name, ui.HumanBytes(int64(s.Memory.TopProc.RSSBytes)))
 	}
+	sev := resourceSeverity(s, "mem")
 	return resourceCard(resourceCardData{
 		Slug: "mem", Label: "Memory", Icon: iconMemory,
 		Value: fmt.Sprintf("%.0f%%", s.Memory.UsedPct), Pct: s.Memory.UsedPct,
-		Severity: resourceSeverity(s, "mem"), Detail: detail,
+		Severity: sev, Spark: sparkline(historySeries(hist, memAt), 0, 100, sev),
+		Detail: detail,
 	})
 }
 
-func diskCard(d doctor.Disk) string {
+func diskCard(d doctor.Disk, hist []doctor.HistoryPoint) string {
+	sev := diskCardSeverity(d.UsedPct)
 	return resourceCard(resourceCardData{
 		Slug: "disk", Label: "Disk", Icon: iconDisk,
 		Value: fmt.Sprintf("%.0f%%", d.UsedPct), Pct: d.UsedPct,
@@ -101,9 +106,35 @@ func diskCard(d doctor.Disk) string {
 		// specific (fullest) mount's own usage rather than the whole
 		// resource's worst finding, which might point at a different,
 		// less-full-but-otherwise-unhealthy mount.
-		Severity: diskCardSeverity(d.UsedPct),
-		Detail:   fmt.Sprintf("%s — %s free", d.Mount, ui.HumanBytes(int64(d.FreeBytes))),
+		Severity: sev, Spark: sparkline(diskSeries(hist), 0, 100, sev),
+		Detail: fmt.Sprintf("%s — %s free", d.Mount, ui.HumanBytes(int64(d.FreeBytes))),
 	})
+}
+
+// historySeries pulls one metric out of the recorded trend, oldest
+// first, ready for sparkline(). The getters below name the field.
+func historySeries(hist []doctor.HistoryPoint, at func(doctor.HistoryPoint) float64) []float64 {
+	out := make([]float64, len(hist))
+	for i, p := range hist {
+		out[i] = at(p)
+	}
+	return out
+}
+
+func cpuAt(p doctor.HistoryPoint) float64 { return p.CPUPercent }
+func memAt(p doctor.HistoryPoint) float64 { return p.MemPercent }
+
+// diskSeries drops points where DiskPercent is 0 — that's HistoryPoint's
+// documented "no real mount measured" sentinel, not a genuine 0%-full
+// reading, and letting it through draws a false cliff on the sparkline.
+func diskSeries(hist []doctor.HistoryPoint) []float64 {
+	var out []float64
+	for _, p := range hist {
+		if p.DiskPercent > 0 {
+			out = append(out, p.DiskPercent)
+		}
+	}
+	return out
 }
 
 // diskCardSeverity mirrors config.Default()'s own disk warn/crit

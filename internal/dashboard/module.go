@@ -27,6 +27,9 @@ type PageContext struct {
 	Report    diag.Report
 	Providers []llm.Provider
 	LLMOpts   llm.CompleteOptions
+	// History is the recorded 24h trend for the Overview's sparklines
+	// (roadmap 007), gathered by the snapshot cache's refresh, not here.
+	History []doctor.HistoryPoint
 	// Version is main.version, threaded through so the footer can show it
 	// without this package importing package main.
 	Version string

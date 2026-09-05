@@ -48,6 +48,7 @@ func Serve(opts Options) error {
 			Report:    snap.Report,
 			Providers: snap.Providers,
 			LLMOpts:   llmOpts,
+			History:   snap.History,
 			Version:   opts.Version,
 		}
 
