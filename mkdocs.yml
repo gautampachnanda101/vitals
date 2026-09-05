@@ -29,6 +29,7 @@ nav:
           - 007 Dashboard visuals & machine identity: roadmap/items/007-dashboard-visuals/index.md
           - 008 vitals heal: roadmap/items/008-heal-command/index.md
           - 009 Raw 95%+ coverage: roadmap/items/009-raw-coverage-95/index.md
+          - 010 Companion tools integration: roadmap/items/010-companion-tools-integration/index.md
 
 plugins:
   - techdocs-core

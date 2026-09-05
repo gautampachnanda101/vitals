@@ -233,7 +233,11 @@ func run(argv []string, version string) int {
 	case "gpu":
 		fs := newFlagSet("gpu")
 		asJSON := fs.Bool("json", false, "emit GPU telemetry as JSON")
+		live := fs.Bool("live", false, "hand off to a live per-process GPU monitor (nvtop) if installed — see `vitals tools install nvtop`")
 		_ = fs.Parse(args)
+		if *live {
+			return must(tools.Launch("GPU monitor", nil))
+		}
 		return must(gpu.Run(*asJSON))
 
 	case "cpu", "mem", "memory", "disk", "net", "network", "power", "battery":
