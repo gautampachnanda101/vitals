@@ -42,7 +42,7 @@ depends on.
 | [005](items/005-dashboard-write-actions/) | Dashboard write actions | Done | 001, 002, 004 | v0.7.0+ |
 | [006](items/006-coverage-hardening/) | Coverage hardening to 95%+ | Done | — (cross-cutting, ongoing) | ongoing |
 | [007](items/007-dashboard-visuals/) | Dashboard visuals & machine identity | Delivered incrementally — System page + overview cards + sparklines in v0.8.0+; richer charts still gated | 002 | v0.8.0+ |
-| [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Not started — captured as a followup, not yet designed | diag findings/fixes model | not yet |
+| [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Design reviewed — approved with must-fixes that shrink v1; awaiting maintainer go before code | diag findings/fixes model | not yet |
 | [009](items/009-raw-coverage-95/) | Raw 95%+ coverage, no live-glue exemption | Done | — (cross-cutting) | ongoing |
 | [010](items/010-companion-tools-integration/) | Companion tools: real integration, not just a catalog | Done — `nvtop` (`gpu --live`), `jdupes` (`dupes --fast`), `smartctl` (S.M.A.R.T. on disk) all shipped | `internal/tools` (existing) | v0.8.0+ |
 | [011](items/011-console-at-a-glance-view/) | Console at-a-glance view | Not started — captured 2026-09-05, needs design + review | `doctor` snapshot/cache (existing) | not yet |
