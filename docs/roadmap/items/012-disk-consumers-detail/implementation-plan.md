@@ -1,6 +1,6 @@
-# Implementation plan — 012 Disk consumers: what's using space and I/O
+# Implementation plan — 012 Per-resource consumers: disk, network, energy
 
-[docs](../../../index.md) / [Roadmap](../../index.md) / [012 — Disk consumers: what's using space and I/O](index.md) / **Implementation plan**
+[docs](../../../index.md) / [Roadmap](../../index.md) / [012 — Per-resource consumers: disk, network, energy](index.md) / **Implementation plan**
 
 Empty on purpose. This item is not started and not designed — see
 `index.md`'s "Why this is its own item" section for what has to happen

@@ -101,6 +101,20 @@ test('clicking a Resources link navigates to that page', async ({ page }) => {
   await expect(page.locator('main')).toContainText(/CPU|No processes to show/);
 });
 
+// Every resource page must answer "what's using this" with a top-processes
+// table, even when the resource itself is healthy -- a maintainer
+// requirement. The per-renderer HTML is asserted deterministically in
+// internal/dashboard's Go tests (with a fake process cache); here we just
+// confirm it survives a real page load on the two pages that reach it via
+// data the CI runner reliably has. A generous timeout because the first
+// hit blocks on a real ~500ms process sample.
+for (const path of ['/cpu', '/mem']) {
+  test(`resource page ${path} shows a top-processes section`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page.locator('main')).toContainText(/Top processes/, { timeout: 15000 });
+  });
+}
+
 test('dark mode renders the page without breaking the layout', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');

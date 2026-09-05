@@ -49,6 +49,16 @@ func card(body string) string { return `<div class="card">` + body + `</div>` }
 // this is a supporting detail on a page about something else, not the
 // page's whole point. Matches the user-facing ask for "top 5/10" — 5 is
 // the value chosen; raise it if that turns out too tight in practice.
+// topProcessesSectionN is how many rows a resource page's own "Top
+// processes" section shows. A resource page only gets this section where
+// the ranking is genuinely that resource's own metric — CPU% on the CPU
+// page, RSS on the Memory page, VRAM on a GPU page when a real
+// per-process reading exists. Disk I/O, network throughput and energy
+// are not available per-process from the snapshot source (network on no
+// platform, disk only on Linux/Windows and only as a rate that needs
+// sampling), so those pages deliberately show no process table rather
+// than a CPU list mislabelled as that resource's activity — roadmap
+// item 012.
 const topProcessesSectionN = 5
 
 func renderCPU(s doctor.Snapshot) string {
@@ -92,6 +102,10 @@ func renderDisk(s doctor.Snapshot) string {
 	for _, d := range s.Disks {
 		out += row(d.Mount, fmt.Sprintf("%.0f%% used, %s free", d.UsedPct, ui.HumanBytes(int64(d.FreeBytes))))
 	}
+	// No per-process disk-I/O table: it isn't available from the snapshot
+	// source on macOS (gopsutil returns zero) and needs rate sampling on
+	// Linux/Windows — roadmap item 012. A CPU-ranked list here would be
+	// mislabelled, not useful.
 	return card(out)
 }
 
@@ -106,8 +120,10 @@ func renderNet(s doctor.Snapshot) string {
 		shown++
 	}
 	if shown == 0 {
-		return card(`<p class="unavailable">No interface is currently transferring data.</p>`)
+		out = `<p class="unavailable">No interface is currently transferring data.</p>`
 	}
+	// No per-process network table: gopsutil exposes a process's sockets,
+	// not its transferred bytes, on any platform — roadmap item 012.
 	return card(out)
 }
 
@@ -123,7 +139,17 @@ func renderPower(s doctor.Snapshot) string {
 	if s.Power.MinutesLeft > 0 {
 		out += row("Remaining", fmt.Sprintf("~%d min", s.Power.MinutesLeft))
 	}
-	return card(out)
+	body := card(out)
+	// There's no per-process power/energy reading in the snapshot source,
+	// so this is an explicit CPU-based estimate, not a measurement — the
+	// caption says so. A process near the top here is a likely battery
+	// drain; it is not a wattage.
+	if rows := topProcessRows(topProcessesSectionN, false); rows != "" {
+		body += `<div class="sectiontitle">Likely energy impact</div>` +
+			`<p class="caption">CPU-based estimate — vitals has no per-process power reading. Ranked by CPU use.</p>` +
+			card(rows)
+	}
+	return body
 }
 
 // renderGPU mirrors internal/gpu/report.go's Run: it never prints a
@@ -154,12 +180,15 @@ func renderGPU(s doctor.Snapshot) string {
 		case g.VRAMTotal > 0:
 			rows += row(g.Name, fmt.Sprintf("%.0f%% util, %s / %s VRAM", g.UtilPct, ui.HumanBytes(int64(g.VRAMUsed)), ui.HumanBytes(int64(g.VRAMTotal))))
 		case strings.HasPrefix(g.Name, "Apple"):
+			// Apple unified memory *is* the GPU's memory, so ranking
+			// processes by RSS here is genuinely GPU-appropriate, not a
+			// stand-in — renderMem carries its own "Top processes by memory".
 			rows += row(g.Name, "unified memory — same pool as system RAM, shown below")
 			extra += renderMem(s)
 		default:
 			rows += row(g.Name, "no utilisation/VRAM telemetry available for this GPU")
 		}
-		extra += gpuProcessSection(g)
+		extra += gpuProcessSection(g) // "Processes holding VRAM", NVIDIA per-process reading only
 	}
 	return card(rows) + extra
 }

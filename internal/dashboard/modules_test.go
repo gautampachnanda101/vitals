@@ -12,6 +12,17 @@ import (
 	"vitals/internal/monitor"
 )
 
+// fakeProcs is a small deterministic process table for the resource-page
+// tests: every resource page now appends a "Top processes" section
+// (activeProcs / topProcessRows), which without this would fire a real
+// ~500ms monitor.Sample and pull in live process names.
+func fakeProcs() (monitor.Snapshot, error) {
+	return monitor.Snapshot{Processes: []monitor.ProcInfo{
+		{PID: 1, Name: "heavy-cpu", CPUPct: 42, RSSBytes: 1 << 30},
+		{PID: 2, Name: "heavy-ram", CPUPct: 3, RSSBytes: 6 << 30},
+	}}, nil
+}
+
 func TestRenderOverviewHealthy(t *testing.T) {
 	out := renderOverview(PageContext{Snapshot: doctor.Snapshot{CPU: doctor.CPU{UsedPct: 4}, Memory: doctor.Memory{UsedPct: 40}}})
 	if !strings.Contains(out, "Healthy") || !strings.Contains(out, "cpu 4%") {
@@ -206,15 +217,24 @@ func TestRenderMemOmitsOptionalRowsWhenAbsent(t *testing.T) {
 }
 
 func TestRenderPowerShowsOptionalRowsWhenPresent(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: true, Percent: 62, MinutesLeft: 90}})
 	for _, want := range []string{"battery", "62%", "90 min"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("renderPower missing %q, got: %s", want, out)
 		}
 	}
+	// The per-process "energy impact" section is an explicit CPU-based
+	// estimate — it must say so, not present itself as a real reading.
+	for _, want := range []string{"energy impact", "heavy-cpu", "CPU-based estimate"} {
+		if !strings.Contains(strings.ToLower(out), strings.ToLower(want)) {
+			t.Errorf("renderPower energy-impact section missing %q, got: %s", want, out)
+		}
+	}
 }
 
 func TestRenderPowerOnACWithNoEstimate(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: false}})
 	if !strings.Contains(out, "AC power") {
 		t.Errorf("renderPower should report AC power when not on battery, got: %s", out)
@@ -238,6 +258,7 @@ func TestRenderNetShowsActiveInterfaces(t *testing.T) {
 }
 
 func TestRenderGPUListsEveryDevice(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{
 		{Name: "RTX 4090", UtilPct: 80, VRAMUsed: 10 << 30, VRAMTotal: 24 << 30},
 	}})
@@ -249,6 +270,7 @@ func TestRenderGPUListsEveryDevice(t *testing.T) {
 }
 
 func TestRenderGPUListsProcessesHoldingVRAMWhenKnown(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{
 		Name: "RTX 4090", UtilPct: 40, VRAMUsed: 8 << 30, VRAMTotal: 24 << 30,
 		Processes: []doctor.GPUProc{
@@ -268,11 +290,15 @@ func TestRenderGPUListsProcessesHoldingVRAMWhenKnown(t *testing.T) {
 }
 
 func TestRenderGPUOmitsProcessSectionWhenNoPerProcessData(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{
 		Name: "RTX 4090", UtilPct: 40, VRAMUsed: 8 << 30, VRAMTotal: 24 << 30,
 	}}})
-	if strings.Contains(out, "Processes holding VRAM") {
-		t.Errorf("renderGPU should not show an empty VRAM-process section, got: %s", out)
+	// A discrete GPU with util/VRAM totals but no per-process VRAM reading
+	// gets no process table — nothing to rank it by that's actually the
+	// GPU's metric.
+	if strings.Contains(out, "Processes holding VRAM") || strings.Contains(out, "Top processes") {
+		t.Errorf("renderGPU should not show any process section without a per-process VRAM reading, got: %s", out)
 	}
 }
 
@@ -284,6 +310,7 @@ func TestRenderGPUShowsLiveRAMPressureForAppleUnifiedMemory(t *testing.T) {
 	// ("go look elsewhere") was rightly rejected as still not actionable —
 	// GPU and RAM are the same pool here, so this page shows that live
 	// pressure directly: the same numbers/format renderMem uses.
+	withFakeProcessCache(t, fakeProcs)
 	s := doctor.Snapshot{
 		GPUs:   []doctor.GPU{{Name: "Apple M3 Pro"}},
 		Memory: doctor.Memory{UsedPct: 86, TopProc: doctor.ProcRef{Name: "llama-server", PID: 123, RSSBytes: 2 << 30}},
@@ -303,6 +330,7 @@ func TestRenderGPUShowsLiveRAMPressureForAppleUnifiedMemory(t *testing.T) {
 }
 
 func TestRenderGPUUnknownVendorWithNoTelemetrySaysSoRatherThanZero(t *testing.T) {
+	withFakeProcessCache(t, fakeProcs)
 	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{Name: "Some GPU"}}})
 	if strings.Contains(out, "0 B / 0 B") || strings.Contains(out, "0% util") {
 		t.Errorf("renderGPU should never print a bare zero VRAM/util reading, got: %s", out)
@@ -329,6 +357,12 @@ func TestRenderDiskListsEveryMount(t *testing.T) {
 	out := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30}}})
 	if !strings.Contains(out, "/") || !strings.Contains(out, "50%") {
 		t.Errorf("renderDisk = %s", out)
+	}
+	// No process table on the Disk page — a CPU-ranked list would be
+	// mislabelled as disk activity (roadmap 012 covers real per-process
+	// I/O and biggest-files).
+	if strings.Contains(out, "Top processes") {
+		t.Errorf("renderDisk should not carry a generic process table, got: %s", out)
 	}
 }
 

@@ -106,6 +106,7 @@ header.top h1{font-size:1.28rem;margin:0;font-weight:800}
 .qa .qdesc{font-size:.74rem;color:var(--muted);line-height:1.35}
 .sectiontitle{font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:1.3rem 0 .6rem}
 .sectiontitle:first-child{margin-top:0}
+.caption{font-size:.76rem;color:var(--muted);line-height:1.4;margin:-.3rem 0 .6rem}
 .modelcard{display:flex;justify-content:space-between;align-items:center;gap:1rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.85rem 1rem;margin-bottom:.6rem}
 .modelcard .mname{font-weight:700;font-size:.88rem}
 .modelcard .msub{font-size:.76rem;color:var(--muted);margin-top:.15rem}
