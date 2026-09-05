@@ -45,7 +45,7 @@ depends on.
 | [008](items/008-heal-command/) | `vitals heal` — apply a finding's fix | Design reviewed — approved with must-fixes that shrink v1; awaiting maintainer go before code | diag findings/fixes model | not yet |
 | [009](items/009-raw-coverage-95/) | Raw 95%+ coverage, no live-glue exemption | Done | — (cross-cutting) | ongoing |
 | [010](items/010-companion-tools-integration/) | Companion tools: real integration, not just a catalog | Done — `nvtop` (`gpu --live`), `jdupes` (`dupes --fast`), `smartctl` (S.M.A.R.T. on disk) all shipped | `internal/tools` (existing) | v0.8.0+ |
-| [011](items/011-console-at-a-glance-view/) | Console at-a-glance view | Not started — captured 2026-09-05, needs design + review | `doctor` snapshot/cache (existing) | not yet |
+| [011](items/011-console-at-a-glance-view/) | Console at-a-glance view | Design reviewed — unanimous go-with-changes; must-fixes folded, one product decision open | `doctor` snapshot/cache (existing) | not yet |
 | [012](items/012-disk-consumers-detail/) | Per-resource consumers: the deeper numbers | Partly shipped 2026-09-05; deeper per-process I/O / bandwidth / energy left | `internal/monitor` sampling (existing) | not yet |
 | [013](items/013-container-runtime-awareness/) | Local container & Kubernetes awareness | Captured 2026-09-05, needs design + review | `doctor` + `internal/tools` (existing) | not yet |
 

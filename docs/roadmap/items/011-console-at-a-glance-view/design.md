@@ -255,3 +255,227 @@ raw floor, easy since `Render` is pure) plus:
 [`implementation-plan.md`](implementation-plan.md) — stays empty until
 this doc's `review-panel` pass converges and its must-fix findings are
 folded back in here.
+
+---
+
+## 11. Review outcome (2026-09-05)
+
+A full seven-agent `review-panel` ran against §1–§10 above: three
+independent technical architects, security, product, QA, performance.
+**All seven returned go-with-changes; no no-go.** The findings converged
+tightly — most of the must-fix list below was surfaced independently by
+two or more reviewers.
+
+### Convergent must-fix (fold into the design before code)
+
+1. **[3 architects + QA] Cut the "events strip" from v1.**
+   `internal/doctor/history.go`'s `HistoryPoint` stores only
+   CPU/mem/disk% + the top-mem process — never prior *findings*. So
+   "findings that just crossed a threshold vs. steady state" is not
+   reconstructable without a findings-history persistence format, which
+   this item's own scope boundary forbids ("No new persistence
+   format"). Ship `report.SortedBySeverity()` worst-first (already
+   available, zero new code); make the delta strip a `doctor`-side
+   follow-on once "should history carry findings" is answered. (§6 is
+   amended: v1 findings section = worst-first, no delta.)
+
+2. **[performance, deep — echoed by all 3 architects + PM on latency]
+   Bare `vitals` must not call `doctor.Assess` + `monitor.Sample`
+   raw, sequential, uncached.** Traced worst case ≈ **16s** (GPU probe
+   2×3s + power probe 2×2s + Ollama HTTP 3s + dead mount 1.5s +
+   `Collect`'s 700ms window + `monitor.Sample`'s 2×500ms), typical
+   **2–3s** — for what becomes the tool's default entry point (today:
+   instant). This is the exact "one page load could cost tens of
+   seconds" figure that forced `internal/dashboard`'s `snapshotCache`
+   redesign. Required:
+   - a `doctor` **`SkipProbes` / `QuickCollect`** path that skips
+     `collectGPUs`/`collectPower`/`collectLLM`/`collectThermal` (the
+     four subprocess/network signals) — **shared with 008's own
+     must-fix #2**, which needs the same option;
+   - the GPU/power/LLM panels, if kept, populated on **one bounded
+     ~300ms concurrent budget** (3 goroutines + `WaitGroup`, no dep),
+     rendering "probing timed out — run `vitals gpu`" on expiry;
+   - collapse the **double process-table scan**: `doctor.Collect` and
+     `monitor.Sample` each enumerate every process with a separate
+     sleep window. Call `monitor.Sample` with `Interval: 700ms` so it
+     reuses one window, or extract a shared one-shot `procscan`;
+   - a **hard ~1.5s wall-clock ceiling** on the whole gather; render
+     what resolved, mark the rest "still measuring".
+   Target: **< 800ms typical, < 2s ceiling** for bare `vitals`.
+
+3. **[all 3 architects + QA] The §4 fit-to-height rules are
+   self-contradictory.** "Findings not truncated" + "never emits more
+   rows than the terminal has" + "verdict/findings never pushed
+   off-screen" cannot all hold when findings alone overflow a short
+   terminal (a critical machine: 8+ findings × wrapped detail + fixes).
+   Resolution: **no-scroll is a target, not a guarantee.** Header +
+   verdict + findings always render complete (the screen scrolls if it
+   must); the *only* compressible budget is the process table then
+   whole optional panels. If findings themselves must be trimmed, drop
+   the least-severe **whole** findings (each shown finding keeps all
+   its fixes) with a "+N more — run `vitals doctor`" tail — never
+   truncate a shown finding's fix list. On unknown height (a TTY where
+   `term.GetSize` errors): render full, do not guess.
+
+4. **[all 3 architects] `info.Collect` cannot back the header line
+   (§4.1).** It's a *live* call (`host.Info`, `os.Executable`,
+   `config.Load`) — unusable from a pure `Render`. Every header field
+   is already in the two snapshots: `monitor.Snapshot.Host` carries
+   hostname / OS / kernel-arch / uptime, `doctor.Snapshot.CPU.Cores`
+   the core count. Drop the `info.Collect` claim; `Input` gains
+   `Version string` and `Now time.Time` (main sets both) for
+   determinism.
+
+5. **[security, primary — QA & architects concur] Terminal
+   control-character / ANSI-escape injection.** The process table
+   prints process names, full command lines, mount paths and
+   reverse-DNS peer hosts straight to the terminal; `internal/ui` has
+   **no** control-character sanitiser (the web side gets this free via
+   `html/template`). A hostile local process can name itself with
+   cursor-movement escapes and repaint vitals' own verdict line, or
+   embed an OSC-8 phishing hyperlink. Required: **one shared
+   `ui.Sanitize(string)`** choke point (strips C0 controls except
+   `\t`, the C1 range, lone `\x1b`, `\r`, DEL, and OSC/CSI sequences),
+   applied at the single point any externally-sourced string is
+   formatted for the terminal — which **retrofits `doctor` / `top` /
+   `memhogs`**, all of which carry this latent today. Plus a hard
+   per-cell rune cap applied *before* any width math, and a `Command`
+   length cap at capture time in `monitor.Sample` (~512 runes) so no
+   process can break the one-screen invariant with a multi-KB argv.
+
+6. **[QA, primary — architects 1 & 3 concur] Display-width strategy is
+   unspecified and the "reuse existing `ui` helpers" claim is
+   overstated.** `ui.Wrap` / `ui.Truncate` count *runes, not display
+   cells*; there is no `runewidth`/`wcwidth` in the repo or `go.mod`.
+   CJK ("微信" = 2 runes / 4 cells), emoji, and combining marks
+   misalign every box frame and every column. Decide before code: take
+   a width dependency (`golang.org/x/text/width` or
+   `mattn/go-runewidth`) — the same "one dependency" reconciliation the
+   doc already concedes for live mode, now needed for the *snapshot*
+   view too — **or** commit to ASCII-safe hard truncation with a
+   documented limitation. Add CJK/emoji and multi-thousand-char-cmdline
+   fixtures to §10's matrix either way.
+
+7. **[architect 3, primary — architect 1 concurs] Reconcile with
+   `internal/doctor/focus.go`.** `consoleview` would be the *third*
+   ANSI per-resource renderer in one binary (`doctor.SummaryLine`,
+   `focusDetail`, `consoleview`), each with its own copy of the
+   per-resource threshold constants (`focus.go`'s `pct(…,70,90)`, disk
+   `85/95`, await `20/50`, mem-available `20/8`) — which *will* drift
+   from `config.Default()`. Either refactor `focusDetail`'s per-resource
+   blocks into shared pure formatters that `RunFocus` and
+   `consoleview.Render` both call, or justify the divergence in the
+   design **and** own the duplicated constants as an explicit open
+   item. §5 must also re-anchor on the fact that the irreducibly new
+   thing is §4's fit-to-viewport layout engine, not "another
+   renderer".
+
+8. **[architect 2 + QA] The `main` seam and its tests.** `main.run` is
+   not TTY-aware and `TestRunEmptyArgsPrintsUsageAndExitsTwo`
+   (`main_test.go`) only passes today by luck (pipe → non-TTY →
+   fallback). Add `var isTTY func() bool` and an injected `sizeFn`;
+   route the glue through a testable
+   `consoleview.Run(w io.Writer, size func() (int,int,bool), opts) int`
+   entrypoint (mirroring `doctor.Run` / `monitor.Run`) so it gets its
+   own coverage floor instead of dragging `main` (floor 39). Add a
+   `--view` / `VITALS_VIEW=1` flag that forces the render regardless of
+   TTY — **required** so the "prove real wiring" test can reach the
+   view at all (a piped exec is non-TTY and only hits the fallback),
+   and independently useful for `vitals view | less -R`. Give bare
+   `vitals` a `--ollama-url` flag (parity with `advice`). Specify the
+   exit code: `report.ExitCode()` (0/1/2) on the TTY view, keep `2` for
+   the non-TTY usage fallback. Update the broken test.
+
+9. **[architect 2 + performance] `doctor.Assess` does NOT run the
+   DNS-latency probe** (it's only in `RunFocus` for `net`). So the
+   console view silently omits the "DNS resolution slow/failing"
+   finding class that `vitals net` surfaces — state that gap
+   explicitly or compute it live at the call site. (Note: 008's
+   design.md §10 Q5 has the same factual error and should be
+   corrected.)
+
+10. **[performance] Bare `vitals` must not churn the trend history.**
+    `finishAssess` → `recordHistory` writes `history.jsonl` every call;
+    `watch -n1 vitals` or shell-prompt integration would evict real
+    hourly points within minutes and break the dashboard's own
+    sparklines. The console-view path reads history
+    (`addLeakFinding(LoadHistory())`) but must **not** write it — or
+    `recordHistory` self-rate-limits to one write per N minutes.
+
+11. **[QA] §5 names `ui` functions that don't fit.** `ui.Okf`/`Warnf`
+    print to stdout and return nothing; `ui.Errf` writes stderr. A
+    string-building `Render` uses the raw `ui.Red`/`Yellow`/`Green`/
+    `Reset` constants or needs new `ui` helpers (which carry `ui`'s
+    96% floor). Fold the severity→colour mapping into one small
+    `internal/ui` helper (this is its *third* consumer after the
+    verdict banner and `PrintFindings`) — **not** a 007-shared
+    abstraction; the web side keys off CSS class names and shares
+    nothing here. The findings block should call the already-exported
+    `doctor.PrintFindings` rather than re-render.
+
+12. **[performance] The live-mode caching gate is a dangling
+    reference.** §3 points at "§7" for the discipline, but §7 is the
+    007 boundary. The follow-on live-console item must carry an
+    explicit, hard precondition: it reuses the `snapshotCache`
+    single-flight + TTL pattern (or the `SkipProbes` quick path), the
+    same way item 005 gated on §6.4's cache landing first.
+
+### Testing (QA)
+
+- Turn §10's fixture list into **property assertions** over the whole
+  matrix: every rendered line ≤ `width` (display-width aware), total
+  line count ≤ `height`, the verdict substring present at *every* drop
+  tier, columns aligned. Hitting a line ≠ proving the layout.
+- The golden-file plan **oversells its precedent**: `doctor`'s only
+  `.golden` is a sorted field-name list; a full-screen render golden is
+  a new, wording-sensitive test genre that churns on any reworded
+  finding. Keep the golden minimal; lean on the property assertions.
+- Matrix must add: non-ASCII/CJK/emoji cell content; a multi-KB
+  command line; Windows legacy-console / non-UTF-8 codepage (largest
+  ANSI+box surface vitals would emit — an `--ascii` fallback is worth
+  considering); the `os.Pipe` `captureStdout` deadlock is avoided by
+  testing `Render`'s return value, not `main`'s captured stdout.
+- New package ⇒ mandatory `check_coverage.py` `FLOORS` entry for
+  `internal/consoleview` in the same change.
+- `check_docs.py`: `docs/user-guide.md` section + `design.md` "As
+  built" appendix, both with breadcrumbs / nav.
+
+### Answers to §9's open questions, as the panel converged
+
+- **Q1 (bare `vitals` vs. `vitals view` subcommand):** the panel
+  splits. Architects: bare `vitals` → view is fine and low-risk
+  (today's bare output is a stderr usage dump with exit 2 that nobody
+  scripts) **provided** an explicit `vitals view` / `vitals glance`
+  alias is also registered. PM: ship as `vitals glance` first, leave
+  bare `vitals` alone (decouple the new renderer, the new default, and
+  the usage relocation), and separately upgrade bare `vitals` on a TTY
+  to print the one-line summary + pointers; promote to default later.
+  **Register the explicit alias + `--view` flag regardless. Whether it
+  becomes the bare-`vitals` default is the one decision left to the
+  maintainer.**
+- **Q2 (events strip):** **out of v1** (4 of 7 — must-fix 1).
+- **Q3 (`internal/consoleview` vs. fold into `doctor`):** **new
+  package** — unanimous. Pair with the `consoleview.Run(...)` glue
+  entrypoint (must-fix 8) so the wiring gets its own floor.
+- **Q4 (fit-to-height default):** priority order is right; add the
+  findings-overflow rule (must-fix 3), a named `consoleview.DefaultHeight`
+  constant, independent width/height "unknown" handling, and
+  render-full-don't-guess on unknown height.
+- **Q5 (does the snapshot stand alone):** **yes for v1** (5 of 7) —
+  *conditional on* re-anchoring §5 on the layout engine (must-fix 7)
+  and, ideally, a visual link from each finding to the panel(s) it
+  implicates so the correlation/verdict bet is what's actually on
+  screen. PM most skeptical; without those, v1 reads as "`doctor` +
+  `top` with boxes".
+- **Q6 (shared severity→colour helper):** extract minimally into
+  `internal/ui` when `consoleview` is written (must-fix 11) — not a
+  007-shared abstraction, not an up-front extraction.
+
+### Status after this review
+
+**Approved for implementation with the must-fix list folded in.** The
+changes are scoping precision and latency discipline, not a redesign —
+the pure-`Render` / injected-inputs / snapshot-first / no-new-dependency
+(pending the width-lib decision, must-fix 6) spine survives intact.
+`implementation-plan.md` can be written from §1–§10 as amended by this
+section. The one genuine product decision outstanding is Q1 above.

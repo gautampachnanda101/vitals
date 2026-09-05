@@ -4,10 +4,11 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Design drafted ([`design.md`](design.md), 2026-09-05) —
-pre-review. Needs a `review-panel` pass before any code, per the "Why
-this needs review before code" section below; `implementation-plan.md`
-stays empty until that converges.
+**Status**: Design reviewed (2026-09-05) — full seven-agent
+`review-panel` returned unanimous go-with-changes (see [`design.md`](design.md)
+§11). Approved for implementation with the convergent must-fix list
+folded in. One product decision outstanding: whether the view becomes
+the bare-`vitals` default or ships as `vitals view` first (§11, Q1).
 **Depends on**: [doctor](../../../architecture/design.md)'s existing
 `Collect`/`Analyze` and the single-flight snapshot-cache pattern
 (`internal/dashboard`); logically parallel to
