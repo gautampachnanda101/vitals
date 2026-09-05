@@ -2,15 +2,9 @@
 
 [docs](../../../index.md) / [Roadmap](../../index.md) / [005 — Dashboard write actions](index.md) / **Design note: dupes hardlink**
 
-**Status: draft, pre-review.** [`implementation-plan.md`](implementation-plan.md)'s
-last open task calls for this: "`dupes` exposure is a new write surface
-that would want its own short design note (what does 'confirm' mean for
-a hardlink operation, what's the response shape) rather than being
-freehanded as a drive-by addition." This is that note. It reuses the
+**Status: reviewed (2026-09-05), go-with-changes — see §8.** It reuses the
 `sameOriginOnly` + `WriteAction` foundation from [`design.md`](design.md)
-unchanged; only the route-specific decisions are here. It needs a
-security-persona pass before it ships, same as `/clean/apply` got
-(`design.md` §7's "Security review outcome").
+unchanged; only the route-specific decisions are here.
 
 ## 1. Why this is not just "another `/clean/apply`"
 
@@ -150,3 +144,58 @@ previews just do redundant work and each returns), matching how
 4. Is a 30s preview timeout a bad user experience (a big `home` might
    legitimately need longer) versus a DoS ceiling — what's the right
    number, and should it be configurable via `config.toml`?
+
+## 8. Security review outcome (2026-09-05)
+
+Security-architect-persona review of §§1–7, per this item's exit
+criteria and matching the rigor of `design.md` §7's own review. Verdict:
+**go-with-changes** — nothing blocking, all four open questions closed
+against the actual `internal/dupes` implementation (read in full before
+writing this, not assumed from the design note's own prose).
+
+1. **(Closed) `home` stays in the v1 scope enum.** Blast radius is
+   already low by construction (`ApplyHardlinks`/`linkOver`,
+   `internal/dupes/hardlink.go`: no data is ever deleted, only two paths
+   made to share an inode), and `vitals clean` already reaches
+   home-wide via its own fixed cache-dir list — this isn't a new class
+   of exposure, just a differently-shaped walk. Contingent on the §4
+   budget actually landing as real, tested code before this ships (not
+   merely documented) — see the implementation task list below.
+2. **(Closed) Preview/apply re-scan divergence is safe as designed, no
+   digest needed.** Verified directly in `internal/dupes/dupes.go`:
+   `confirmDuplicates` groups by a 64 KiB prefix hash *then* a full
+   `sha256` of the entire file (`hashFile`) before two paths are ever
+   considered the same group — this is full-content verification, not
+   size/prefix-only. A re-scan between preview and apply can only ever
+   change *which* byte-identical pairs are found, never cause a
+   non-identical pair to be linked. The worst realistic outcome is "the
+   apply result differs from what was previewed," already accepted in
+   §6's own reasoning, not a safety gap.
+3. **(Closed, and already true today — no code change needed) Symlinks
+   cannot reach this route at all.** Verified directly: `Scan`'s
+   `WalkDir` callback checks `d.Type()&fs.ModeSymlink != 0` and returns
+   before any further processing, for *every* entry — files and
+   symlinked directories alike (`fs.WalkDir` never dereferences a
+   symlink to descend into it; a symlinked directory entry carries
+   `ModeSymlink`, not `IsDir()`, so it hits the same skip). Neither a
+   symlinked file nor anything reachable only through a symlinked
+   directory can ever become a scan candidate, in any scope, today. The
+   design note's own uncertainty here (§7 Q3) was written without
+   re-checking the current source; correcting the record rather than
+   adding a redundant second skip.
+4. **(Closed) 30s wall-clock ceiling *and* a file-count budget, whichever
+   hits first; not configurable in v1.** A pure wall-clock bound is the
+   wrong instrument alone — a slow network-mounted home could hit 30s on
+   a modest file count, while a fast local SSD could walk hundreds of
+   thousands of files in the same window — so §4's own "max-file-count
+   (or max-duration)" becomes both, matching how `internal/doctor`'s
+   `diskUsageTimeout` and `internal/llm`'s `completeTimeout` are both
+   fixed constants with no config knob, not a special case invented for
+   this route. Revisit only if real usage shows 30s/the file-count cap
+   genuinely too tight — not a blocking concern for v1.
+
+**Required before shipping** (the actual net-new implementation work,
+not yet done as of this review): `Scan` gains a `context.Context`
+parameter and a file-count budget per §4, surfaced as `Truncated bool`
+on `Result`; the two `WriteAction` routes, `resolveScope`, the
+single-flight guard, and the render/escaping tests per §§2–6.
