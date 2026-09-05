@@ -4,18 +4,20 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Not started — captured from a maintainer request (2026-09-05)
-after looking at how dense, single-screen terminal system monitors
-present a whole machine at once. Needs a design doc and a
-`review-panel` pass before any code, per the "Why this needs review
-before code" section below.
+**Status**: Design drafted ([`design.md`](design.md), 2026-09-05) —
+pre-review. Needs a `review-panel` pass before any code, per the "Why
+this needs review before code" section below; `implementation-plan.md`
+stays empty until that converges.
 **Depends on**: [doctor](../../../architecture/design.md)'s existing
 `Collect`/`Analyze` and the single-flight snapshot-cache pattern
 (`internal/dashboard`); logically parallel to
 [007](../007-dashboard-visuals/) (that item is the *web* dashboard —
 this one is the *terminal*)
 **Target release**: not yet — see "Trigger"
-**Architecture**: not yet written
+**Architecture**: [`design.md`](design.md) — invocation, snapshot-first
+(live refresh deferred as its own dependency-adding decision), the
+verdict-leads layout, a pure `internal/consoleview` renderer with no
+new dependency, and the boundary with 007. Pre-review.
 
 ## What
 
