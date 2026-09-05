@@ -113,6 +113,94 @@ func TestWatchStopsWhenItsContextIsDone(t *testing.T) {
 	}
 }
 
+func TestRunDefaultsAnEmptyOllamaURL(t *testing.T) {
+	// once()'s own defaults (opts.withDefaults()) would also fill this in,
+	// but run() applies its own default before ever calling once/watch —
+	// this proves that assignment happens, not just once()'s.
+	out := captureStdout(t, func() {
+		if err := run(defaultRunDeps, Options{}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	if !strings.Contains(out, "LLM") {
+		t.Errorf("run() with a blank OllamaURL produced no report, got:\n%s", out)
+	}
+}
+
+func TestRunWatchDispatchesThroughNewSignalContextIntoWatch(t *testing.T) {
+	// Exercises run()'s own Watch:true branch (ctx, stop :=
+	// d.newSignalContext(); return watch(ctx, opts)), not watch() called
+	// directly the way TestWatchStopsWhenItsContextIsDone does.
+	fake := runDeps{newSignalContext: func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.Background(), 30*time.Millisecond)
+	}}
+	done := make(chan error, 1)
+	go func() {
+		var err error
+		captureStdout(t, func() {
+			err = run(fake, Options{Watch: true, OllamaURL: "http://127.0.0.1:1", Interval: time.Millisecond, JSON: true})
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run(Watch:true) did not stop after its signal context timed out")
+	}
+}
+
+func TestWatchNonJSONClearsScreenAndLoopsAtLeastOnce(t *testing.T) {
+	// Interval is short enough, relative to the context's timeout, that
+	// the ticker.C branch fires at least once before ctx.Done() does —
+	// TestWatchStopsWhenItsContextIsDone uses JSON:true and never
+	// exercises the !opts.JSON clear-screen line.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		var r result
+		r.out = captureStdout(t, func() {
+			r.err = watch(ctx, Options{OllamaURL: "http://127.0.0.1:1", Interval: 5 * time.Millisecond, JSON: false})
+		})
+		done <- r
+	}()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatalf("watch: %v", r.err)
+		}
+		if !strings.Contains(r.out, "\033[H\033[2J") {
+			t.Errorf("watch should clear the screen before each non-JSON emit, got %q", r.out)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("watch did not stop after its context timed out")
+	}
+}
+
+func TestDefaultRunDepsNewSignalContextWiresRealSignalNotify(t *testing.T) {
+	// Same pattern as internal/monitor's TestDefaultSourceNewSignalContextWiresRealSignalNotify:
+	// exercise the real signal.NotifyContext call site directly rather than
+	// through a real OS signal (which would need to actually interrupt the
+	// test process to observe).
+	ctx, stop := defaultRunDeps.newSignalContext()
+	defer stop()
+	if ctx == nil {
+		t.Fatal("newSignalContext returned a nil context")
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("a freshly created signal context should not already be done")
+	default:
+	}
+}
+
 func TestPublicRunGoesThroughDefaultRunDeps(t *testing.T) {
 	// One real end-to-end call through the exported Run() -> defaultRunDeps
 	// wiring (the real signal.NotifyContext included, via the non-watch

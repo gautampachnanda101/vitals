@@ -4,7 +4,10 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Not started
+**Status**: Done — every package in `implementation-plan.md`'s task list
+is at 95%+ raw coverage or (for `main`'s `os.Exit`-driven dispatch, the
+one exception this item's own ground rules carve out) has a reviewed
+justification recorded there for why 95% doesn't apply
 **Depends on**: — (cross-cutting, touches most packages)
 **Target release**: ongoing, per-package
 **Architecture**: `AGENTS.md`'s "Testing conventions" section (updated
