@@ -112,8 +112,11 @@ func TestScanWithJdupesReappliesSkipDirNames(t *testing.T) {
 
 func TestRunUsesJdupesWhenFastAndInstalled(t *testing.T) {
 	dir := t.TempDir()
-	json := `{"exitStatus":0,"matchSets":[{"fileSize":4096,"fileList":[{"filePath":"` +
-		filepath.Join(dir, "a") + `"},{"filePath":"` + filepath.Join(dir, "b") + `"}]}]}`
+	// Forward-slash literals on purpose: a Windows temp path
+	// (C:\Users\...) embedded raw in a JSON string is invalid JSON.
+	// scanWithJdupes only reads the path strings, it doesn't stat them.
+	json := `{"exitStatus":0,"matchSets":[{"fileSize":4096,"fileList":[` +
+		`{"filePath":"/data/a"},{"filePath":"/data/b"}]}]}`
 	d := deps{
 		homeDir:     func() (string, error) { return dir, nil },
 		jdupesAvail: func() bool { return true },
