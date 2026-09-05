@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	Register(Module{Slug: "clean", NavLabel: "Clean", Order: 80, Available: Always, Render: renderCleanPage})
+	Register(Module{Slug: "clean", NavLabel: "Clean", Group: "Tools", Icon: iconClean, Order: 80, Available: Always, Render: renderCleanPage})
 	RegisterWrite(WriteAction{Path: "/clean/preview", Handler: handleCleanPreview})
 	RegisterWrite(WriteAction{Path: "/clean/apply", Handler: handleCleanApply})
 }

@@ -112,6 +112,73 @@ func TestLayoutHighlightsActiveNavItem(t *testing.T) {
 	}
 }
 
+// TestNavGroupsUsesCanonicalOrderRegardlessOfRegistrationOrder guards the
+// sidebar's whole point: modules registered in any order (Order only
+// controls position *within* a group) still render grouped by
+// navGroupOrder's fixed section sequence.
+func TestNavGroupsUsesCanonicalOrderRegardlessOfRegistrationOrder(t *testing.T) {
+	groups := navGroups([]Module{
+		{Slug: "clean", NavLabel: "Clean", Group: "Tools"},
+		{Slug: "", NavLabel: "Overview", Group: "Overview"},
+		{Slug: "cpu", NavLabel: "CPU", Group: "Resources"},
+	}, "")
+	if len(groups) != 3 {
+		t.Fatalf("groups = %+v, want 3", groups)
+	}
+	var titles []string
+	for _, g := range groups {
+		titles = append(titles, g.Title)
+	}
+	if titles[0] != "Overview" || titles[1] != "Resources" || titles[2] != "Tools" {
+		t.Errorf("group order = %v, want Overview, Resources, Tools (navGroupOrder's sequence)", titles)
+	}
+}
+
+// TestNavGroupsFallsBackToOtherForAnUnknownGroup guards Module.Group's
+// own documented behavior: a typo or unset Group must not silently drop
+// the module from the nav.
+func TestNavGroupsFallsBackToOtherForAnUnknownGroup(t *testing.T) {
+	groups := navGroups([]Module{{Slug: "x", NavLabel: "X", Group: "Nonexistent"}}, "")
+	if len(groups) != 1 || groups[0].Title != "Other" {
+		t.Errorf("groups = %+v, want a single \"Other\" section", groups)
+	}
+	if len(groups[0].Items) != 1 || groups[0].Items[0].NavLabel != "X" {
+		t.Errorf("the module should still appear in the fallback section, got %+v", groups[0].Items)
+	}
+}
+
+// TestNavGroupsOmitsSectionsWithNoAvailableModules guards against an
+// empty <div class="navgroup"><h4>Title</h4></div> — sections come from
+// navGroupOrder, a fixed list, but not every machine offers a module in
+// every section (e.g. no GPU/battery modules on a headless server).
+func TestNavGroupsOmitsSectionsWithNoAvailableModules(t *testing.T) {
+	groups := navGroups([]Module{{Slug: "cpu", NavLabel: "CPU", Group: "Resources"}}, "")
+	for _, g := range groups {
+		if g.Title == "Intelligence" || g.Title == "Tools" || g.Title == "System" {
+			t.Errorf("empty section %q should be omitted, got %+v", g.Title, groups)
+		}
+	}
+}
+
+func TestLayoutRendersGroupHeadingsAndIcons(t *testing.T) {
+	out := layout("t", "cpu", "1.0", []Module{
+		{Slug: "cpu", NavLabel: "CPU", Group: "Resources", Icon: iconCPU},
+	}, "")
+	if !strings.Contains(out, `<h4>Resources</h4>`) {
+		t.Errorf("group heading missing, got:\n%s", out)
+	}
+	if !strings.Contains(out, `<svg viewBox="0 0 24 24">`) {
+		t.Errorf("nav icon missing, got:\n%s", out)
+	}
+}
+
+func TestLayoutOmitsIconMarkupWhenModuleHasNone(t *testing.T) {
+	out := layout("t", "", "1.0", []Module{{Slug: "x", NavLabel: "X", Group: "Tools"}}, "")
+	if strings.Contains(out, "<svg") {
+		t.Errorf("no <svg> should render for a module with no Icon, got:\n%s", out)
+	}
+}
+
 func TestLayoutEscapesNavLabels(t *testing.T) {
 	out := layout("t", "x", "1.0", []Module{{Slug: "x", NavLabel: "<script>alert(1)</script>"}}, "")
 	if strings.Contains(out, "<script>alert(1)</script>") {
@@ -162,10 +229,28 @@ func TestVerdictBannerEscapesHeadlineAndSummary(t *testing.T) {
 	}
 }
 
-func TestFindingsListEmptyIsFriendly(t *testing.T) {
-	out := findingsList(nil)
-	if !strings.Contains(strings.ToLower(out), "no findings") {
-		t.Errorf("empty findings list should say so plainly, got: %s", out)
+// TestFindingsListEmptyIsBlank guards a real regression: every caller
+// already leads with a verdictBanner whose own headline says "nothing's
+// wrong" — a second "No findings — this looks healthy" card right below
+// it just repeated the same fact the reader had already read. findingsList
+// now returns "" so callers (via findingsCard) skip the redundant card
+// entirely instead of rendering an empty or restating one.
+func TestFindingsListEmptyIsBlank(t *testing.T) {
+	if out := findingsList(nil); out != "" {
+		t.Errorf("findingsList(nil) = %q, want empty", out)
+	}
+}
+
+func TestFindingsCardSkipsTheWrapperWhenTheresNothingToShow(t *testing.T) {
+	if out := findingsCard(nil); out != "" {
+		t.Errorf("findingsCard(nil) = %q, want empty (no redundant card)", out)
+	}
+}
+
+func TestFindingsCardWrapsRealFindingsInACard(t *testing.T) {
+	out := findingsCard([]diag.Finding{{Severity: diag.Warn, Title: "RAM elevated"}})
+	if !strings.Contains(out, `<div class="card">`) || !strings.Contains(out, "RAM elevated") {
+		t.Errorf("findingsCard should wrap real findings in a .card, got: %s", out)
 	}
 }
 

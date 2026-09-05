@@ -9,6 +9,7 @@ import (
 	"vitals/internal/diag"
 	"vitals/internal/doctor"
 	"vitals/internal/llm"
+	"vitals/internal/monitor"
 )
 
 func TestRenderOverviewHealthy(t *testing.T) {
@@ -43,10 +44,118 @@ func TestSummaryLineIncludesFullestDiskAndBattery(t *testing.T) {
 	}
 }
 
+func TestRenderOverviewShowsResourceCardsForEveryAvailableResource(t *testing.T) {
+	s := doctor.Snapshot{
+		CPU:    doctor.CPU{UsedPct: 12},
+		Memory: doctor.Memory{UsedPct: 34},
+		Disks:  []doctor.Disk{{Mount: "/", UsedPct: 56}},
+		Net:    []doctor.NetIface{{Name: "en0", RxBytesPerSec: 1000, TxBytesPerSec: 200}},
+	}
+	out := renderOverview(PageContext{Snapshot: s})
+	for _, want := range []string{`href="/cpu"`, `href="/mem"`, `href="/disk"`, `href="/net"`, "12%", "34%", "56%", "en0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderOverview missing %q, got: %s", want, out)
+		}
+	}
+	// No battery/GPU on this snapshot — those cards must not appear.
+	if strings.Contains(out, `href="/power"`) || strings.Contains(out, `href="/gpu"`) {
+		t.Errorf("renderOverview should omit power/GPU cards when unavailable, got: %s", out)
+	}
+}
+
+func TestRenderOverviewShowsPowerAndGPUCardsWhenAvailable(t *testing.T) {
+	s := doctor.Snapshot{
+		Power: doctor.Power{OnBattery: true, Percent: 71, MinutesLeft: 125},
+		GPUs:  []doctor.GPU{{Name: "Apple M3 Max", UtilPct: 22}},
+	}
+	out := renderOverview(PageContext{Snapshot: s})
+	for _, want := range []string{`href="/power"`, `href="/gpu"`, "71%", "Apple M3 Max"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderOverview missing %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestRenderOverviewShowsLoadedModelsOnlyWhenPresent(t *testing.T) {
+	withModels := renderOverview(PageContext{Snapshot: doctor.Snapshot{
+		LLM: []doctor.LLMModel{{Name: "llama3.1:70b", OffloadPct: 95}},
+	}})
+	if !strings.Contains(withModels, "llama3.1:70b") || !strings.Contains(withModels, "Loaded models") {
+		t.Errorf("renderOverview should show a loaded model, got: %s", withModels)
+	}
+
+	noModels := renderOverview(PageContext{})
+	if strings.Contains(noModels, "Loaded models") {
+		t.Errorf("renderOverview should omit the Loaded models section with none loaded, got: %s", noModels)
+	}
+}
+
+func TestModelCardPillReflectsOffload(t *testing.T) {
+	cases := []struct {
+		offload  float64
+		wantPill string
+	}{
+		{100, "fully on GPU"},
+		{50, "50% GPU"},
+		{0, "CPU-only"},
+	}
+	for _, c := range cases {
+		out := modelCard(doctor.LLMModel{Name: "x", OffloadPct: c.offload})
+		if !strings.Contains(out, c.wantPill) {
+			t.Errorf("modelCard(offload=%.0f) missing pill %q, got: %s", c.offload, c.wantPill, out)
+		}
+	}
+}
+
+func TestRenderOverviewShowsQuickActions(t *testing.T) {
+	out := renderOverview(PageContext{})
+	for _, want := range []string{`href="/clean"`, `href="/dupes"`, `href="/advice"`, "Quick actions"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderOverview missing quick action %q, got: %s", want, out)
+		}
+	}
+}
+
+func TestDiskCardSeverityMatchesConfigDefaultThresholds(t *testing.T) {
+	cases := []struct {
+		pct  float64
+		want string
+	}{
+		{50, "ok"},
+		{92, "warning"},
+		{98, "critical"},
+	}
+	for _, c := range cases {
+		if got := diskCardSeverity(c.pct); got != c.want {
+			t.Errorf("diskCardSeverity(%.0f) = %q, want %q", c.pct, got, c.want)
+		}
+	}
+}
+
+func TestBusiestNetPicksHighestCombinedThroughputAndSkipsIdle(t *testing.T) {
+	n, ok := busiestNet([]doctor.NetIface{
+		{Name: "idle0", RxBytesPerSec: 0, TxBytesPerSec: 0},
+		{Name: "en0", RxBytesPerSec: 500, TxBytesPerSec: 100},
+		{Name: "en1", RxBytesPerSec: 5000, TxBytesPerSec: 1000},
+	})
+	if !ok || n.Name != "en1" {
+		t.Errorf("busiestNet = %+v, %v, want en1", n, ok)
+	}
+	if _, ok := busiestNet([]doctor.NetIface{{Name: "idle0"}}); ok {
+		t.Error("busiestNet should report not-found when every interface is idle")
+	}
+}
+
 func TestResourcePageUsesAnalyzeResourceNotFullAnalyze(t *testing.T) {
 	// A snapshot with a memory problem should not show up on the CPU page —
 	// resourcePage must call AnalyzeResource(s, "cpu"), not the full
-	// cross-resource Analyze.
+	// cross-resource Analyze. The process cache is faked empty so this
+	// only exercises resourcePage's own AnalyzeResource wiring, not
+	// whatever processes happen to be running on the machine executing
+	// this test (the "Top processes" table's own RAM column is
+	// legitimate CPU-page content, not a leaked finding, and would
+	// otherwise trip this same "RAM" substring check).
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	s := doctor.Snapshot{Memory: doctor.Memory{UsedPct: 99, SwapUsedPct: 99}, CPU: doctor.CPU{UsedPct: 1}}
 	out := resourcePage("cpu", renderCPU)(PageContext{Snapshot: s})
 	if strings.Contains(out, "Swap") || strings.Contains(out, "RAM") {
@@ -55,6 +164,7 @@ func TestResourcePageUsesAnalyzeResourceNotFullAnalyze(t *testing.T) {
 }
 
 func TestRenderCPUShowsOptionalRowsWhenPresent(t *testing.T) {
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	out := renderCPU(doctor.Snapshot{CPU: doctor.CPU{
 		UsedPct: 40, IOWaitPct: 5, Load1: 1.2, Cores: 8, FreqMHz: 3200,
 		TopProc: doctor.ProcRef{Name: "chrome", PID: 42, CPUPct: 30},
@@ -67,6 +177,7 @@ func TestRenderCPUShowsOptionalRowsWhenPresent(t *testing.T) {
 }
 
 func TestRenderCPUOmitsOptionalRowsWhenAbsent(t *testing.T) {
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	out := renderCPU(doctor.Snapshot{CPU: doctor.CPU{UsedPct: 4}})
 	if strings.Contains(out, "Clock") || strings.Contains(out, "Top process") {
 		t.Errorf("renderCPU should omit rows for zero-value fields, got: %s", out)
@@ -74,6 +185,7 @@ func TestRenderCPUOmitsOptionalRowsWhenAbsent(t *testing.T) {
 }
 
 func TestRenderMemShowsOptionalRowsWhenPresent(t *testing.T) {
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	out := renderMem(doctor.Snapshot{Memory: doctor.Memory{
 		UsedPct: 78, AvailablePct: 15, SwapUsedPct: 20,
 		TopProc: doctor.ProcRef{Name: "Code Helper", PID: 99, RSSBytes: 500 << 20},
@@ -86,6 +198,7 @@ func TestRenderMemShowsOptionalRowsWhenPresent(t *testing.T) {
 }
 
 func TestRenderMemOmitsOptionalRowsWhenAbsent(t *testing.T) {
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	out := renderMem(doctor.Snapshot{Memory: doctor.Memory{UsedPct: 40}})
 	if strings.Contains(out, "Available") || strings.Contains(out, "Top process") {
 		t.Errorf("renderMem should omit rows for zero-value fields, got: %s", out)
@@ -135,6 +248,34 @@ func TestRenderGPUListsEveryDevice(t *testing.T) {
 	}
 }
 
+func TestRenderGPUListsProcessesHoldingVRAMWhenKnown(t *testing.T) {
+	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{
+		Name: "RTX 4090", UtilPct: 40, VRAMUsed: 8 << 30, VRAMTotal: 24 << 30,
+		Processes: []doctor.GPUProc{
+			{PID: 111, Name: "ollama", VRAMUsed: 6 << 30},
+			{PID: 222, Name: "python", VRAMUsed: 2 << 30},
+		},
+	}}})
+	for _, want := range []string{"Processes holding VRAM", "ollama", "111", "python", "222", "6.00 GB"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderGPU should list per-process VRAM, missing %q, got: %s", want, out)
+		}
+	}
+	// heaviest first
+	if strings.Index(out, "ollama") > strings.Index(out, "python") {
+		t.Errorf("renderGPU should sort VRAM processes heaviest-first, got: %s", out)
+	}
+}
+
+func TestRenderGPUOmitsProcessSectionWhenNoPerProcessData(t *testing.T) {
+	out := renderGPU(doctor.Snapshot{GPUs: []doctor.GPU{{
+		Name: "RTX 4090", UtilPct: 40, VRAMUsed: 8 << 30, VRAMTotal: 24 << 30,
+	}}})
+	if strings.Contains(out, "Processes holding VRAM") {
+		t.Errorf("renderGPU should not show an empty VRAM-process section, got: %s", out)
+	}
+}
+
 func TestRenderGPUShowsLiveRAMPressureForAppleUnifiedMemory(t *testing.T) {
 	// A real user report: an Apple Silicon GPU (no discrete VRAM to
 	// report — see internal/gpu/gpu.go's parseIORegApple) rendered as
@@ -176,6 +317,7 @@ func TestResourcePageHeadlinesTheWorstFindingWhenThereIsOne(t *testing.T) {
 	// TestResourcePageUsesAnalyzeResourceNotFullAnalyze; this covers the
 	// other branch — a resource with a real problem should headline it,
 	// not the generic "No issues found".
+	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	s := doctor.Snapshot{CPU: doctor.CPU{UsedPct: 99, Load1: 20, Cores: 2}}
 	out := resourcePage("cpu", renderCPU)(PageContext{Snapshot: s})
 	if strings.Contains(out, "No issues found") {

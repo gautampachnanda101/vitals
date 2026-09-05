@@ -10,6 +10,7 @@ package dashboard
 
 import (
 	"fmt"
+	"html/template"
 	"sort"
 
 	"vitals/internal/diag"
@@ -35,7 +36,19 @@ type PageContext struct {
 type Module struct {
 	Slug     string // URL path segment; "" is the root/overview page
 	NavLabel string
-	Order    int // nav position, lowest first; ties keep registration order
+	// Group is the sidebar section this module's nav link appears
+	// under — one of navGroupOrder's names (render.go). Every real
+	// registration names one explicitly; an unrecognized or empty
+	// Group falls into a trailing "Other" bucket rather than panicking
+	// or silently disappearing from the nav, so a typo is visible
+	// (an oddly-placed link) instead of a page nothing can reach.
+	Group string
+	// Icon is one <svg> element's inner markup (viewBox already set by
+	// the nav template; this is just the path/shape content) — a small,
+	// stroke-based glyph identifying the page at a glance in the
+	// sidebar. Empty renders no icon rather than a placeholder.
+	Icon  template.HTML
+	Order int // nav position, lowest first; ties keep registration order
 	// UnavailableReason is shown (via unavailablePage) when Available
 	// returns false — a short, specific reason ("no GPU detected"), not a
 	// restatement of "isn't available" itself, which the router already
