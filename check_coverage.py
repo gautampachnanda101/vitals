@@ -174,6 +174,15 @@ FLOORS = {
     # the unreachable defence-in-depth allowlist check inside
     # applyRemedy. 97.4%.
     "vitals/internal/heal": 95,
+    # consoleview (item 011): Render is a pure function over injected
+    # inputs (doctor.Snapshot / diag.Report / monitor.Snapshot) — every
+    # layout branch (healthy vs warning vs critical verdict, each
+    # optional panel present/absent incl. SMART, narrow 1-up reflow,
+    # fit-to-height trimming at several heights, unknown-size render-all,
+    # control-char sanitisation) is a table test with a "no line exceeds
+    # width" property assertion. Residual: a couple of Run's
+    # select-timeout arms that need a slow real collector to hit. 97.6%.
+    "vitals/internal/consoleview": 95,
     # info: Collect's two live calls (hostInfoFn, executableFn) and
     # abbrevHome's homeDirFn are all injected function values, exercised
     # via fakes for both success and failure paths; Render and

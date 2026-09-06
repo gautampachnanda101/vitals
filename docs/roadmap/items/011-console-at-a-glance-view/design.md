@@ -479,3 +479,58 @@ the pure-`Render` / injected-inputs / snapshot-first / no-new-dependency
 (pending the width-lib decision, must-fix 6) spine survives intact.
 `implementation-plan.md` can be written from §1–§10 as amended by this
 section. The one genuine product decision outstanding is Q1 above.
+
+---
+
+## 12. As built (2026-09-06)
+
+Shipped to §1–§10 as amended by the §11 review. Deltas from the
+pre-review text:
+
+- **Invocation (Q1):** shipped **both** — `vitals view` / `vitals
+  glance`, *and* bare `vitals` renders it on an interactive terminal.
+  Piped/redirected, bare `vitals` still prints the command list (exit
+  2), so scripts are unaffected; `VITALS_VIEW=1` forces the view into a
+  pipe. Exit code is `report.ExitCode()` (0/1/2) for the view, 2 for
+  the command-list fallback.
+- **Display width (Q6):** **no new dependency.** `ui.Truncate`
+  (rune count) bounds every cell; `clip()` bounds the header, summary
+  line and process rows. A wide CJK/emoji cell can be a column off —
+  documented in the package doc and the user guide. `golang.org/x/text/width`
+  stays a future decision.
+- **Events strip: cut** (must-fix 1). Findings render worst-first via
+  the package's own `findingsBlock`; the lone "No bottleneck detected"
+  OK finding collapses to one green line.
+- **`focus.go` reconciliation** (must-fix 7): resolved by *not*
+  re-deriving severity in `consoleview` at all — panel colour comes
+  straight from `doctor.AnalyzeResource(...).Worst()`. No threshold
+  constant is copied. The panel *formatters* are `consoleview`'s own
+  (compact `label value` rows in a box); they don't share code with
+  `focusDetail`, and since they hold no thresholds there's nothing to
+  drift.
+- **`info.Collect` dropped** (must-fix 4): header identity is
+  `monitor.Snapshot.Host` (hostname / OS / kernel arch / uptime) +
+  `doctor.Snapshot.CPU.Cores`. `Input` carries `Version` and `Now` for
+  determinism.
+- **Latency** (must-fix 2): `consoleview.Run` fires `doctor.QuickAssess`
+  (SkipProbes, no history write) and `monitor.Sample` on two goroutines
+  and renders when both land or a **3s ceiling** trips, whichever comes
+  first.
+- **Fit-to-height** (must-fix 3): a *target*, not a guarantee. Trim
+  order: process rows → whole optional panels → least-severe whole
+  findings (with a "… N more" tail) → then emit the verdict + remaining
+  findings even if they overflow. `fitHeight=false` (unknown size)
+  renders everything.
+- **`main` seam** (must-fix 8): `consoleview.Run(w io.Writer, size
+  func() (int,int,bool), opts) int` is the testable entrypoint;
+  `main` passes `os.Stdout` and `consoleview.DefaultSize`. The bare-
+  `vitals` TTY check is `ui.ColorEnabled()` (already "stdout is an
+  interactive terminal"); `TestRunEmptyArgsPrintsUsageAndExitsTwo`
+  still passes because a piped test stdout is non-TTY.
+- **Not built:** a `--view` *flag* (the env var `VITALS_VIEW` plays
+  that role); a visual finding→panel link (PM's nice-to-have — the
+  verdict-leads ordering is in, the coloured cross-link is a follow-up).
+
+Coverage: `internal/consoleview` 97.6% (floor 95). The live
+`sudo`-style paths don't apply here; `Run`'s real-collector call is
+exercised once.
