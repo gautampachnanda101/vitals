@@ -101,15 +101,16 @@ func collect(src source, opts Options) Snapshot {
 	return s
 }
 
-// collectContainers probes a locally-running container runtime /
-// Kubernetes. Read-only, self-bounded (a wedged daemon yields an empty
-// report, never a hang), and — like the GPU/power/LLM probes — only run
-// when SkipProbes is off. It does NOT fetch per-container stats; those
-// are the opt-in `vitals containers` / dashboard-page path.
-func collectContainers() containers.Report {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+// collectContainers probes every locally-reachable container runtime
+// (Docker and/or a local Kubernetes — a kind/k3s host has both).
+// Read-only, self-bounded (a wedged daemon yields an empty report, never
+// a hang), and — like the GPU/power/LLM probes — only run when
+// SkipProbes is off. It does NOT fetch per-container stats; those are
+// the opt-in `vitals containers` / dashboard-page path.
+func collectContainers() []containers.Report {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return containers.Probe(ctx)
+	return containers.ProbeAll(ctx)
 }
 
 // collectCPU turns two CPU-times readings (whole-machine and per-core)

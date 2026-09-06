@@ -14,6 +14,7 @@ findings.title
 schema_version
 snapshot.containers.containers.compose_project
 snapshot.containers.containers.cpu_percent
+snapshot.containers.containers.created_unix
 snapshot.containers.containers.exit_code
 snapshot.containers.containers.health
 snapshot.containers.containers.id
@@ -23,6 +24,7 @@ snapshot.containers.containers.mem_limit_bytes
 snapshot.containers.containers.name
 snapshot.containers.containers.namespace
 snapshot.containers.containers.oom_killed
+snapshot.containers.containers.ports
 snapshot.containers.containers.restart_count
 snapshot.containers.containers.state
 snapshot.containers.containers.status

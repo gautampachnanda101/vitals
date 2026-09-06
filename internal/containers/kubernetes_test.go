@@ -145,6 +145,33 @@ func TestProbeDockerWinsOverKubernetes(t *testing.T) {
 	}
 }
 
+func TestProbeAllReturnsEveryReachableRuntime(t *testing.T) {
+	f := newFakeDocker()
+	defer f.srv.Close()
+	pods := `{"items":[{"metadata":{"name":"p","namespace":"default"},"status":{"phase":"Running"}}]}`
+	tr := kubeStub("kind-kind", "https://127.0.0.1:6443", pods, nil)
+	tr.dockerEndpoint = f.transport().dockerEndpoint
+	tr.dialDocker = f.transport().dialDocker
+
+	all := probeAll(context.Background(), tr)
+	if len(all) != 2 || all[0].Runtime != "docker" || all[1].Runtime != "kubernetes" {
+		t.Fatalf("want [docker, kubernetes], got %v", all)
+	}
+
+	// only docker
+	trDockerOnly := f.transport()
+	if got := probeAll(context.Background(), trDockerOnly); len(got) != 1 || got[0].Runtime != "docker" {
+		t.Errorf("docker-only host -> [docker], got %v", got)
+	}
+
+	// nothing
+	trNone := transport{goos: "linux", dockerEndpoint: func() string { return "" },
+		lookPath: func(string) (string, error) { return "", errors.New("no kubectl") }}
+	if got := probeAll(context.Background(), trNone); len(got) != 0 {
+		t.Errorf("no runtime -> empty, got %v", got)
+	}
+}
+
 func TestProbeRuntimePreferenceOverridesAutoOrder(t *testing.T) {
 	// Both runtimes reachable at once (the kind/k3s-on-Docker case).
 	f := newFakeDocker()

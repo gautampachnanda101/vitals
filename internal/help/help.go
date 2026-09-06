@@ -299,15 +299,15 @@ var commands = []Command{
 		Name:     "containers",
 		Synopsis: "local container / Kubernetes deep dive: state, CPU/mem, failure findings",
 		Long: "Detects a locally-running Docker-compatible runtime (via its local\n" +
-			"socket or named pipe) or a local Kubernetes context (via kubectl —\n" +
-			"loopback/private API server only, never a cloud cluster). Lists\n" +
-			"containers/pods with per-container CPU and memory, and raises findings\n" +
-			"for OOM-kills, CrashLoopBackOff, restart loops and failing healthchecks.\n" +
-			"Strictly read-only. Nothing is shown when no runtime is present.\n" +
-			"When both Docker and a local cluster are up (kind/k3s), auto-detect\n" +
-			"stops at Docker — pass --runtime kubernetes for the pod view. Exit\n" +
+			"socket or named pipe) and/or a local Kubernetes context (via kubectl —\n" +
+			"loopback/private API server only, never a cloud cluster), and shows\n" +
+			"each as its own section — a kind/k3s host has both at once. Lists\n" +
+			"containers/pods with ports, per-container CPU and memory, and raises\n" +
+			"findings for OOM-kills, CrashLoopBackOff, restart loops and failing\n" +
+			"healthchecks. Strictly read-only. Nothing is shown when no runtime is\n" +
+			"present. --runtime docker|kubernetes narrows the output to one. Exit\n" +
 			"code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"runtime", "docker|kubernetes", "force a runtime instead of auto-detecting (use kubernetes for kind/k3s)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"runtime", "docker|kubernetes", "show only this runtime instead of every detected one"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals containers", "vitals containers --json", "vitals containers --runtime kubernetes"},
 	},
 	{

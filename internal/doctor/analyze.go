@@ -25,10 +25,11 @@ type Snapshot struct {
 	Thermal Thermal    `json:"thermal"`
 	Net     []NetIface `json:"net"`
 	Power   Power      `json:"power"`
-	// Containers is the local container-runtime / Kubernetes picture, when
-	// one is reachable. Zero value (Runtime "") means none was found —
-	// gated behind SkipProbes like the GPU/power/LLM probes.
-	Containers containers.Report `json:"containers"`
+	// Containers holds every locally-reachable container runtime — a
+	// machine running kind/k3s has both a Docker daemon and a Kubernetes
+	// API at once, so this is a list, Docker first. Empty means none was
+	// found; gated behind SkipProbes like the GPU/power/LLM probes.
+	Containers []containers.Report `json:"containers"`
 }
 
 // NetIface is one network interface's throughput over the sample window.

@@ -31,21 +31,23 @@ import (
 // fields (CPUPct/MemBytes/MemLimitBytes) are zero unless a stats sample
 // was explicitly requested — see Sample.
 type Container struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Image         string  `json:"image"`
-	State         string  `json:"state"`  // running, exited, paused, restarting, created, dead (k8s: Running, Pending, ...)
-	Status        string  `json:"status"` // human blurb: "Up 3 hours", "Exited (137) 5 minutes ago"
-	RestartCount  int     `json:"restart_count"`
-	OOMKilled     bool    `json:"oom_killed,omitempty"`
-	ExitCode      int     `json:"exit_code,omitempty"`
-	Health        string  `json:"health,omitempty"`          // healthy, unhealthy, starting, or ""
-	WaitingOn     string  `json:"waiting_on,omitempty"`      // k8s: CrashLoopBackOff, ImagePullBackOff, ...
-	ComposeProj   string  `json:"compose_project,omitempty"` // docker: com.docker.compose.project label
-	Namespace     string  `json:"namespace,omitempty"`       // k8s only
-	CPUPct        float64 `json:"cpu_percent,omitempty"`
-	MemBytes      uint64  `json:"mem_bytes,omitempty"`
-	MemLimitBytes uint64  `json:"mem_limit_bytes,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Image         string   `json:"image"`
+	State         string   `json:"state"`  // running, exited, paused, restarting, created, dead (k8s: Running, Pending, ...)
+	Status        string   `json:"status"` // human blurb: "Up 3 hours", "Exited (137) 5 minutes ago"
+	RestartCount  int      `json:"restart_count"`
+	OOMKilled     bool     `json:"oom_killed,omitempty"`
+	ExitCode      int      `json:"exit_code,omitempty"`
+	Health        string   `json:"health,omitempty"`          // healthy, unhealthy, starting, or ""
+	WaitingOn     string   `json:"waiting_on,omitempty"`      // k8s: CrashLoopBackOff, ImagePullBackOff, ...
+	ComposeProj   string   `json:"compose_project,omitempty"` // docker: com.docker.compose.project label
+	Namespace     string   `json:"namespace,omitempty"`       // k8s only
+	Ports         []string `json:"ports,omitempty"`           // docker: published "host→container/proto" mappings
+	CreatedUnix   int64    `json:"created_unix,omitempty"`    // docker: container creation time, unix seconds
+	CPUPct        float64  `json:"cpu_percent,omitempty"`
+	MemBytes      uint64   `json:"mem_bytes,omitempty"`
+	MemLimitBytes uint64   `json:"mem_limit_bytes,omitempty"`
 }
 
 // Running reports whether this container is in a live state.
@@ -123,6 +125,24 @@ var defaultTransport = transport{
 // or wedged runtime is data (Report.Note), not a failure that should
 // bubble up through a snapshot collector.
 func Probe(ctx context.Context) Report { return ProbeRuntime(ctx, "") }
+
+// ProbeAll returns every locally-reachable runtime, not just the first.
+// A machine running kind/k3s/minikube has BOTH a Docker daemon (the
+// cluster nodes run on it) and a Kubernetes API at once — a single-pick
+// probe hides one of them. The result has 0, 1 or 2 entries, Docker
+// first; an empty slice means no runtime at all.
+func ProbeAll(ctx context.Context) []Report { return probeAll(ctx, defaultTransport) }
+
+func probeAll(ctx context.Context, t transport) []Report {
+	var out []Report
+	if r, ok := probeDocker(ctx, t); ok {
+		out = append(out, r)
+	}
+	if r, ok := probeKubernetes(ctx, t); ok {
+		out = append(out, r)
+	}
+	return out
+}
 
 // ProbeRuntime is Probe with an explicit runtime preference: "" is the
 // default docker-first auto-detect; "docker" or "kubernetes" probes only

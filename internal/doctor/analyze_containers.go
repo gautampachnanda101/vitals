@@ -20,14 +20,17 @@ var k8sBackoffReasons = map[string]bool{
 }
 
 // analyzeContainers turns the container-runtime picture into ranked
-// findings. It never manages anything — every Fix is a `docker`/`kubectl`
-// command the user runs. Nothing fires unless a runtime actually
-// answered (rep.Reachable).
+// findings, across every reachable runtime. It never manages anything —
+// every Fix is a `docker`/`kubectl` command the user runs.
 func analyzeContainers(r *diag.Report, s Snapshot) {
-	rep := s.Containers
-	if !rep.Reachable {
-		return
+	for _, rep := range s.Containers {
+		if rep.Reachable {
+			analyzeOneRuntime(r, s, rep)
+		}
 	}
+}
+
+func analyzeOneRuntime(r *diag.Report, s Snapshot, rep containers.Report) {
 	kind := containerNoun(rep.Runtime)
 
 	for _, c := range rep.Containers {
