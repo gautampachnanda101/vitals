@@ -100,38 +100,48 @@ func (c *containerStatsCache) Enrich(base containers.Report) containers.Report {
 	return v
 }
 
-// renderRuntimeSection renders one reachable runtime — a titled heading
-// (docker / kubernetes + its endpoint), a summary card, then the
-// containers grouped by compose project / namespace. Per-container
-// CPU/mem is sampled here (cached), not on the snapshot path.
+// renderRuntimeSection renders one reachable runtime as a self-contained,
+// visually-distinct block: a coloured left border + icon header (Docker
+// green with the container mark, Kubernetes blue with the helm mark), a
+// summary line, then the containers grouped by compose project /
+// namespace. Per-container CPU/mem is sampled here (cached).
 func renderRuntimeSection(base containers.Report) string {
-	title := strings.ToUpper(base.Runtime)
-	if base.Endpoint != "" {
-		title += " · " + base.Endpoint
+	k8s := base.Runtime == "kubernetes"
+	cls, icon, label := "rtsection", iconContainers, "Docker"
+	if k8s {
+		cls, icon, label = "rtsection k8s", iconKubernetes, "Kubernetes"
 	}
-	head := `<div class="sectiontitle">` + template.HTMLEscapeString(title) + `</div>`
+
+	inner := `<div class="rtsection-head"><svg viewBox="0 0 24 24">` + string(icon) + `</svg>` +
+		template.HTMLEscapeString(label)
+	if base.Endpoint != "" {
+		inner += `<span class="ep">` + template.HTMLEscapeString(base.Endpoint) + `</span>`
+	}
+	inner += `</div>`
 
 	if !base.Reachable {
 		note := base.Note
 		if note == "" {
 			note = "the runtime is not responding"
 		}
-		return head + card(`<p class="unavailable">`+template.HTMLEscapeString(note)+`</p>`)
+		return `<div class="` + cls + `">` + inner +
+			`<p class="unavailable">` + template.HTMLEscapeString(note) + `</p></div>`
 	}
 
 	rep := defaultContainerStatsCache.Enrich(base)
 	run, stopped, unhealthy := rep.Counts()
-	summary := row("Containers", fmt.Sprintf("%d running, %d stopped, %d unhealthy", run, stopped, unhealthy))
+	inner += `<div style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem">` +
+		fmt.Sprintf("%d running · %d stopped · %d unhealthy", run, stopped, unhealthy)
 	if rep.VMTotalBytes > 0 {
-		summary += row("Runtime VM RAM", ui.HumanBytes(int64(rep.VMTotalBytes)))
+		inner += fmt.Sprintf(" · VM %s RAM", ui.HumanBytes(int64(rep.VMTotalBytes)))
 	}
-	out := head + card(summary)
+	inner += `</div>`
 
 	for _, g := range groupContainers(rep.Containers) {
-		out += `<div class="sectiontitle" style="margin-left:.2rem">` + template.HTMLEscapeString(g.Title) + `</div>`
-		out += mustExecute(containerCardsTmpl, g.Items)
+		inner += `<div class="sectiontitle" style="margin:1rem 0 .5rem">` + template.HTMLEscapeString(g.Title) + `</div>`
+		inner += mustExecute(containerCardsTmpl, g.Items)
 	}
-	return out
+	return `<div class="` + cls + `">` + inner + `</div>`
 }
 
 type containerGroup struct {

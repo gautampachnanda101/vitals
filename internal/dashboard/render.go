@@ -35,6 +35,9 @@ const (
 	iconDuplicates = template.HTML(`<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`)
 	iconProcesses  = template.HTML(`<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`)
 	iconContainers = template.HTML(`<path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"/><path d="M10 21.9V14L2.1 9.1"/><path d="m10 14 11.9-6.9"/><path d="M14 19.8v-8.1"/><path d="M18 17.5V9.4"/>`)
+	// iconKubernetes: Lucide ship-wheel — reads as the k8s helm mark, and
+	// visually distinct from the plain container/box glyph.
+	iconKubernetes = template.HTML(`<circle cx="12" cy="12" r="8"/><path d="M12 2v7.5"/><path d="m19 5-5.23 5.23"/><path d="M22 12h-7.5"/><path d="m19 19-5.23-5.23"/><path d="M12 14.5V22"/><path d="M10.23 13.77 5 19"/><path d="M9.5 12H2"/><path d="M10.23 10.23 5 5"/><circle cx="12" cy="12" r="2.5"/>`)
 	iconSystem     = template.HTML(`<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`)
 )
 
@@ -71,11 +74,11 @@ var pageShellTmpl = template.Must(template.New("pageShell").Parse(`<!doctype htm
      check (see internal/dashboard/render_test.go) before changing any of
      these, not just eyeballing it. */
   --bg:#fbfaf7; --surface:#fff; --surface-2:#f3f1ea; --ink:#1b1f23; --muted:#4b4e53; --line:#e3e1db;
-  --accent:#2b5d53; --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3;
+  --accent:#2b5d53; --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3; --k8s:#2f6fb0; --k8s-bg:#e6eff8;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#14171a; --surface:#1b1f23; --surface-2:#1f242a; --ink:#e9eaea; --muted:#b4b9bd; --line:#2a2e33;
-  --accent:#6fbfa8; --ok:#6fbfa8; --ok-bg:#1b2b26; --warn:#d9a441; --warn-bg:#362b18; --crit:#e2694a; --crit-bg:#3a241f; }
+  --accent:#6fbfa8; --ok:#6fbfa8; --ok-bg:#1b2b26; --warn:#d9a441; --warn-bg:#362b18; --crit:#e2694a; --crit-bg:#3a241f; --k8s:#6ea8e0; --k8s-bg:#1c2b3a; }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -131,6 +134,14 @@ header.top h1{font-size:1.28rem;margin:0;font-weight:800}
 .pill.warn{color:var(--warn);background:var(--warn-bg)}
 .pill.crit{color:var(--crit);background:var(--crit-bg)}
 .pill.muted{color:var(--muted);background:var(--surface-2)}
+.rtsection{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:1rem 1.15rem;margin-bottom:1.4rem}
+.rtsection.k8s{border-left-color:var(--k8s)}
+.rtsection-head{display:flex;align-items:center;gap:.5rem;font-weight:800;font-size:.95rem;color:var(--accent);margin-bottom:.7rem}
+.rtsection.k8s .rtsection-head{color:var(--k8s)}
+.rtsection-head svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.rtsection-head .ep{font-weight:500;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem}
+.rtchip{font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:.1rem .4rem;background:var(--ok-bg);color:var(--accent)}
+.rtchip.k8s{background:var(--k8s-bg);color:var(--k8s)}
 .rttoggle{display:flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
 .rtlabel{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-right:.3rem}
 .rtpill{font-size:.8rem;font-weight:600;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:.25rem .8rem}
