@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 
+	"vitals/internal/containers"
 	"vitals/internal/smart"
 	"vitals/internal/ui"
 )
@@ -93,9 +95,21 @@ func collect(src source, opts Options) Snapshot {
 		s.GPUs = collectGPUs(src)
 		s.Thermal = collectThermal(src)
 		s.LLM = collectLLM(src, opts)
+		s.Containers = collectContainers()
 	}
 
 	return s
+}
+
+// collectContainers probes a locally-running container runtime /
+// Kubernetes. Read-only, self-bounded (a wedged daemon yields an empty
+// report, never a hang), and — like the GPU/power/LLM probes — only run
+// when SkipProbes is off. It does NOT fetch per-container stats; those
+// are the opt-in `vitals containers` / dashboard-page path.
+func collectContainers() containers.Report {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return containers.Probe(ctx)
 }
 
 // collectCPU turns two CPU-times readings (whole-machine and per-core)

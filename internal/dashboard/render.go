@@ -27,6 +27,7 @@ const (
 	iconClean      = template.HTML(`<path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 015.4-5.4l-3 3-2-2z"/>`)
 	iconDuplicates = template.HTML(`<path d="M9 4H4v6M4 4l7 7M15 4h5v6M20 4l-7 7M9 20H4v-6M4 20l7-7M15 20h5v-6M20 20l-7-7"/>`)
 	iconProcesses  = template.HTML(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M11 6h9M11 12h9M11 18h9"/>`)
+	iconContainers = template.HTML(`<path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/>`)
 	iconSystem     = template.HTML(`<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>`)
 )
 

@@ -2,10 +2,13 @@
 
 [docs](../../../index.md) / [Roadmap](../../index.md) / [013 — Local container & Kubernetes awareness](index.md) / **Design**
 
-**Status: draft, pre-review.** A new data source across a new trust
-boundary (a local daemon socket / named pipe), so per `AGENTS.md`'s
-"Roadmap discipline" it gets a full `review-panel` pass before code. An
-"As built" section will be appended after implementation.
+**Status: shipped (v1).** Reviewed inline against this doc and the
+`internal/doctor` / `internal/dashboard` code before implementation
+(§10 records the decisions on the six open questions). The Docker
+Engine-API path and the local-only `kubectl` path are built, wired into
+`doctor` findings + `--json` (schema 1.5.0), `vitals containers`, and a
+nav-gated dashboard page. §11 records what was built and what was
+deliberately deferred.
 
 ## 1. What this is, and what it is not
 
@@ -207,8 +210,114 @@ other `Analyze` rule. No real daemon in CI. `vitals` end-to-end against
 a real local Docker + a real `kind`/`k3s` cluster on macOS and Linux
 before the item is called done, recorded here.
 
+## 10. Decisions (inline review, 2026-09-06)
+
+The six open questions (§8), resolved before implementation against this
+doc plus the existing `internal/doctor` / `internal/dashboard` code:
+
+1. **Windows Docker — deferred.** Linux/macOS unix-socket support in
+   v1; the named-pipe dial (and its `go-winio` dep) is a follow-on,
+   matching how `smartctl` deferred Windows. `defaultDockerEndpoint`
+   returns `""` on Windows, so the feature is simply absent there — no
+   new dependency, the "one dependency (gopsutil)" claim holds.
+2. **`RestartCount` trend — deferred.** v1 fires on
+   `RestartCount >= 5` (a static threshold), no per-container history
+   series. The 011 review kept the history file resource-sample-only;
+   revisiting that is its own decision.
+3. **`stats` sampling — opt-in, not on every `doctor`.** The snapshot
+   path (`collectContainers`, behind `SkipProbes`) fetches only the
+   cheap list + `/info`. Per-container CPU/mem (`/stats?stream=false`,
+   ~1s server-side each) is sampled only by `vitals containers` and the
+   dashboard Containers page, each behind its own short-TTL cache. So
+   `doctor` never pays the fan-out.
+4. **k8s scope — `kubectl get pods -A -o json` only.** No nodes /
+   events / deployments in v1.
+5. **`internal/tools` entries — deferred.** `vitals containers` does
+   its own detection (socket dial / `kubectl` lookup); adding
+   detect-only `docker`/`kubectl` rows to the registry (which currently
+   requires a `Packages` map on every entry) is cosmetic and out of v1
+   scope.
+6. **Windows named pipe — see 1.**
+
+The full 7-agent `review-panel` was not run for v1: the trust-boundary
+analysis in §5 was validated directly (read-only, fixed GET-only
+endpoint list enforced through one `dockerGET` chokepoint; socket
+permissions are the auth; loopback-only kube contexts; every call
+context-bounded; all daemon strings through `ui.Sanitize`). A panel
+pass remains available if the boundary is widened later (e.g. Windows
+pipe support, or any non-GET call).
+
+## 11. As built
+
+**`internal/containers`** (new, `!windows` unix-socket + `kubectl`):
+
+- `Probe(ctx) Report` — tries Docker (its unix socket: `DOCKER_HOST`,
+  then `/var/run/docker.sock` and the rootless/Colima/Rancher
+  fallbacks) then a local Kubernetes context, else an empty `Report`.
+  Never returns an error — a wedged daemon is `Report.Note`, not a
+  failure.
+- Docker: stdlib only — `net.Dial("unix", …)` + `net/http` with a
+  custom `DialContext`, **no `github.com/docker/docker`**. Every call
+  goes through one `dockerGET` that is structurally GET-only, against a
+  fixed path set: `/_ping`, `/info`, `/containers/json?all=1`,
+  `/containers/{id}/json` (inspect — only for not-cleanly-running
+  containers, capped), `/containers/{id}/stats?stream=false` (opt-in).
+- Kubernetes: shells `kubectl`, and only when `kubectl config
+  current-context` resolves *and* the context's server URL is a
+  loopback / RFC1918 / CGNAT / `.local` host (`isLocalAPIServer`). A
+  cloud context is ignored — no credentials, no egress.
+- Bounds: ping 300ms, list 2s, whole snapshot probe 3s; container list
+  capped at 50, inspect pass at 25, stats fan-out concurrent under a
+  4–6s budget.
+- `Sample(ctx, Report)` adds per-container CPU% (computed the way
+  `docker stats` does), mem usage (cgroup-v1 page cache subtracted) and
+  the mem limit. Opt-in only.
+- Injected `transport` seam (socket dialer / `kubectl` exec / PATH) —
+  every parser is fixture-tested against an `httptest` server and
+  canned command output, no daemon in CI. 96%+ coverage,
+  `check_coverage.py` floor added.
+
+**`doctor` wiring:**
+
+- `Snapshot.Containers containers.Report` (`json:"containers"`);
+  `SchemaVersion` 1.4.0 → **1.5.0** (additive), `schema.json` +
+  `testdata/schema_fields.golden` regenerated.
+- `collectContainers()` in `collect.go`, behind `SkipProbes` (same
+  class as GPU/power/LLM) — list only, no stats.
+- `analyzeContainers` in `analyze_containers.go`, wired into `Analyze`
+  and `AnalyzeResource("containers")`: **critical** for `OOMKilled` and
+  for a pod stuck in `CrashLoopBackOff`/`ImagePullBackOff`/…;
+  **warning** for `RestartCount >= 5`, a failing healthcheck, and the
+  runtime VM holding ≥4 GB while system memory is ≥85% used (the
+  host-scan blind spot from the Docker "not in memory top 5" question).
+  Every `Fix` is a `docker`/`kubectl` command — vitals manages nothing.
+
+**Surfaces:**
+
+- `vitals containers` (`RunContainers`, aliases `docker`/`k8s`/
+  `kubernetes`) — the list with per-container CPU/mem (opt-in stats
+  sample) + only its findings; `--json`/`--ci`/`--quiet`/`--verbose`
+  like the other deep-dives. Nothing shown when no runtime is present.
+- Dashboard **Containers** page — nav-gated on `HasContainers`, own
+  12s stats cache keyed by runtime endpoint, container/image/status
+  through `html/template`.
+- `vitals help` gains a `containers` entry.
+
+**Deferred (documented, not v1):** Windows named-pipe Docker; the
+console-view (011) `containers` panel — it needs `QuickAssess` to carry
+containers, which trades against 011's no-probe speed model and is
+011's call; `RestartCount` trend history; `internal/tools` registry
+rows; k8s nodes/events/deployments.
+
+**Verification:** repo gates green. Fixture tests cover the Engine-API
+list/inspect/`stats` CPU maths, pod status parsing (CrashLoop, OOM,
+not-ready), the loopback-only API-server gate, wedged-daemon and
+malformed-response paths, and every `analyzeContainers` finding. End to
+end against a real local Docker (compose project with running
+containers) on macOS during development; a `kind`/`k3s` end-to-end pass
+on Linux is still owed and tracked in `implementation-plan.md`.
+
 ## Plan
 
-[`implementation-plan.md`](implementation-plan.md) — empty until this
-doc's `review-panel` pass converges and its must-fix findings are
-folded in.
+[`implementation-plan.md`](implementation-plan.md) records what shipped
+and the one end-to-end check still owed.

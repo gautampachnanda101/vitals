@@ -296,6 +296,18 @@ var commands = []Command{
 		Examples: []string{"vitals power"},
 	},
 	{
+		Name:     "containers",
+		Synopsis: "local container / Kubernetes deep dive: state, CPU/mem, failure findings",
+		Long: "Detects a locally-running Docker-compatible runtime (via its unix socket)\n" +
+			"or a local Kubernetes context (via kubectl — loopback/private API server\n" +
+			"only, never a cloud cluster). Lists containers/pods with per-container\n" +
+			"CPU and memory, and raises findings for OOM-kills, CrashLoopBackOff,\n" +
+			"restart loops and failing healthchecks. Strictly read-only. Nothing is\n" +
+			"shown when no runtime is present. Exit code follows the findings.",
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{"vitals containers", "vitals containers --json"},
+	},
+	{
 		Name:     "gpu",
 		Synopsis: "GPU telemetry via nvidia-smi / rocm-smi / ioreg",
 		Long: "Per-GPU VRAM, utilisation, temperature, power and clocks, plus the\n" +

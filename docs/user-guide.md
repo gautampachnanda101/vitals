@@ -35,6 +35,7 @@ the plain `vitals guide` terminal view) without one:
 - [vitals top, memhogs, memcheck](#vitals-top-memhogs-memcheck)
 - [vitals clean, dupes, tools, explore, live](#vitals-clean-dupes-tools-explore-live)
 - [vitals gpu](#vitals-gpu)
+- [vitals containers](#vitals-containers)
 - [Automation and integration](#automation-and-integration)
 - [Configuration file](#configuration-file)
 - [Shell completion](#shell-completion)
@@ -139,7 +140,7 @@ vitals doctor --webhook https://hooks.slack.com/...   # notify, but only when so
 vitals doctor --compare before.json after.json        # diff two saved reports
 ```
 
-The `--json` payload carries a `schema_version` (currently `1.4.0`), and the
+The `--json` payload carries a `schema_version` (currently `1.5.0`), and the
 shape only ever grows — nothing is renamed or removed without a major
 version bump. `vitals doctor --schema` prints the full JSON Schema. The
 same envelope comes back from the MCP `system_health` tool and from
@@ -216,6 +217,10 @@ that resource:
   CPU-ranked list labelled plainly as a CPU-based estimate.
 - **GPU** — processes holding VRAM where that reading is available
   (NVIDIA), or the memory pressure itself on an Apple unified-memory GPU.
+- **Containers** — appears only when a local container runtime or
+  Kubernetes context is detected: each container/pod with per-container
+  CPU and memory (usage vs limit), and the runtime VM's own RAM ceiling.
+  See [vitals containers](#vitals-containers).
 
 **LLM Insight** shows local runtimes and their per-model GPU offload
 alongside cloud-provider reachability. **System** shows the machine
@@ -490,6 +495,39 @@ GPU is present. For a live per-process view, install nvtop:
 ```bash
 vitals gpu
 vitals gpu --json | jq '.devices[] | {name, util_percent, temp_c}'
+```
+
+## vitals containers
+
+Surfaces a locally-running container runtime or Kubernetes when one is
+present — the same "only shown when it's there" gating as the GPU page.
+It is strictly read-only and never manages anything: every suggested fix
+is a `docker` or `kubectl` command for you to run.
+
+- **Docker / Docker-API-compatible runtimes** (Docker Desktop, Colima,
+  Podman's compat socket, Rancher Desktop) are reached over their local
+  unix socket with the standard library — no vendored Docker client, and
+  only `GET` requests against a fixed endpoint list. macOS and Linux for
+  now; Windows named-pipe support is a follow-on.
+- **A local Kubernetes** (kind, k3s, minikube, Docker Desktop's built-in
+  k8s) is read via `kubectl` — but only when your current context points
+  at a loopback / private-range API server. A context aimed at a cloud
+  cluster is ignored entirely: vitals makes no network call and touches
+  no credentials.
+
+`vitals containers` lists each container/pod with its state and, sampled
+on demand, per-container CPU and memory (usage against limit). It raises
+findings for OOM-kills, `CrashLoopBackOff` / `ImagePullBackOff`, restart
+loops, and failing healthchecks — and, when the machine is already tight
+on RAM, flags that the runtime's own VM is holding memory that won't
+appear ranked in the host process list. The Containers dashboard page
+shows the same, and `doctor --json` carries a cheap container list under
+`snapshot.containers` (no per-container stats on that path — it stays
+fast).
+
+```bash
+vitals containers
+vitals containers --json | jq '.snapshot.containers.containers[] | select(.oom_killed)'
 ```
 
 ## Automation and integration
