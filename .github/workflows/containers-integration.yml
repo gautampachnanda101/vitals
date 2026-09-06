@@ -13,7 +13,10 @@ name: Containers integration
 # purpose. Every `vitals` call therefore captures its exit code and only
 # tolerates a valid verdict code (0/1/2); a real crash (anything else)
 # still fails the step. The assertions that matter are the Python checks
-# on the --json output.
+# on the --json output. CrashLoopBackOff is a *cycling* state (a pod
+# flips between Waiting(CrashLoopBackOff) and a brief Running blip), so
+# the k8s checks poll `vitals` itself until it observes the crash loop
+# rather than trusting a one-shot `kubectl` snapshot.
 
 on:
   push:
@@ -130,46 +133,72 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Start a pod stuck in CrashLoopBackOff
+      - name: Start a pod that will crash-loop
         run: |
           kubectl run crashy --image=busybox --restart=Always --command -- /bin/false
-          echo "waiting for CrashLoopBackOff..."
+          # Wait until it has restarted a few times — by then the backoff
+          # windows are long (40s+) so it sits in Waiting(CrashLoopBackOff)
+          # almost continuously.
+          echo "waiting for crashy to restart a few times..."
           for i in $(seq 1 40); do
+            n=$(kubectl get pod crashy -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo 0)
             r=$(kubectl get pod crashy -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
-            echo "  waiting.reason=$r"
-            [ "$r" = "CrashLoopBackOff" ] && break
+            echo "  restartCount=$n waiting.reason=$r"
+            { [ "${n:-0}" -ge 3 ] && [ "$r" = "CrashLoopBackOff" ]; } && break
             sleep 3
           done
 
-      - name: vitals containers --runtime kubernetes sees the crashloop
+      - name: vitals --runtime kubernetes observes the crash loop (poll until it does)
         run: |
-          # Docker is also reachable on this runner (kind runs on it), so the
-          # explicit --runtime kubernetes override is required — this is
-          # exactly the kind/k3s case it exists for.
-          set +e
-          ./vitals containers --runtime kubernetes; rc=$?
-          [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
-          ./vitals containers --runtime kubernetes --json > c.json; rc=$?
-          [ "$rc" -le 2 ] || { echo "vitals --json crashed (exit $rc)"; exit 1; }
-          set -e
-          python3 - <<'PY'
-          import json
+          cat > /tmp/check.py <<'PY'
+          import json, sys
           cs = json.load(open("c.json"))["snapshot"]["containers"]
-          assert cs["runtime"] == "kubernetes", cs
+          if cs.get("runtime") != "kubernetes":
+              sys.exit("runtime is %r, not kubernetes" % cs.get("runtime"))
           crash = next((c for c in cs["containers"] if c["name"] == "crashy"), None)
-          assert crash is not None, cs
-          assert crash.get("waiting_on") == "CrashLoopBackOff", crash
-          print("crashloop pod detected:", crash["name"], "namespace", crash.get("namespace"))
+          if crash is None:
+              sys.exit("no 'crashy' pod in the report")
+          # Detectable as a crash loop if vitals caught the backoff state,
+          # or if it has clearly been restarting.
+          if crash.get("waiting_on") == "CrashLoopBackOff" or crash.get("restart_count", 0) >= 3:
+              print("crash loop detected:", crash["name"],
+                    "waiting_on", crash.get("waiting_on"),
+                    "restart_count", crash.get("restart_count"),
+                    "namespace", crash.get("namespace"))
+              sys.exit(0)
+          sys.exit("crashy not yet in a detectable crash-loop state: %r" % crash)
           PY
+          ok=0
+          for i in $(seq 1 30); do
+            set +e
+            ./vitals containers --runtime kubernetes --json > c.json; rc=$?
+            set -e
+            [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
+            if python3 /tmp/check.py; then ok=1; break; fi
+            echo "  retrying in 5s..."
+            sleep 5
+          done
+          ./vitals containers --runtime kubernetes || true
+          [ "$ok" = 1 ] || { echo "--- last report ---"; cat c.json; exit 1; }
 
-      - name: The crashloop is a critical finding (exit 2)
+      - name: The crash loop is a critical finding when caught in backoff (poll for exit 2)
         run: |
-          set +e
-          ./vitals containers --runtime kubernetes --quiet
-          code=$?
-          set -e
-          echo "vitals containers --runtime kubernetes exit code: $code"
-          [ "$code" = "2" ] || { echo "expected exit 2 (critical), got $code"; exit 1; }
+          # vitals exits 2 only while crashy is in Waiting(CrashLoopBackOff).
+          # Once restartCount is high the backoff window dominates, so a
+          # short poll reliably lands on it.
+          for i in $(seq 1 30); do
+            set +e
+            ./vitals containers --runtime kubernetes --quiet
+            code=$?
+            set -e
+            echo "  attempt $i: exit $code"
+            [ "$code" = "2" ] && { echo "critical CrashLoopBackOff finding confirmed"; exit 0; }
+            [ "$code" -le 2 ] || { echo "vitals crashed (exit $code)"; exit 1; }
+            sleep 4
+          done
+          echo "never observed exit 2 for the crash loop"
+          ./vitals containers --runtime kubernetes
+          exit 1
 
       - name: A cloud-looking kube context is ignored
         run: |
