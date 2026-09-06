@@ -4,15 +4,14 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Captured 2026-09-05 from a maintainer request — "look at
-locally running Docker and k8s if it's running". Not designed; needs a
-design doc and a `review-panel` pass before any code (a new data
-source, a new trust boundary — a local daemon socket).
+**Status**: [`design.md`](design.md) drafted 2026-09-05 — pre-review.
+Needs a `review-panel` pass before any code (a new data source across a
+new trust boundary, a local daemon socket).
 **Depends on**: `doctor`'s `Collect`/`Analyze`, the `internal/tools`
 registry pattern; feeds [011](../011-console-at-a-glance-view/)'s
 container panel and would add a dashboard page
 **Target release**: not yet
-**Architecture**: not yet written
+**Architecture**: [`design.md`](design.md) — stdlib HTTP over the Docker socket (no vendored client), `kubectl` handoff for k8s (no client-go), read-only fixed endpoint list, the local-daemon-socket trust boundary, gating like the GPU page. Pre-review.
 
 ## What
 

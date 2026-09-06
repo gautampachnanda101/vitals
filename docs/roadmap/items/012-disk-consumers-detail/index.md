@@ -4,14 +4,14 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Partly shipped with the dashboard redesign (2026-09-05) —
-every resource page now has a per-resource "what's using it" section.
-What's left is the higher-fidelity version of three of them, each
-needing new platform-specific data acquisition.
+**Status**: First pass shipped with v0.8.0; [`design.md`](design.md)
+drafted 2026-09-05 for the three deeper numbers (per-process disk I/O
+rate, per-process network bandwidth, real per-process energy) —
+pre-review.
 **Depends on**: `internal/monitor` sampling (existing);
 overlaps [010](../010-companion-tools-integration/)
 **Target release**: not yet
-**Architecture**: not yet written
+**Architecture**: [`design.md`](design.md) — the per-process disk-I/O rate, the per-process-network-bandwidth wall and its options, and real macOS `top -stats power` energy; each a separate sub-feature with its own platform story. Pre-review.
 
 ## Shipped with the redesign
 
