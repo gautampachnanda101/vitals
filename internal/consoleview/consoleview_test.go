@@ -297,3 +297,19 @@ func TestPadRight(t *testing.T) {
 		t.Errorf("padRight(over) = %q", got)
 	}
 }
+
+func TestRenderUnknownSizeCapsTheProcessTable(t *testing.T) {
+	in := healthyInput()
+	in.Procs.Processes = make([]monitor.ProcInfo, 200)
+	for i := range in.Procs.Processes {
+		in.Procs.Processes[i] = monitor.ProcInfo{Name: "p", CPUPct: float64(200 - i), PID: int32(i)}
+	}
+	out := Render(in, 100, 24, false) // unknown height
+	n := strings.Count(out, "\n  p ")
+	if n > defaultProcRows {
+		t.Errorf("unknown-size render showed %d process rows, want <= %d", n, defaultProcRows)
+	}
+	if n == 0 {
+		t.Error("expected some process rows")
+	}
+}

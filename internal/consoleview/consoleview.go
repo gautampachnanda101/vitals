@@ -39,6 +39,11 @@ const DefaultHeight = 24
 // grid drops from 2-up to 1-up rather than squeezing below this.
 const minPanelWidth = 34
 
+// defaultProcRows caps the process table when the terminal height is
+// unknown (piped output); with a known height, fit-to-height shows as
+// many as fit.
+const defaultProcRows = 15
+
 // Input is everything Render needs — collected by the caller, so Render
 // itself is pure.
 type Input struct {
@@ -78,8 +83,15 @@ func Render(in Input, width, height int, fitHeight bool) string {
 	panels := resourcePanels(in, width)
 	procRows := processRows(in.Procs, width)
 
-	// Assemble a candidate full render, then trim to height if asked.
-	body := assemble(lines, findings, panels, procRows, width, len(procRows))
+	// With a known terminal height, fit-to-height decides how many
+	// process rows to show. Without one, cap at a sensible default
+	// rather than dumping the whole (wide) capture.
+	shownProc := len(procRows)
+	if !fitHeight && shownProc > defaultProcRows {
+		shownProc = defaultProcRows
+	}
+
+	body := assemble(lines, findings, panels, procRows, width, shownProc)
 	if !fitHeight || countLines(body) <= height {
 		return body + footerLine(in, width)
 	}
