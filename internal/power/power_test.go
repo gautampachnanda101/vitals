@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,11 +135,25 @@ func TestDefaultDepsIsWired(t *testing.T) {
 	if defaultDeps.goos == "" || defaultDeps.run == nil {
 		t.Fatal("defaultDeps not fully populated")
 	}
-	// Exercise the real exec path once on the platform that supports it,
-	// the same "one real call" convention the other packages use.
-	if defaultDeps.goos == "darwin" {
-		if _, ok := Sample(5); !ok {
-			t.Skip("top -l 2 -o power not usable in this environment")
+	// Exercise the real defaultDeps.run closure once, on every platform,
+	// with a command present on any CI runner (`go` — the suite is running
+	// under it) so the exec wiring is covered off macOS too.
+	out, err := defaultDeps.run(context.Background(), "go", "version")
+	if err != nil || !strings.Contains(string(out), "go") {
+		t.Errorf("defaultDeps.run did not execute a plain command: out=%q err=%v", out, err)
+	}
+
+	// The exported one-liner runs on every platform: on macOS it should
+	// return a real reading; anywhere else it must short-circuit to
+	// (nil,false) without shelling out.
+	procs, ok := Sample(5)
+	if defaultDeps.goos != "darwin" {
+		if ok || procs != nil {
+			t.Errorf("Sample on %s should be (nil,false), got (%v,%v)", defaultDeps.goos, procs, ok)
 		}
+		return
+	}
+	if ok && len(procs) == 0 {
+		t.Error("Sample reported ok on macOS but returned no processes")
 	}
 }
