@@ -77,14 +77,17 @@ jobs:
           [ "$rc" -le 2 ] || { echo "vitals --json crashed (exit $rc)"; exit 1; }
           set -e
           python3 - <<'PY'
-          import json
-          cs = json.load(open("c.json"))["snapshot"]["containers"]
-          assert cs["runtime"] == "docker", cs
-          flap = next((c for c in cs["containers"] if c["name"] == "vitals-flap"), None)
+          import json, sys
+          # snapshot.containers is a list, one entry per reachable runtime.
+          runtimes = json.load(open("c.json"))["snapshot"]["containers"]
+          docker = next((r for r in runtimes if r.get("runtime") == "docker"), None)
+          assert docker is not None, runtimes
+          cs = docker.get("containers", [])
+          flap = next((c for c in cs if c["name"] == "vitals-flap"), None)
           assert flap is not None, cs
           assert flap["restart_count"] >= 5, flap
           print("restart loop detected:", flap["name"], "restart_count", flap["restart_count"])
-          oom = next((c for c in cs["containers"] if c["name"] == "vitals-oom"), None)
+          oom = next((c for c in cs if c["name"] == "vitals-oom"), None)
           if oom and (oom.get("oom_killed") or oom.get("exit_code") == 137):
               print("OOM/killed container also detected:", oom["name"],
                     "oom_killed", oom.get("oom_killed"), "exit_code", oom.get("exit_code"))
@@ -152,10 +155,13 @@ jobs:
         run: |
           cat > /tmp/check.py <<'PY'
           import json, sys
-          cs = json.load(open("c.json"))["snapshot"]["containers"]
-          if cs.get("runtime") != "kubernetes":
-              sys.exit("runtime is %r, not kubernetes" % cs.get("runtime"))
-          crash = next((c for c in cs["containers"] if c["name"] == "crashy"), None)
+          # snapshot.containers is a list, one per runtime; --runtime kubernetes
+          # narrows it, so expect exactly the kubernetes entry.
+          runtimes = json.load(open("c.json"))["snapshot"]["containers"]
+          k8s = next((r for r in runtimes if r.get("runtime") == "kubernetes"), None)
+          if k8s is None:
+              sys.exit("no kubernetes runtime in the report: %r" % runtimes)
+          crash = next((c for c in k8s.get("containers", []) if c["name"] == "crashy"), None)
           if crash is None:
               sys.exit("no 'crashy' pod in the report")
           # Detectable as a crash loop if vitals caught the backoff state,
@@ -211,4 +217,4 @@ jobs:
           out=$(./vitals containers --runtime kubernetes --json); rc=$?
           [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
           set -e
-          echo "$out" | python3 -c "import sys,json; cs=json.load(sys.stdin)['snapshot']['containers']; assert cs['runtime'] == '', cs; print('cloud kube context correctly ignored')"
+          echo "$out" | python3 -c "import sys,json; rts=json.load(sys.stdin)['snapshot']['containers']; assert not any(r.get('runtime')=='kubernetes' for r in rts), rts; print('cloud kube context correctly ignored')"

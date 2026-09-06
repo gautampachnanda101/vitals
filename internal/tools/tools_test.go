@@ -394,19 +394,48 @@ func TestLaunchRunsTheFirstInstalledCandidate(t *testing.T) {
 	}
 }
 
-func TestLaunchNoneInstalledListsCandidateNames(t *testing.T) {
+func TestLaunchNoneInstalledListsCandidatesAndFallback(t *testing.T) {
 	d := deps{lookPath: fakeLookPath()}
 	err := launch(d, "disk explorer", nil)
 	if err == nil || !strings.Contains(err.Error(), "gdu") || !strings.Contains(err.Error(), "ncdu") {
 		t.Errorf("launch() = %v, want an error naming every disk-explorer candidate", err)
 	}
+	if !strings.Contains(err.Error(), "vitals disk") {
+		t.Errorf("the not-installed error should point at the vitals-native fallback: %v", err)
+	}
+	// live-monitor category points at `vitals top`
+	lm := launch(deps{lookPath: fakeLookPath()}, "live monitor", nil)
+	if lm == nil || !strings.Contains(lm.Error(), "vitals top") {
+		t.Errorf("live-monitor fallback should be `vitals top`: %v", lm)
+	}
 }
 
-func TestLaunchPropagatesTheRunCmdError(t *testing.T) {
+func TestLaunchWrapsANonZeroExitWithAHint(t *testing.T) {
 	rc := &recordingRunCmd{err: errors.New("exit status 1")}
-	d := deps{lookPath: fakeLookPath("ncdu"), runCmd: rc.run}
-	if err := launch(d, "disk explorer", nil); err == nil {
-		t.Error("launch should propagate the runCmd error")
+	d := deps{lookPath: fakeLookPath("btop"), runCmd: rc.run}
+	err := launch(d, "live monitor", nil)
+	if err == nil {
+		t.Fatal("launch should surface the companion tool's non-zero exit")
+	}
+	// names the tool, keeps the underlying error, and points at the fallback
+	for _, want := range []string{"btop", "exit status 1", "message is above", "vitals top --watch"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("wrapped error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestFallbackHintPerCategory(t *testing.T) {
+	cases := map[string]string{
+		"live monitor":   "vitals top",
+		"disk explorer":  "vitals disk",
+		"GPU monitor":    "vitals gpu",
+		"something else": "vitals top",
+	}
+	for cat, want := range cases {
+		if got := fallbackHint(cat); !strings.Contains(got, want) {
+			t.Errorf("fallbackHint(%q) = %q, want it to mention %q", cat, got, want)
+		}
 	}
 }
 

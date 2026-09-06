@@ -76,6 +76,10 @@ func TestCLISmoke(t *testing.T) {
 		{"memhogs", []string{"memhogs"}},
 		{"memcheck", []string{"memcheck"}},
 		{"tools", []string{"tools"}},
+		{"view", []string{"view", "--ollama-url", "http://127.0.0.1:1"}},
+		{"containers", []string{"containers"}},
+		{"containers-json", []string{"containers", "--json"}},
+		{"heal-dry-run", []string{"heal", "--dry-run"}},
 		{"dupes-json", []string{"dupes", "--root", dupesRoot, "--json"}},
 		// Safe because dupesRoot is guaranteed empty: no files exist to
 		// hardlink, so this only exercises the flag-wiring/confirmation
@@ -135,11 +139,58 @@ func TestCLISmoke(t *testing.T) {
 			// (healthy/warning/critical); everything else should exit 0 on
 			// a well-formed, read-only invocation.
 			allowed := []int{0}
-			if strings.HasPrefix(c.name, "doctor") || strings.HasSuffix(c.name, "-json") && isResourceFocus(c.args[0]) {
+			switch {
+			case strings.HasPrefix(c.name, "doctor"),
+				strings.HasSuffix(c.name, "-json") && isResourceFocus(c.args[0]),
+				c.name == "view", c.name == "containers", c.name == "containers-json",
+				c.name == "heal-dry-run":
+				// verdict-carrying commands exit 0/1/2 by design
 				allowed = []int{0, 1, 2}
 			}
 			if !slices.Contains(allowed, exitCode) {
 				t.Errorf("vitals %s exited %d, want one of %v:\n%s", strings.Join(c.args, " "), exitCode, allowed, out.String())
+			}
+		})
+	}
+}
+
+// TestCLISmokeLaunchWithNoCompanionTool runs `vitals live` / `vitals
+// explore` with an empty PATH so no companion tool can be found — the
+// cross-OS check that the handoff commands fail with a helpful,
+// vitals-native pointer rather than a bare error or a hang.
+func TestCLISmokeLaunchWithNoCompanionTool(t *testing.T) {
+	bin := buildCLIOnce(t)
+	scratch := t.TempDir()
+	for _, c := range []struct {
+		name, cmd, wantTool, wantFallback string
+	}{
+		{"live", "live", "btop", "vitals top"},
+		{"explore", "explore", "gdu", "vitals disk"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, bin, c.cmd)
+			// Empty PATH: exec.LookPath finds nothing, so `installed()` is
+			// false for every candidate and launch() takes the not-installed
+			// branch. (The already-built binary needs no PATH to run.)
+			cmd.Env = []string{"PATH=", "HOME=" + scratch, "APPDATA=" + scratch, "NO_COLOR=1"}
+			var out bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &out, &out
+			err := cmd.Run()
+
+			if ctx.Err() == context.DeadlineExceeded {
+				t.Fatalf("vitals %s hung with no tool installed:\n%s", c.cmd, out.String())
+			}
+			if err == nil {
+				t.Fatalf("vitals %s should fail when no companion tool is installed:\n%s", c.cmd, out.String())
+			}
+			s := out.String()
+			if !strings.Contains(s, c.wantTool) || !strings.Contains(s, "vitals tools install") {
+				t.Errorf("vitals %s should name the candidates and how to install one:\n%s", c.cmd, s)
+			}
+			if !strings.Contains(s, c.wantFallback) {
+				t.Errorf("vitals %s should point at the vitals-native fallback %q:\n%s", c.cmd, c.wantFallback, s)
 			}
 		})
 	}
