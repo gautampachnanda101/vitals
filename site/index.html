@@ -136,7 +136,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
   <div class="wrap">
     <div class="inner">
       <div class="copy">
-        <span class="eyebrow">vitals · v0.9.0 · macOS · Linux · Windows</span>
+        <span class="eyebrow">vitals · v0.10.0 · macOS · Linux · Windows</span>
         <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
         <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
         <div class="cta-row">
@@ -198,7 +198,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
       </div>
       <div class="card">
         <h3>Local containers &amp; Kubernetes</h3>
-        <p>When a Docker-compatible runtime or a loopback Kubernetes context is present, vitals reads it read-only — OOM-kills, CrashLoopBackOff, restart loops, and memory the host process list can't see — with a <code>docker</code>/<code>kubectl</code> command for each.</p>
+        <p>vitals probes a Docker-compatible runtime <em>and</em> a loopback Kubernetes context in one pass, read-only, showing each as its own section — OOM-kills, CrashLoopBackOff, restart loops, published ports, and memory the host process list can't see — with a <code>docker</code>/<code>kubectl</code> command for each.</p>
         <span class="cmd">vitals containers</span>
       </div>
       <div class="card">
@@ -232,10 +232,10 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
       </figure>
       <figure>
         <img src="img/dashboard-overview-dark.png" alt="The same vitals dashboard Overview page rendered in dark mode." loading="lazy" width="2560" height="1800">
-        <figcaption>Follows your system light/dark preference. A grouped sidebar reaches every resource page, plus Processes, Containers, LLM Insight and System.</figcaption>
+        <figcaption>Follows your system light/dark preference. A grouped, icon-led sidebar reaches every resource page, plus Processes, Containers, LLM Insight and System. The Containers card sums running / unhealthy across Docker and a local Kubernetes context.</figcaption>
       </figure>
     </div>
-    <p class="note">Real screenshots of <code>vitals dashboard</code> at v0.9.0 — regenerated when the layout changes (<code>scripts/site-screenshots.mjs</code>).</p>
+    <p class="note">Real screenshots of <code>vitals dashboard</code> at v0.10.0 — regenerated when the layout changes (<code>scripts/site-screenshots.mjs</code>).</p>
   </div>
 </section>
 
@@ -273,7 +273,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         </tbody>
       </table>
     </div>
-    <p class="note">This table describes each tool's own core purpose as of vitals v0.9.0 — check each project's own docs for its current full feature set.</p>
+    <p class="note">This table describes each tool's own core purpose as of vitals v0.10.0 — check each project's own docs for its current full feature set.</p>
   </div>
 </section>
 
