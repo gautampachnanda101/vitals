@@ -2,13 +2,13 @@
 
 [docs](../../../index.md) / [Roadmap](../../index.md) / [012 — Per-resource consumers: the deeper numbers](index.md) / **Design**
 
-**Status: draft, pre-review.** The first-pass per-resource consumer
-sections shipped with the v0.8.0 dashboard redesign (see `index.md`'s
-"Shipped with the redesign" table). This doc is for the three that are
-still proxies or partials — each needs a new, platform-specific data
-source, so per `AGENTS.md`'s "Roadmap discipline" it gets a design +
-`review-panel` pass before code. An "As built" section will be appended
-after implementation.
+**Status: shipped.** The first-pass per-resource consumer sections
+shipped with the v0.8.0 dashboard redesign (see `index.md`'s "Shipped
+with the redesign" table). The three deeper numbers were then reviewed
+inline (§7) and implemented: disk per-process I/O rate and the macOS
+per-process energy reading are built; per-process network bandwidth is
+not achievable with the current dependency and stays the
+active-connections list. §8 records what was built.
 
 ## 1. What's already shipped, and what this is
 
@@ -152,9 +152,86 @@ dashboard pages exercised end to end on macOS + Linux before the
 sub-feature is called done, with the per-OS behaviour (real number vs.
 omitted section vs. captioned estimate) recorded here.
 
+## 7. Decisions (inline review, 2026-09-06)
+
+The three sub-features were reviewed together against this doc and the
+existing `internal/monitor` / `internal/doctor` code before
+implementation. Outcome:
+
+1. **Disk I/O rate — build it.** `internal/monitor` samples per-process
+   `IOCounters()` twice across the window `topProcesses` already sleeps
+   for CPU% (open question 2: *ride the existing window, no opt-in
+   flag* — the loop already walks every process for CPU priming, so the
+   extra counter read is not a second sweep). Open question 1:
+   *accept the macOS gap* — no `top` byte-count parser. On macOS every
+   rate is zero and both renderers omit the section.
+2. **Network bandwidth — accept the wall (option A).** gopsutil gives
+   sockets, not per-process byte counts, on every platform; the shipped
+   active-connections list stays the answer to "who's on the network".
+   No code. Option D (an `internal/tools` opt-in over an installed
+   `nethogs`-class tool) is left as a future enhancement, not v1.
+3. **Power energy — build the macOS parser, run it eagerly.** Open
+   question: *eager, not a button* — `vitals power` is already a
+   deliberate deep-dive command (it runs a DNS probe on `net`), and the
+   dashboard Power page caches the probe for 10s. `powermetrics` stays
+   out (root).
+
+No `--json` schema change for any of the three (§5 holds).
+
+## 8. As built
+
+**Disk — per-process I/O rate.** `monitor.ProcInfo` gained
+`DiskReadBytesPerSec` / `DiskWriteBytesPerSec` (JSON
+`disk_read_bytes_per_sec` / `disk_write_bytes_per_sec`, `omitempty`),
+filled in `topProcesses` from a second `process.IOCounters()` read over
+the existing sample window; the divisor is floored at 1ms and a
+counter that goes backwards (PID reuse) clamps to zero.
+`monitor.HasDiskIORates([]ProcInfo) bool` is the "is this real on this
+platform" gate.
+
+- Dashboard **Disk** page: new "Top processes by disk I/O" table
+  (`diskIOProcessSection`, `internal/dashboard/modules_resource.go`),
+  ranked by read+write, top 5, shown only when `HasDiskIORates` is true —
+  so absent on macOS, present on Linux/Windows. The biggest-directories /
+  biggest-files scan is unchanged and still shown.
+- `vitals disk`: `printDiskIOProcs` (`internal/doctor/focus_diskio.go`)
+  adds the same ranking under the mount table, via an injectable
+  `diskIOSampler` seam over `monitor.Sample`; silent when no process
+  moves any bytes.
+- Per-OS behaviour: **Linux/Windows** — real rates, section shown.
+  **macOS** — gopsutil returns all-zero, section omitted, no table of
+  zeros and no CPU list mislabelled as disk activity.
+
+**Network — per-process bandwidth.** Not built (see §7.2). The Network
+page and `vitals net` keep the active-connections list.
+
+**Power — real per-process energy (macOS).** New `internal/power`
+package: `Sample(limit) ([]Proc, bool)` shells `top -l 2 -o power
+-stats pid,command,power -n 40` (bounded at 4s), parses the **second**
+sample block (`parseTopPower` — the first reports every process at
+0.0), ranks by the power score. `deps{goos, run}` is the injected exec
+seam; `ok=false` on any non-darwin platform and on any probe/parse
+failure.
+
+- Dashboard **Power** page: `powerImpactSection`
+  (`internal/dashboard/power_impact.go`, behind a 10s single-flight
+  `powerImpactCache`) renders "Energy impact by process" from the real
+  reading and **replaces** the CPU estimate; the CPU-ranked estimate
+  with its "CPU-based estimate … on this platform" caption is the
+  fallback when `ok=false`.
+- `vitals power`: `printPowerProcs` (`internal/doctor/focus_power.go`,
+  injectable `powerSampler`) adds an "energy impact by process" table on
+  macOS; nothing on Linux/Windows.
+
+**Verification.** `internal/power` parser is fixture-tested against real
+captured `top` output (both sample blocks, multi-word command names,
+garbage/short/empty rows, an embedded escape sequence); every exec is
+injected so CI needs no `top`; `internal/monitor`, `internal/doctor`
+and `internal/dashboard` cover the new rate maths, the
+platform-omission gate and the estimate/real fallback. `check_coverage.py`
+gained a `vitals/internal/power` floor.
+
 ## Plan
 
-[`implementation-plan.md`](implementation-plan.md) — stays as-is (the
-shipped first pass is recorded there) until this doc's `review-panel`
-pass converges and its must-fix findings are folded in, at which point
-the three sub-features get task lists.
+[`implementation-plan.md`](implementation-plan.md) records the shipped
+first pass and this second pass.

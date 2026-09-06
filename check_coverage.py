@@ -143,6 +143,15 @@ FLOORS = {
     # OS-branch arms in resolveDevice that can't all run on one runner.
     # 96.4%.
     "vitals/internal/smart": 95,
+    # power (item 012): parseTopPower is pure and fixture-tested against
+    # real `top -l 2 -o power -stats pid,command,power` output (both
+    # sample blocks, multi-word command names, garbage/empty/short rows,
+    # a hostile escape sequence). sample()'s one dep (the `top` exec) is
+    # injected; the non-darwin short-circuit, the exec-error path and the
+    # empty-parse path are all driven with fakes, and defaultDeps gets one
+    # real call on macOS. 97%+ measured; the residual gap is a
+    # parser arm that only a differently-shaped `top` build would hit.
+    "vitals/internal/power": 95,
     # guide (item 009): signal.NotifyContext and openBrowser are both
     # injected via a deps struct; ServeLocal's real net.Listen + handler-
     # wrapping half is split into buildServer(handler, opts), returning

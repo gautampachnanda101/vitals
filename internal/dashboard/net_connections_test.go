@@ -10,6 +10,7 @@ import (
 
 	gnet "github.com/shirou/gopsutil/v4/net"
 	"vitals/internal/monitor"
+	"vitals/internal/power"
 )
 
 func withFakeConnCache(t *testing.T, fn func() ([]gnet.ConnectionStat, error)) {
@@ -28,6 +29,7 @@ func stubResourceExtras(t *testing.T) {
 	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	withFakeConnCache(t, func() ([]gnet.ConnectionStat, error) { return nil, nil })
 	withFakeDiskUsageCache(t, func() (diskScanResult, error) { return diskScanResult{}, nil })
+	withFakePowerImpactCache(t, func() ([]power.Proc, bool) { return nil, false })
 }
 
 func conn(pid int32, rip string, rport uint32, status string) gnet.ConnectionStat {

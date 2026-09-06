@@ -10,6 +10,7 @@ import (
 	"vitals/internal/doctor"
 	"vitals/internal/llm"
 	"vitals/internal/monitor"
+	"vitals/internal/power"
 )
 
 // fakeProcs is a small deterministic process table for the resource-page
@@ -218,6 +219,9 @@ func TestRenderMemOmitsOptionalRowsWhenAbsent(t *testing.T) {
 
 func TestRenderPowerShowsOptionalRowsWhenPresent(t *testing.T) {
 	withFakeProcessCache(t, fakeProcs)
+	// No real per-process power reading on this platform -> the page falls
+	// back to the CPU-based estimate, which is what this test asserts.
+	withFakePowerImpactCache(t, func() ([]power.Proc, bool) { return nil, false })
 	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: true, Percent: 62, MinutesLeft: 90}})
 	for _, want := range []string{"battery", "62%", "90 min"} {
 		if !strings.Contains(out, want) {
@@ -235,6 +239,7 @@ func TestRenderPowerShowsOptionalRowsWhenPresent(t *testing.T) {
 
 func TestRenderPowerOnACWithNoEstimate(t *testing.T) {
 	withFakeProcessCache(t, fakeProcs)
+	withFakePowerImpactCache(t, func() ([]power.Proc, bool) { return nil, false })
 	out := renderPower(doctor.Snapshot{Power: doctor.Power{OnBattery: false}})
 	if !strings.Contains(out, "AC power") {
 		t.Errorf("renderPower should report AC power when not on battery, got: %s", out)
@@ -393,6 +398,60 @@ func TestRenderDiskEmptyIsFriendly(t *testing.T) {
 	if !strings.Contains(strings.ToLower(out), "no disks") {
 		t.Errorf("renderDisk with no disks should say so, got: %s", out)
 	}
+}
+
+func TestDiskIOProcessSectionShownOnlyWhenRatesAreReal(t *testing.T) {
+	stubResourceExtras(t) // empty conn + disk-scan caches
+
+	t.Run("omitted when every rate is zero (macOS)", func(t *testing.T) {
+		withFakeProcessCache(t, func() (monitor.Snapshot, error) {
+			return monitor.Snapshot{Processes: []monitor.ProcInfo{
+				{PID: 1, Name: "Finder", CPUPct: 3},
+				{PID: 2, Name: "kernel_task", CPUPct: 9},
+			}}, nil
+		})
+		if got := diskIOProcessSection(); got != "" {
+			t.Errorf("want no section when no process moves any bytes, got: %s", got)
+		}
+		if out := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 40, FreeBytes: 1 << 30}}}); strings.Contains(out, "Top processes by disk I/O") {
+			t.Errorf("renderDisk must not show the I/O table with no real rates, got: %s", out)
+		}
+	})
+
+	t.Run("shown and ranked when rates are present (Linux/Windows)", func(t *testing.T) {
+		withFakeProcessCache(t, func() (monitor.Snapshot, error) {
+			return monitor.Snapshot{Processes: []monitor.ProcInfo{
+				{PID: 10, Name: "rsync", DiskReadBytesPerSec: 8 << 20, DiskWriteBytesPerSec: 1 << 20},
+				{PID: 11, Name: "idle-daemon"},
+				{PID: 12, Name: "postgres", DiskWriteBytesPerSec: 3 << 20},
+			}}, nil
+		})
+		out := diskIOProcessSection()
+		if !strings.Contains(out, "Top processes by disk I/O") {
+			t.Fatalf("expected the I/O section, got: %s", out)
+		}
+		if strings.Index(out, "rsync") > strings.Index(out, "postgres") {
+			t.Errorf("rsync (9 MB/s) should rank above postgres (3 MB/s): %s", out)
+		}
+		if strings.Contains(out, "idle-daemon") {
+			t.Errorf("a zero-rate process must not appear in the I/O table: %s", out)
+		}
+		disk := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 40, FreeBytes: 1 << 30}}})
+		if !strings.Contains(disk, "Top processes by disk I/O") {
+			t.Errorf("renderDisk should embed the I/O section when rates are real: %s", disk)
+		}
+	})
+
+	t.Run("crafted process name is escaped", func(t *testing.T) {
+		withFakeProcessCache(t, func() (monitor.Snapshot, error) {
+			return monitor.Snapshot{Processes: []monitor.ProcInfo{
+				{PID: 1, Name: "<img src=x onerror=alert(1)>", DiskReadBytesPerSec: 1 << 20},
+			}}, nil
+		})
+		if out := diskIOProcessSection(); strings.Contains(out, "<img src=x") {
+			t.Errorf("diskIOProcessSection did not escape a crafted process name: %s", out)
+		}
+	})
 }
 
 func TestRenderNetSkipsIdleInterfaces(t *testing.T) {

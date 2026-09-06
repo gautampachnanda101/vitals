@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"vitals/internal/doctor"
+	"vitals/internal/monitor"
 	"vitals/internal/ui"
 )
 
@@ -44,21 +45,18 @@ func resourcePage(resource string, body func(doctor.Snapshot) string) func(PageC
 func card(body string) string { return `<div class="card">` + body + `</div>` }
 
 // topProcessesSectionN is how many rows a resource page's own "Top
-// processes" section shows — smaller than the dedicated Processes
-// page's own display cap (processesDisplayTop, modules_processes.go):
-// this is a supporting detail on a page about something else, not the
-// page's whole point. Matches the user-facing ask for "top 5/10" — 5 is
-// the value chosen; raise it if that turns out too tight in practice.
-// topProcessesSectionN is how many rows a resource page's own "Top
-// processes" section shows. A resource page only gets this section where
-// the ranking is genuinely that resource's own metric — CPU% on the CPU
-// page, RSS on the Memory page, VRAM on a GPU page when a real
-// per-process reading exists. Disk I/O, network throughput and energy
-// are not available per-process from the snapshot source (network on no
-// platform, disk only on Linux/Windows and only as a rate that needs
-// sampling), so those pages deliberately show no process table rather
-// than a CPU list mislabelled as that resource's activity — roadmap
-// item 012.
+// processes" section shows — smaller than the dedicated Processes page's
+// own display cap (processesDisplayTop, modules_processes.go): this is a
+// supporting detail on a page about something else, not the page's whole
+// point. Matches the user-facing ask for "top 5/10".
+//
+// A resource page only gets this section where the ranking is genuinely
+// that resource's own metric — CPU% on the CPU page, RSS on the Memory
+// page, VRAM on a GPU page when a real per-process reading exists, live
+// I/O rate on the Disk page on Linux/Windows. Network throughput and
+// energy have no per-process source, so those pages show no process
+// table rather than a CPU list mislabelled as that resource's activity —
+// roadmap item 012.
 const topProcessesSectionN = 5
 
 func renderCPU(s doctor.Snapshot) string {
@@ -105,12 +103,67 @@ func renderDisk(s doctor.Snapshot) string {
 			out += row(d.Mount+" — S.M.A.R.T.", smartLine(d.SMART))
 		}
 	}
-	// Per-process disk-I/O rate isn't available cross-platform (zero on
-	// macOS via gopsutil — roadmap 012), so the disk-appropriate "what's
-	// using it" answer is by path: a bounded scan of the home folder for
-	// the biggest directories and files.
-	return card(out) + biggestPathsSection()
+	// Two disk-appropriate "what's using it" answers, both by the disk's
+	// own metric, never a CPU list: which process is moving the most bytes
+	// right now (Linux/Windows — omitted where the per-process counter is
+	// all-zero, i.e. macOS), and which paths hold the most space (a
+	// bounded home-folder scan). See roadmap item 012.
+	return card(out) + diskIOProcessSection() + biggestPathsSection()
 }
+
+// diskIOProcessSection renders a "Top processes by disk I/O" table when
+// vitals has a real per-process I/O rate — Linux and Windows via
+// gopsutil. "" on macOS (every rate is zero there — no Darwin
+// implementation) so the section is simply absent rather than a table of
+// zeros or a CPU ranking mislabelled as disk activity.
+func diskIOProcessSection() string {
+	snap, err := defaultProcessCache.Get()
+	if err != nil || len(snap.Processes) == 0 || !monitor.HasDiskIORates(snap.Processes) {
+		return ""
+	}
+	procs := append([]monitor.ProcInfo(nil), snap.Processes...)
+	sort.Slice(procs, func(i, j int) bool {
+		return procs[i].DiskReadBytesPerSec+procs[i].DiskWriteBytesPerSec >
+			procs[j].DiskReadBytesPerSec+procs[j].DiskWriteBytesPerSec
+	})
+	rows := make([]diskIOProcRow, 0, topProcessesSectionN)
+	for _, p := range procs {
+		if p.DiskReadBytesPerSec+p.DiskWriteBytesPerSec <= 0 {
+			break // sorted desc — nothing below this moves any bytes
+		}
+		rows = append(rows, diskIOProcRow{
+			PID:   p.PID,
+			Name:  p.Name,
+			Read:  ui.HumanBytes(int64(p.DiskReadBytesPerSec)) + "/s",
+			Write: ui.HumanBytes(int64(p.DiskWriteBytesPerSec)) + "/s",
+		})
+		if len(rows) >= topProcessesSectionN {
+			break
+		}
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return `<div class="sectiontitle">Top processes by disk I/O</div>` + card(mustExecute(diskIOProcessesTmpl, rows))
+}
+
+type diskIOProcRow struct {
+	PID         int32
+	Name        string
+	Read, Write string
+}
+
+var diskIOProcessesTmpl = template.Must(template.New("diskIOProcesses").Parse(`<table style="width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:.86rem">` +
+	`<tr style="background:var(--surface-2)"><th style="text-align:left;padding:.5rem .8rem;font-size:.7rem;color:var(--muted);text-transform:uppercase">Process</th>` +
+	`<th style="text-align:right;padding:.5rem .8rem;font-size:.7rem;color:var(--muted);text-transform:uppercase">Read</th>` +
+	`<th style="text-align:right;padding:.5rem .8rem;font-size:.7rem;color:var(--muted);text-transform:uppercase">Write</th>` +
+	`<th style="text-align:right;padding:.5rem .8rem;font-size:.7rem;color:var(--muted);text-transform:uppercase">PID</th></tr>` +
+	`{{range .}}<tr>` +
+	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);font-weight:600">{{.Name}}</td>` +
+	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);text-align:right" class="mono">{{.Read}}</td>` +
+	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);text-align:right" class="mono">{{.Write}}</td>` +
+	`<td style="padding:.5rem .8rem;border-top:1px solid var(--line);text-align:right" class="mono">{{.PID}}</td>` +
+	`</tr>{{end}}</table>`))
 
 // smartLine summarises a disk's S.M.A.R.T. health for the Disk page.
 func smartLine(h *doctor.DiskSMART) string {
@@ -160,13 +213,15 @@ func renderPower(s doctor.Snapshot) string {
 		out += row("Remaining", fmt.Sprintf("~%d min", s.Power.MinutesLeft))
 	}
 	body := card(out)
-	// There's no per-process power/energy reading in the snapshot source,
-	// so this is an explicit CPU-based estimate, not a measurement — the
-	// caption says so. A process near the top here is a likely battery
-	// drain; it is not a wattage.
-	if rows := topProcessRows(topProcessesSectionN, false); rows != "" {
+	// A real per-process energy reading where the OS offers one without
+	// sudo (macOS `top` power score — roadmap 012); otherwise an explicit
+	// CPU-based estimate, captioned as such. A process near the top of
+	// either is a likely battery drain; neither figure is a wattage.
+	if real := powerImpactSection(); real != "" {
+		body += real
+	} else if rows := topProcessRows(topProcessesSectionN, false); rows != "" {
 		body += `<div class="sectiontitle">Likely energy impact</div>` +
-			`<p class="caption">CPU-based estimate — vitals has no per-process power reading. Ranked by CPU use.</p>` +
+			`<p class="caption">CPU-based estimate — vitals has no per-process power reading on this platform. Ranked by CPU use.</p>` +
 			card(rows)
 	}
 	return body

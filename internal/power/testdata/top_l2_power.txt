@@ -1,0 +1,48 @@
+Processes: 641 total, 4 running, 637 sleeping, 4566 threads 
+2026/09/06 08:43:04
+Load Avg: 3.31, 3.09, 2.70 
+CPU usage: 15.78% user, 10.78% sys, 73.42% idle 
+SharedLibs: 425M resident, 90M data, 71M linkedit.
+MemRegions: 1043601 total, 4673M resident, 101M private, 3935M shared.
+PhysMem: 15G used (4667M wired, 3643M compressor), 120M unused.
+VM: 354T vsize, 6144M framework vsize, 2437280(0) swapins, 3898896(0) swapouts.
+Networks: packets: 39040479/34G in, 25292731/24G out.
+Disks: 69970220/1162G read, 10631022/258G written.
+
+PID    COMMAND          POWER
+99910  zsh              0.0  
+99905  zsh              0.0  
+98352  DPSubmissionServ 0.0  
+97175  containermanager 0.0  
+97168  trustd           0.0  
+97151  secinitd         0.0  
+97150  com.apple.geod   0.0  
+97073  UARPUpdaterServi 0.0  
+97072  dataaccessd      0.0  
+95763  corekdld         0.0  
+95613  EAUpdaterService 0.0  
+93461  itunescloudd     0.0  
+Processes: 641 total, 3 running, 638 sleeping, 4561 threads 
+2026/09/06 08:43:05
+Load Avg: 3.31, 3.09, 2.70 
+CPU usage: 16.0% user, 3.27% sys, 80.72% idle 
+SharedLibs: 425M resident, 90M data, 71M linkedit.
+MemRegions: 0 total, 0B resident, 101M private, 3935M shared.
+PhysMem: 15G used (4618M wired, 3643M compressor), 133M unused.
+VM: 354T vsize, 6144M framework vsize, 2437280(0) swapins, 3898896(0) swapouts.
+Networks: packets: 39040500/34G in, 25292743/24G out.
+Disks: 69970233/1162G read, 10631022/258G written.
+
+PID    COMMAND          POWER
+86817  Copilot          83.4 
+1201   Code Helper (Ren 10.0 
+1106   Code Helper      9.6  
+183    coreaudiod       8.2  
+49456  top              5.7  
+529    NordVPN          3.9  
+22753  com.docker.backe 3.8  
+28965  Code Helper (Ren 3.5  
+22793  com.apple.Virtua 3.1  
+168    WindowServer     3.0  
+537    Dock             2.0  
+85966  App Store        1.9  
