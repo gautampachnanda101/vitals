@@ -46,7 +46,7 @@ depends on.
 | [009](items/009-raw-coverage-95/) | Raw 95%+ coverage, no live-glue exemption | Done | — (cross-cutting) | ongoing |
 | [010](items/010-companion-tools-integration/) | Companion tools: real integration, not just a catalog | Done — `nvtop` (`gpu --live`), `jdupes` (`dupes --fast`), `smartctl` (S.M.A.R.T. on disk) all shipped | `internal/tools` (existing) | v0.8.0+ |
 | [011](items/011-console-at-a-glance-view/) | Console at-a-glance view | Shipped 2026-09-06 — `internal/consoleview`, `vitals view` + bare-`vitals`-on-TTY | `doctor` snapshot/cache (existing) | v0.9.0 |
-| [012](items/012-disk-consumers-detail/) | Per-resource consumers: the deeper numbers | First pass shipped; design.md drafted for the deeper numbers, pre-review | `internal/monitor` sampling (existing) | not yet |
+| [012](items/012-disk-consumers-detail/) | Per-resource consumers: the deeper numbers | Shipped — per-process disk I/O rate (Linux/Windows) + real macOS per-process energy; per-process network bandwidth documented as not achievable | `internal/monitor` sampling, `internal/power` | shipped |
 | [013](items/013-container-runtime-awareness/) | Local container & Kubernetes awareness | design.md drafted 2026-09-05, pre-review | `doctor` + `internal/tools` (existing) | not yet |
 
 ## Releases

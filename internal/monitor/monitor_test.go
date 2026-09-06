@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -293,6 +294,32 @@ type fakeProc struct {
 	user    string
 	threads int32
 	cmdline string
+	// io, when set, is a cumulative byte counter that advances by (readStep,
+	// writeStep) on every IOCounters call — so the prime read and the
+	// post-sleep read differ and topProcesses computes a non-zero rate.
+	// ioErr forces the "no per-process I/O on this platform" path (macOS).
+	io    *fakeIOCounter
+	ioErr error
+}
+
+type fakeIOCounter struct {
+	read, write         uint64
+	readStep, writeStep uint64
+	// backwards makes the second reading LOWER than the first — the PID-reuse
+	// case topProcesses must not turn into a huge negative-underflow rate.
+	backwards bool
+	calls     int
+}
+
+func (c *fakeIOCounter) next() (uint64, uint64) {
+	c.calls++
+	if c.backwards && c.calls > 1 {
+		return 0, 0
+	}
+	r, w := c.read, c.write
+	c.read += c.readStep
+	c.write += c.writeStep
+	return r, w
 }
 
 func (f fakeProc) PID() int32                                   { return f.pid }
@@ -303,6 +330,16 @@ func (f fakeProc) Name() (string, error)                        { return f.name,
 func (f fakeProc) Username() (string, error)                    { return f.user, nil }
 func (f fakeProc) NumThreads() (int32, error)                   { return f.threads, nil }
 func (f fakeProc) Cmdline() (string, error)                     { return f.cmdline, nil }
+func (f fakeProc) IOCounters() (*process.IOCountersStat, error) {
+	if f.ioErr != nil {
+		return nil, f.ioErr
+	}
+	if f.io == nil {
+		return &process.IOCountersStat{}, nil
+	}
+	r, w := f.io.next()
+	return &process.IOCountersStat{ReadBytes: r, WriteBytes: w}, nil
+}
 
 // fakeSource builds a source with sane non-nil defaults for every field so
 // individual tests only need to override the one gopsutil call they care
@@ -386,6 +423,60 @@ func TestTopProcessesReturnsNilWhenProcessesFails(t *testing.T) {
 	})
 	if out := topProcesses(src, Options{Interval: time.Millisecond}); out != nil {
 		t.Errorf("want nil when processes() fails, got %+v", out)
+	}
+}
+
+func TestTopProcessesFillsPerProcessDiskIORate(t *testing.T) {
+	// busy advances its byte counters between the prime read and the
+	// post-sleep read; idle never moves; noio simulates macOS, where
+	// gopsutil returns an error for per-process I/O counters.
+	procs := []procSource{
+		fakeProc{pid: 1, cpuPct: 5, mem: &process.MemoryInfoStat{RSS: 10}, name: "busy",
+			io: &fakeIOCounter{readStep: 1 << 20, writeStep: 1 << 19}},
+		fakeProc{pid: 2, cpuPct: 5, mem: &process.MemoryInfoStat{RSS: 10}, name: "idle",
+			io: &fakeIOCounter{}},
+		fakeProc{pid: 3, cpuPct: 5, mem: &process.MemoryInfoStat{RSS: 10}, name: "noio",
+			ioErr: errors.New("not implemented on darwin")},
+		fakeProc{pid: 4, cpuPct: 5, mem: &process.MemoryInfoStat{RSS: 10}, name: "reused",
+			io: &fakeIOCounter{read: 1 << 30, write: 1 << 30, backwards: true}},
+	}
+	src := fakeSource(func(s *source) {
+		s.processes = func() ([]procSource, error) { return procs, nil }
+	})
+	// Interval 0 -> sampleWindow() is 0 -> the elapsed-time guard floor
+	// (0.001s) is what divides the byte deltas; the rates must still be
+	// finite and correctly ordered, never +Inf.
+	out := topProcesses(src, Options{SortBy: "cpu", Top: 15})
+
+	byName := map[string]ProcInfo{}
+	for _, p := range out {
+		byName[p.Name] = p
+	}
+	if r := byName["busy"].DiskReadBytesPerSec; r <= 0 || math.IsInf(r, 0) || math.IsNaN(r) {
+		t.Errorf("busy read rate must be finite and positive, got %v", r)
+	}
+	if byName["busy"].DiskWriteBytesPerSec <= 0 {
+		t.Errorf("busy write rate should be positive, got %v", byName["busy"].DiskWriteBytesPerSec)
+	}
+	if byName["busy"].DiskReadBytesPerSec <= byName["busy"].DiskWriteBytesPerSec {
+		t.Errorf("busy read rate (%v) should exceed its write rate (%v) given a 2:1 step",
+			byName["busy"].DiskReadBytesPerSec, byName["busy"].DiskWriteBytesPerSec)
+	}
+	if byName["idle"].DiskReadBytesPerSec != 0 || byName["idle"].DiskWriteBytesPerSec != 0 {
+		t.Errorf("idle process should have a zero disk I/O rate, got %+v", byName["idle"])
+	}
+	if byName["noio"].DiskReadBytesPerSec != 0 || byName["noio"].DiskWriteBytesPerSec != 0 {
+		t.Errorf("a process whose IOCounters errors (macOS) must report zero, not a guess: %+v", byName["noio"])
+	}
+	if byName["reused"].DiskReadBytesPerSec != 0 || byName["reused"].DiskWriteBytesPerSec != 0 {
+		t.Errorf("a counter that went backwards (PID reuse) must clamp to zero, not underflow: %+v", byName["reused"])
+	}
+
+	if !HasDiskIORates(out) {
+		t.Error("HasDiskIORates should be true when at least one process has a live rate")
+	}
+	if HasDiskIORates([]ProcInfo{byName["idle"], byName["noio"]}) {
+		t.Error("HasDiskIORates should be false when every process rate is zero (the macOS case)")
 	}
 }
 

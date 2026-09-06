@@ -203,11 +203,17 @@ that resource:
 - **Processes** — the full `vitals top` table as a page.
 - **Disk** — the biggest directories and biggest single files under your
   home folder, from a time-bounded scan (results are marked partial if
-  the scan didn't finish).
+  the scan didn't finish); on Linux and Windows, also the top processes
+  by live disk I/O rate. That per-process rate isn't available on macOS,
+  so the section is simply absent there rather than showing zeros.
 - **Network** — the active connections: which process is talking to
-  which remote host, and in what state.
-- **Power** — a CPU-ranked "likely energy impact" list, labelled plainly
-  as a CPU-based estimate rather than a real power reading.
+  which remote host, and in what state. (Per-process bandwidth — who's
+  moving the most bytes — isn't exposed by the OS without extra
+  privileges, so it isn't shown.)
+- **Power** — on macOS, a real per-process "energy impact" table using
+  the same power score Activity Monitor shows (no `sudo` needed). On
+  Linux and Windows, where no equivalent no-privilege number exists, a
+  CPU-ranked list labelled plainly as a CPU-based estimate.
 - **GPU** — processes holding VRAM where that reading is available
   (NVIDIA), or the memory pressure itself on an Apple unified-memory GPU.
 
@@ -255,15 +261,21 @@ a bare gauge:
   `smartctl` (smartmontools) is installed, each physical disk's
   S.M.A.R.T. pass/fail, temperature, and — on NVMe — the percentage of
   rated write life used are shown too; a FAILED verdict or wear at/over
-  90% raises a finding. macOS and Linux only for now.
+  90% raises a finding. macOS and Linux only for now. On Linux and
+  Windows, a "top processes by disk I/O" table ranks processes by their
+  live read+write rate over the sample window; macOS has no per-process
+  I/O counter, so that table is omitted there.
 - **net** — per-interface rx/tx, the top remote peers by established TCP
   connection count, and a DNS-resolution latency check, which tells apart
   "DNS is slow" from "the link is slow" without needing raw-socket
-  privileges.
+  privileges. (Per-process bandwidth isn't shown — the OS doesn't expose
+  per-process byte counts without extra privileges.)
 - **power** — battery charge, the OS runtime estimate, health versus design
   capacity, charge direction (draining while plugged in is its own
   finding), and macOS Low Power Mode state, which changes performance
-  expectations and is otherwise invisible.
+  expectations and is otherwise invisible. On macOS, an "energy impact by
+  process" table using the same no-`sudo` power score Activity Monitor
+  shows.
 
 All five take `--json`, `--output FILE`, `--ci`, and `--quiet`/`-q`, same as
 `doctor`.

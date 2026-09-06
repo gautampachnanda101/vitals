@@ -93,6 +93,31 @@ Each finding carries a concrete next step in its `Fixes`
 (`docker logs <name>`, `docker inspect <name>`, `kubectl describe pod
 <name>`) — never an action vitals takes.
 
+### Why the host process scan isn't enough (the motivating case)
+
+On macOS (and Windows) containers run inside the runtime's Linux VM.
+A host process scan — what `vitals` / `monitor` / the Memory page use
+today — sees only the VM helper process's resident set, which the
+Virtualization.framework memory balloon keeps far below the VM's
+configured RAM. Observed 2026-09-06: with a 2 GB `llama-server` and a
+610 MB editor on top, the Docker VM process showed ~200 MB RSS and
+didn't make the Memory page's top 5 — *correct* for how RSS is
+measured, but it hides real container memory. `GET
+/containers/{id}/stats` is the only accurate source, and it reports
+both numbers this item should surface:
+
+- **consumed** — `memory_stats.usage` (minus `stats.cache` on cgroup
+  v1), the container's actual working set.
+- **reserved** — `memory_stats.limit` (the container's `--memory` cap,
+  or the VM total when uncapped) and, for k8s, `resources.requests` vs
+  `resources.limits` from the pod spec.
+
+The container page shows `used / limit` per container (the same
+`consumed vs reserved` framing Activity Monitor lacks for VMs), and the
+"runtime VM holding a large fraction of host RAM" warning above
+correlates the VM total against the host memory signal so the Memory
+verdict stops under-counting a container-heavy machine.
+
 ## 5. Trust boundary (the new part)
 
 vitals has never opened a socket to another privileged daemon. The

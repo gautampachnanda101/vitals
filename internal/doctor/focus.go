@@ -55,6 +55,12 @@ func RunFocus(resource string, opts RunOptions) int {
 
 	ui.Header(strings.ToUpper(resource))
 	focusDetail(resource, snap, opts.Verbose)
+	if resource == "disk" {
+		printDiskIOProcs(opts.Verbose)
+	}
+	if resource == "power" || resource == "battery" {
+		printPowerProcs(opts.Verbose)
+	}
 	if isNet {
 		if dnsErr != nil {
 			fmt.Printf("  %s\n", ui.Key("DNS lookup: failed ("+dnsErr.Error()+")"))

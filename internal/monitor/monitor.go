@@ -142,6 +142,26 @@ type ProcInfo struct {
 	Threads  int32   `json:"threads"`
 	Name     string  `json:"name"`
 	Command  string  `json:"command"`
+	// Per-process disk I/O rate over the sample window, bytes/sec. Filled
+	// on Linux and Windows; on macOS gopsutil has no per-process I/O
+	// counter implementation and both stay 0 — renderers omit the
+	// "top by disk I/O" section rather than show a table of zeros.
+	// Presentation-only: not part of the frozen `doctor --json` schema.
+	DiskReadBytesPerSec  float64 `json:"disk_read_bytes_per_sec,omitempty"`
+	DiskWriteBytesPerSec float64 `json:"disk_write_bytes_per_sec,omitempty"`
+}
+
+// HasDiskIORates reports whether any process in the slice carries a
+// non-zero per-process disk I/O rate — the signal a renderer uses to
+// decide whether the "top processes by disk I/O" section is real on this
+// platform or should be omitted.
+func HasDiskIORates(ps []ProcInfo) bool {
+	for _, p := range ps {
+		if p.DiskReadBytesPerSec > 0 || p.DiskWriteBytesPerSec > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // procSource is the subset of *process.Process's method set topProcesses
@@ -157,6 +177,7 @@ type procSource interface {
 	Username() (string, error)
 	NumThreads() (int32, error)
 	Cmdline() (string, error)
+	IOCounters() (*process.IOCountersStat, error)
 }
 
 // procHandle adapts a real *process.Process (whose PID is a struct field, not
@@ -171,6 +192,7 @@ func (h procHandle) Name() (string, error)                        { return h.p.N
 func (h procHandle) Username() (string, error)                    { return h.p.Username() }
 func (h procHandle) NumThreads() (int32, error)                   { return h.p.NumThreads() }
 func (h procHandle) Cmdline() (string, error)                     { return h.p.Cmdline() }
+func (h procHandle) IOCounters() (*process.IOCountersStat, error) { return h.p.IOCounters() }
 
 func realProcesses() ([]procSource, error) {
 	ps, err := process.Processes()
@@ -377,10 +399,28 @@ func topProcesses(src source, opts Options) []ProcInfo {
 		return nil
 	}
 	// Prime CPU counters, wait, then read — gopsutil needs two samples.
+	// The same window doubles as the disk-I/O rate window: snapshot each
+	// process's cumulative read/write byte counters now and again after
+	// the sleep, and the delta over the elapsed seconds is a live rate.
+	// On macOS IOCounters returns all-zero (no Darwin implementation), so
+	// ioBefore/ioAfter are both zero and the computed rate is zero.
+	win := opts.sampleWindow()
+	ioBefore := make(map[int32][2]uint64, len(ps))
 	for _, p := range ps {
 		_, _ = p.Percent(0)
+		if io, err := p.IOCounters(); err == nil && io != nil {
+			ioBefore[p.PID()] = [2]uint64{io.ReadBytes, io.WriteBytes}
+		}
 	}
-	time.Sleep(opts.sampleWindow())
+	start := time.Now()
+	time.Sleep(win)
+	// Guard the rate divisor: a zero or sub-millisecond window (a coarse
+	// clock, or Interval left at 0) would turn a byte delta into a
+	// meaningless spike or a divide-by-zero.
+	elapsed := time.Since(start).Seconds()
+	if elapsed < 0.001 {
+		elapsed = 0.001
+	}
 
 	out := make([]ProcInfo, 0, len(ps))
 	for _, p := range ps {
@@ -397,6 +437,17 @@ func topProcesses(src source, opts Options) []ProcInfo {
 		if cmd == "" {
 			cmd = name
 		}
+		var rdRate, wrRate float64
+		if io, err := p.IOCounters(); err == nil && io != nil {
+			if before, ok := ioBefore[p.PID()]; ok {
+				if io.ReadBytes >= before[0] {
+					rdRate = float64(io.ReadBytes-before[0]) / elapsed
+				}
+				if io.WriteBytes >= before[1] {
+					wrRate = float64(io.WriteBytes-before[1]) / elapsed
+				}
+			}
+		}
 		// A process names itself; a hostile one can put terminal-driving
 		// escape sequences in its comm or argv. Sanitise at the boundary
 		// so every downstream renderer (top, doctor findings, the
@@ -407,6 +458,7 @@ func topProcesses(src source, opts Options) []ProcInfo {
 		out = append(out, ProcInfo{
 			PID: p.PID(), User: ui.Sanitize(user), CPUPct: cpuPct, MemPct: memPct,
 			RSSBytes: mi.RSS, Threads: nthreads, Name: name, Command: cmd,
+			DiskReadBytesPerSec: rdRate, DiskWriteBytesPerSec: wrRate,
 		})
 	}
 
