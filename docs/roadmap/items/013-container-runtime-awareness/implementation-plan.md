@@ -35,6 +35,24 @@ Designed and reviewed inline (`design.md` §10), then built. What shipped:
 
 Still deferred: the 011 console-view `containers` panel; `RestartCount` trend history; k8s nodes/events; a container-count trend sparkline on the Overview (needs its own history series).
 
+### Future — remote / generic Kubernetes clusters (opt-in)
+
+Today `isLocalAPIServer` gates the k8s path to a context whose API
+server is loopback / RFC1918 / CGNAT / `.local` / `.internal` — kind,
+k3s, k3d, minikube, Docker Desktop, Rancher Desktop, microk8s all pass;
+a public IP or a real domain (a cloud cluster, or a self-hosted one on a
+public address) is rejected on purpose (no egress, no cloud-credential
+handling — the 013 trust boundary). The detection isn't tied to kind in
+any way; kind is just how CI gets a real cluster.
+
+A follow-up could make the non-local case an **explicit opt-in**:
+`vitals containers --kube-context <name>` (or `--allow-remote-kube`),
+still read-only, still `kubectl get pods` only, but acknowledging the
+user is pointing at a cluster their own kubeconfig already trusts.
+Needs its own review of the trust boundary (an unreachable/slow remote
+API server must still be bounded; no context switch is written back)
+before it ships.
+
 ## Deferred (see `design.md` §10–§11)
 
 - The 011 console-view `containers` panel — needs `QuickAssess` to
