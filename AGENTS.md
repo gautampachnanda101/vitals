@@ -246,6 +246,14 @@ to exist *before* implementation starts on anything non-trivial; the
   real, hand-written approach hitting a real ceiling, not a shortcut —
   don't treat this as license to reach for a library the next time
   hand-rolling would work; it's still the default everywhere else.
+
+  A second, narrower exception (2026-09-06, roadmap 013): the container
+  page's Windows support depends on `github.com/Microsoft/go-winio` to
+  dial the Docker Engine's named pipe — Go's stdlib cannot dial
+  `\\.\pipe\…` and there is no hand-rollable substitute. It sits behind
+  a `//go:build windows` tag, so it never enters a macOS or Linux
+  build's dependency graph, and the Docker/kubectl parsing itself uses
+  no library. Same bar: a real stdlib gap, not convenience.
 - **The `--json` schema is a frozen, additive-only contract.** Adding a
   field: bump the *minor* version in `internal/doctor/schema.go`
   (`SchemaVersion`), add it to `schema.json`, then

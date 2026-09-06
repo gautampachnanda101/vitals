@@ -303,21 +303,26 @@ pipe support, or any non-GET call).
   through `html/template`.
 - `vitals help` gains a `containers` entry.
 
-**Deferred (documented, not v1):** Windows named-pipe Docker; the
-console-view (011) `containers` panel — it needs `QuickAssess` to carry
-containers, which trades against 011's no-probe speed model and is
-011's call; `RestartCount` trend history; `internal/tools` registry
-rows; k8s nodes/events/deployments.
+**Follow-on (2026-09-06), see `implementation-plan.md`:** Windows
+named-pipe Docker shipped (`go-winio`, build-tagged); a
+`--runtime docker|kubernetes` override for the kind/k3s-on-Docker case;
+a path-scoped live integration workflow (real Docker daemon + real
+`kind` cluster, `vitals` run as the compiled binary).
+
+**Still deferred:** the console-view (011) `containers` panel — it needs
+`QuickAssess` to carry containers, which trades against 011's no-probe
+speed model and is 011's call; `RestartCount` trend history;
+`internal/tools` registry rows; k8s nodes/events/deployments.
 
 **Verification:** repo gates green. Fixture tests cover the Engine-API
 list/inspect/`stats` CPU maths, pod status parsing (CrashLoop, OOM,
 not-ready), the loopback-only API-server gate, wedged-daemon and
-malformed-response paths, and every `analyzeContainers` finding. End to
-end against a real local Docker (compose project with running
-containers) on macOS during development; a `kind`/`k3s` end-to-end pass
-on Linux is still owed and tracked in `implementation-plan.md`.
+malformed-response paths, and every `analyzeContainers` finding.
+`.github/workflows/containers-integration.yml` exercises it end to end
+against a real Docker daemon and a real `kind` cluster (restart-loop
+container, CrashLoopBackOff pod, cloud-context rejection), path-scoped
+to the container code.
 
 ## Plan
 
-[`implementation-plan.md`](implementation-plan.md) records what shipped
-and the one end-to-end check still owed.
+[`implementation-plan.md`](implementation-plan.md) records what shipped.

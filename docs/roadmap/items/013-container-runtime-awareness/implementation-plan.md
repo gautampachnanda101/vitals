@@ -16,17 +16,17 @@ Designed and reviewed inline (`design.md` §10), then built. What shipped:
 | Dashboard **Containers** page, nav-gated on `HasContainers`, own 12s stats cache | `internal/dashboard/modules_containers.go`, `module.go`, `render.go` |
 | Coverage floor for `internal/containers` | `check_coverage.py` |
 
-## Still owed
+## Follow-on — done 2026-09-06
 
-- **`kind` / `k3s` end-to-end pass on Linux.** Development e2e was
-  against a real local Docker (a running compose project) on macOS; the
-  Kubernetes path is fixture-tested but not yet exercised against a
-  real local cluster.
+| Piece | Where |
+|---|---|
+| **Windows named-pipe Docker.** `defaultDockerEndpoint`/`dialDocker` split into `//go:build` unix/windows files; Windows dials `\\.\pipe\docker_engine` via `github.com/Microsoft/go-winio` (build-tagged, never in a mac/Linux build; see `AGENTS.md` "One dependency"). | `internal/containers/endpoint_{unix,windows}.go` |
+| **`--runtime docker\|kubernetes` override** on `vitals containers` (`ProbeRuntime` / `containerProber` seam). Default stays auto (docker-first); the override is for a kind/k3s cluster whose nodes are themselves Docker containers, where auto would stop at Docker. | `internal/containers/containers.go`, `internal/doctor/containers_cmd.go`, `main.go`, `internal/help/help.go` |
+| **Live integration CI** — path-scoped (`internal/containers/**` etc.). A real Docker daemon with a restart-loop container + a best-effort OOM container; a real `kind` cluster with a `CrashLoopBackOff` pod; `vitals` run as the compiled binary asserting detection + the doctor finding + the cloud-context rejection. Runs only when the container code changes. | `.github/workflows/containers-integration.yml` |
+| `realExec` success-path assertion (the `sudo purge` / delegate exec shape; the literal `sudo purge` still can't run in CI — needs sudo + macOS) | `internal/heal/heal_test.go` |
 
-## Deferred (not v1 — see `design.md` §10–§11)
+## Deferred (see `design.md` §10–§11)
 
-- Windows named-pipe Docker (`go-winio` dep) — Linux/macOS first, as
-  `smartctl` did.
 - The 011 console-view `containers` panel — needs `QuickAssess` to
   carry containers, a trade against 011's no-probe speed model; 011's
   call.

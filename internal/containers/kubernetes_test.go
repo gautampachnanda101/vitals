@@ -144,3 +144,30 @@ func TestProbeDockerWinsOverKubernetes(t *testing.T) {
 		t.Errorf("docker should be probed first, got %+v", r)
 	}
 }
+
+func TestProbeRuntimePreferenceOverridesAutoOrder(t *testing.T) {
+	// Both runtimes reachable at once (the kind/k3s-on-Docker case).
+	f := newFakeDocker()
+	defer f.srv.Close()
+	pods := `{"items":[{"metadata":{"name":"p","namespace":"default"},"status":{"phase":"Running"}}]}`
+	tr := kubeStub("kind-kind", "https://127.0.0.1:6443", pods, nil)
+	tr.dockerEndpoint = f.transport().dockerEndpoint
+	tr.dialDocker = f.transport().dialDocker
+
+	if r := probeRuntime(context.Background(), tr, ""); r.Runtime != "docker" {
+		t.Errorf("auto (\"\") should still prefer docker, got %s", r.Runtime)
+	}
+	if r := probeRuntime(context.Background(), tr, "kubernetes"); r.Runtime != "kubernetes" {
+		t.Errorf("prefer=kubernetes must skip docker, got %s", r.Runtime)
+	}
+	if r := probeRuntime(context.Background(), tr, "docker"); r.Runtime != "docker" {
+		t.Errorf("prefer=docker must return docker, got %s", r.Runtime)
+	}
+
+	// prefer=docker with no docker present -> empty, never falls through to k8s
+	trNoDocker := kubeStub("kind-kind", "https://127.0.0.1:6443", pods, nil)
+	trNoDocker.dockerEndpoint = func() string { return "" }
+	if r := probeRuntime(context.Background(), trNoDocker, "docker"); r.Runtime != "" {
+		t.Errorf("prefer=docker with no docker should be empty, not k8s fallback: %+v", r)
+	}
+}

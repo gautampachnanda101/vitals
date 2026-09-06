@@ -14,8 +14,9 @@ what you actually want.
 
 One static binary, no bundled installer, no phone-home. gopsutil is the
 one dependency for system data; a small terminal-reliability group
-(cross-platform color and real terminal-width detection) is the one
-deliberate exception to "hand-write it instead." Runs the same way on
+(cross-platform color and real terminal-width detection), plus a
+Windows-only named-pipe dialer for the container page, are the
+deliberate exceptions to "hand-write it instead." Runs the same way on
 macOS, Linux and Windows.
 
 **On this page** — `vitals guide --web` builds its own navigable table
@@ -514,9 +515,9 @@ is a `docker` or `kubectl` command for you to run.
 
 - **Docker / Docker-API-compatible runtimes** (Docker Desktop, Colima,
   Podman's compat socket, Rancher Desktop) are reached over their local
-  unix socket with the standard library — no vendored Docker client, and
-  only `GET` requests against a fixed endpoint list. macOS and Linux for
-  now; Windows named-pipe support is a follow-on.
+  socket — a unix socket on macOS and Linux, the `docker_engine` named
+  pipe on Windows — with only `GET` requests against a fixed endpoint
+  list and no vendored Docker client.
 - **A local Kubernetes** (kind, k3s, minikube, Docker Desktop's built-in
   k8s) is read via `kubectl` — but only when your current context points
   at a loopback / private-range API server. A context aimed at a cloud
@@ -533,8 +534,14 @@ shows the same, and `doctor --json` carries a cheap container list under
 `snapshot.containers` (no per-container stats on that path — it stays
 fast).
 
+Detection is auto and tries Docker first. On a machine where a
+kind/k3s/minikube cluster runs *on* Docker, both are local at once and
+the auto path stops at Docker; pass `--runtime kubernetes` (or
+`--runtime docker`) to force one.
+
 ```bash
 vitals containers
+vitals containers --runtime kubernetes           # force the pod view on a kind/k3s host
 vitals containers --json | jq '.snapshot.containers.containers[] | select(.oom_killed)'
 ```
 

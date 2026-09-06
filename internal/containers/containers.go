@@ -20,7 +20,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -99,11 +98,13 @@ const maxContainers = 50
 // exercised with no daemon.
 type transport struct {
 	goos string
-	// dockerEndpoint returns the local Engine API socket path to try, or
-	// "" when none is configured/present.
+	// dockerEndpoint returns the local Engine API endpoint to try — a unix
+	// socket path on Linux/macOS, a named pipe on Windows — or "" when
+	// none is configured/present. Platform-specific (endpoint_{unix,windows}.go).
 	dockerEndpoint func() string
-	// dialDocker dials the given unix socket path.
-	dialDocker func(ctx context.Context, socket string) (net.Conn, error)
+	// dialDocker dials that endpoint. Platform-specific: a unix-socket
+	// dial, or winio.DialPipeContext on Windows.
+	dialDocker func(ctx context.Context, endpoint string) (net.Conn, error)
 	lookPath   func(string) (string, error)
 	run        func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
@@ -111,26 +112,36 @@ type transport struct {
 var defaultTransport = transport{
 	goos:           runtime.GOOS,
 	dockerEndpoint: defaultDockerEndpoint,
-	dialDocker: func(ctx context.Context, socket string) (net.Conn, error) {
-		var d net.Dialer
-		return d.DialContext(ctx, "unix", socket)
-	},
-	lookPath: execLookPath,
-	run:      execRun,
+	dialDocker:     dialDockerDefault,
+	lookPath:       execLookPath,
+	run:            execRun,
 }
 
 // Probe returns the container-runtime picture: Docker if its local
-// socket answers, else a local Kubernetes via kubectl, else an empty
-// Report (Runtime ""). It never returns an error — an unreachable or
-// wedged runtime is data (Report.Note), not a failure that should
+// socket/pipe answers, else a local Kubernetes via kubectl, else an
+// empty Report (Runtime ""). It never returns an error — an unreachable
+// or wedged runtime is data (Report.Note), not a failure that should
 // bubble up through a snapshot collector.
-func Probe(ctx context.Context) Report {
-	return probe(ctx, defaultTransport)
+func Probe(ctx context.Context) Report { return ProbeRuntime(ctx, "") }
+
+// ProbeRuntime is Probe with an explicit runtime preference: "" is the
+// default docker-first auto-detect; "docker" or "kubernetes" probes only
+// that one. The override matters when both are local at once — a
+// kind/k3s/minikube cluster whose nodes are themselves Docker
+// containers, where the auto path would stop at Docker and never show
+// the pods.
+func ProbeRuntime(ctx context.Context, want string) Report {
+	return probeRuntime(ctx, defaultTransport, want)
 }
 
-func probe(ctx context.Context, t transport) Report {
-	if r, ok := probeDocker(ctx, t); ok {
-		return r
+func probeRuntime(ctx context.Context, t transport, want string) Report {
+	if want != "kubernetes" {
+		if r, ok := probeDocker(ctx, t); ok {
+			return r
+		}
+		if want == "docker" {
+			return Report{}
+		}
 	}
 	if r, ok := probeKubernetes(ctx, t); ok {
 		return r
@@ -138,35 +149,8 @@ func probe(ctx context.Context, t transport) Report {
 	return Report{}
 }
 
-// defaultDockerEndpoint resolves the Engine API socket the way the
-// docker CLI does: DOCKER_HOST when it names a unix socket, then the
-// well-known daemon and rootless/Colima/Rancher fallbacks. Returns "" on
-// Windows (named-pipe support is a deferred follow-on) or when nothing
-// is present.
-func defaultDockerEndpoint() string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	if dh := os.Getenv("DOCKER_HOST"); strings.HasPrefix(dh, "unix://") {
-		p := strings.TrimPrefix(dh, "unix://")
-		if fileExists(p) {
-			return p
-		}
-	}
-	home, _ := os.UserHomeDir()
-	candidates := []string{
-		"/var/run/docker.sock",
-		filepath.Join(home, ".docker/run/docker.sock"),
-		filepath.Join(home, ".colima/default/docker.sock"),
-		filepath.Join(home, ".rd/docker.sock"),
-	}
-	for _, p := range candidates {
-		if p != "" && fileExists(p) {
-			return p
-		}
-	}
-	return ""
-}
+// probe keeps the old signature for the existing tests (auto-detect).
+func probe(ctx context.Context, t transport) Report { return probeRuntime(ctx, t, "") }
 
 func fileExists(p string) bool {
 	_, err := os.Stat(p)

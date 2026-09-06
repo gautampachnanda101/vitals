@@ -292,6 +292,15 @@ func TestDefaultRunnerWiringIsPopulated(t *testing.T) {
 	if realExec([]string{"vitals-no-such-binary-zzz"}) == nil {
 		t.Error("realExec of a missing binary should error")
 	}
+	// and a real command that succeeds — proves realExec actually spawns
+	// a subprocess and returns nil on exit 0 (the same code path a real
+	// `sudo purge` / `vitals clean` delegate takes; `go` is always on
+	// PATH under a Go test run). The `sudo purge` invocation itself can't
+	// run in CI — it needs sudo and macOS — but it is the identical
+	// exec.Command call shape.
+	if err := realExec([]string{"go", "version"}); err != nil {
+		t.Errorf("realExec of a valid command should succeed, got %v", err)
+	}
 }
 
 func TestReadYes(t *testing.T) {
