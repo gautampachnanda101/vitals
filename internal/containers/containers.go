@@ -134,7 +134,9 @@ func Probe(ctx context.Context) Report { return ProbeRuntime(ctx, "") }
 func ProbeAll(ctx context.Context) []Report { return probeAll(ctx, defaultTransport) }
 
 func probeAll(ctx context.Context, t transport) []Report {
-	var out []Report
+	// A non-nil slice so `doctor --json`'s snapshot.containers is always
+	// a JSON array ([]), never null — consumers can iterate it blindly.
+	out := []Report{}
 	if r, ok := probeDocker(ctx, t); ok {
 		out = append(out, r)
 	}

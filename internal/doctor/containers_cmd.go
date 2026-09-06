@@ -86,7 +86,7 @@ func RunContainers(opts RunOptions, prefer string) int {
 }
 
 func filterRuntime(reps []containers.Report, want string) []containers.Report {
-	var out []containers.Report
+	out := []containers.Report{} // non-nil so --json stays an array
 	for _, r := range reps {
 		if r.Runtime == want {
 			out = append(out, r)

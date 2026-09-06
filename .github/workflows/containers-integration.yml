@@ -79,7 +79,7 @@ jobs:
           python3 - <<'PY'
           import json, sys
           # snapshot.containers is a list, one entry per reachable runtime.
-          runtimes = json.load(open("c.json"))["snapshot"]["containers"]
+          runtimes = json.load(open("c.json"))["snapshot"]["containers"] or []
           docker = next((r for r in runtimes if r.get("runtime") == "docker"), None)
           assert docker is not None, runtimes
           cs = docker.get("containers", [])
@@ -157,7 +157,7 @@ jobs:
           import json, sys
           # snapshot.containers is a list, one per runtime; --runtime kubernetes
           # narrows it, so expect exactly the kubernetes entry.
-          runtimes = json.load(open("c.json"))["snapshot"]["containers"]
+          runtimes = json.load(open("c.json"))["snapshot"]["containers"] or []
           k8s = next((r for r in runtimes if r.get("runtime") == "kubernetes"), None)
           if k8s is None:
               sys.exit("no kubernetes runtime in the report: %r" % runtimes)
@@ -217,4 +217,10 @@ jobs:
           out=$(./vitals containers --runtime kubernetes --json); rc=$?
           [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
           set -e
-          echo "$out" | python3 -c "import sys,json; rts=json.load(sys.stdin)['snapshot']['containers']; assert not any(r.get('runtime')=='kubernetes' for r in rts), rts; print('cloud kube context correctly ignored')"
+          echo "$out" > cloud.json
+          python3 - <<'PY'
+          import json
+          rts = json.load(open("cloud.json"))["snapshot"]["containers"] or []
+          assert not any(r.get("runtime") == "kubernetes" for r in rts), rts
+          print("cloud kube context correctly ignored")
+          PY
