@@ -51,7 +51,18 @@ depends on.
 
 ## Releases
 
+The [GitHub Releases](https://github.com/gautampachnanda101/vitals/releases)
+page is the authoritative, per-tag history with binaries. These pages
+map a release to the roadmap items it shipped.
+
+- [v0.9.0](releases/v0.9.0.md) — `vitals heal`, `vitals view`, deeper
+  per-resource numbers, local container & Kubernetes awareness,
+  self-refreshing dashboard.
 - [v0.5.0](releases/v0.5.0.md) — dashboard foundation + MVP, product site.
+
+v0.6.0–v0.8.0 shipped incrementally (companion-tool integration,
+dashboard redesign, overview sparklines) without their own roadmap
+pages — see the GitHub Releases notes.
 
 ## Why 003 has no dependency on 001/002
 

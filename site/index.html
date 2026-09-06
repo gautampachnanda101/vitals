@@ -116,6 +116,11 @@ td.tool{font-weight:700;white-space:nowrap;font-family:"JetBrains Mono",monospac
 .table-wrap{overflow-x:auto}
 .note{font-size:.85rem;color:var(--muted);margin-top:1rem}
 
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.1rem;margin-top:1.6rem}
+.shots figure{margin:0}
+.shots img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px -24px rgba(0,0,0,.4)}
+.shots figcaption{margin-top:.6rem;font-size:.82rem;color:var(--muted)}
+
 .install pre{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:.9rem 1.1rem;overflow-x:auto;font-size:.85rem;margin:.6rem 0 0}
 .install h3{font:700 1rem/1.3 "JetBrains Mono",monospace;margin:1.4rem 0 0}
 .install h3:first-of-type{margin-top:0}
@@ -131,7 +136,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
   <div class="wrap">
     <div class="inner">
       <div class="copy">
-        <span class="eyebrow">vitals · v0.8.0 · macOS · Linux · Windows</span>
+        <span class="eyebrow">vitals · v0.9.0 · macOS · Linux · Windows</span>
         <h1>Names the one thing slowing your machine down — and the exact command to fix it.</h1>
         <p class="lede">A single static binary that correlates CPU, memory, disk, network, GPU and local/cloud LLM signals into one ranked verdict, instead of a wall of gauges you have to interpret yourself.</p>
         <div class="cta-row">
@@ -177,9 +182,24 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         <span class="cmd">vitals llm · vitals llm fit &lt;model&gt;</span>
       </div>
       <div class="card">
+        <h3>The whole machine on one screen</h3>
+        <p>A verdict-first, single-screen terminal view: the ranked finding up top, then tiled CPU / memory / disk / network / power / GPU panels and the heaviest processes. Bare <code>vitals</code> on a terminal, or <code>vitals view</code>.</p>
+        <span class="cmd">vitals view</span>
+      </div>
+      <div class="card">
+        <h3>Apply the fix, with confirmation</h3>
+        <p>Where a finding has a safe, reversible remedy, <code>vitals heal</code> runs it for you — always previewed, always confirmed, from a compile-time allow-list. Everything else stays a printed instruction.</p>
+        <span class="cmd">vitals heal --dry-run</span>
+      </div>
+      <div class="card">
         <h3>A browsable dashboard</h3>
-        <p>The same verdict as loopback-only web pages: a grouped sidebar, a page per resource with the top consumers on each — biggest files, active connections, processes holding VRAM — plus LLM offload and machine details. Opens your browser automatically; nothing leaves your machine.</p>
+        <p>The same verdict as loopback-only web pages that refresh themselves in place: a grouped sidebar, a page per resource with the top consumers on each — biggest files, active connections, processes holding VRAM, per-process disk I/O — plus a Containers page, LLM offload and machine details. Opens your browser automatically; nothing leaves your machine.</p>
         <span class="cmd">vitals dashboard</span>
+      </div>
+      <div class="card">
+        <h3>Local containers &amp; Kubernetes</h3>
+        <p>When a Docker-compatible runtime or a loopback Kubernetes context is present, vitals reads it read-only — OOM-kills, CrashLoopBackOff, restart loops, and memory the host process list can't see — with a <code>docker</code>/<code>kubectl</code> command for each.</p>
+        <span class="cmd">vitals containers</span>
       </div>
       <div class="card">
         <h3>Safe disk cleanup</h3>
@@ -197,6 +217,25 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
         <span class="cmd">go build -o vitals .</span>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="dashboard">
+  <div class="wrap">
+    <span class="eyebrow">See it</span>
+    <h2>The same verdict, as a local web app</h2>
+    <p><code>vitals dashboard</code> serves the doctor's correlation as browsable pages — one per resource the machine actually has — on <code>127.0.0.1</code> only. Read-only pages refresh themselves in place; nothing leaves your machine.</p>
+    <div class="shots">
+      <figure>
+        <img src="img/dashboard-overview.png" alt="vitals dashboard Overview page: a swap-pressure verdict banner, resource cards for CPU, memory, disk, network, power and GPU with trend sparklines, quick actions, and the ranked findings below." loading="lazy" width="2560" height="1800">
+        <figcaption>Overview — the verdict, every resource at a glance with 24h trend, and the ranked findings.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/dashboard-overview-dark.png" alt="The same vitals dashboard Overview page rendered in dark mode." loading="lazy" width="2560" height="1800">
+        <figcaption>Follows your system light/dark preference. A grouped sidebar reaches every resource page, plus Processes, Containers, LLM Insight and System.</figcaption>
+      </figure>
+    </div>
+    <p class="note">Real screenshots of <code>vitals dashboard</code> at v0.9.0 — regenerated when the layout changes (<code>scripts/site-screenshots.mjs</code>).</p>
   </div>
 </section>
 
@@ -229,12 +268,12 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
           <tr>
             <td class="tool">glances</td>
             <td>A single-screen overview of most system metrics at once.</td>
-            <td class="yes">A ranked verdict instead of a dashboard of numbers, plus JSON/Prometheus output and exit codes for automation.</td>
+            <td class="yes"><code>vitals view</code> gives the same one-screen layout but leads with a ranked verdict, not a grid of numbers — plus JSON/Prometheus output and exit codes for automation.</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="note">This table describes each tool's own core purpose as of vitals v0.8.0 — check each project's own docs for its current full feature set.</p>
+    <p class="note">This table describes each tool's own core purpose as of vitals v0.9.0 — check each project's own docs for its current full feature set.</p>
   </div>
 </section>
 

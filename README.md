@@ -48,10 +48,13 @@ every platform into `./dist/`.
 
 | Command | What it does |
 |---|---|
-| `doctor` | Correlates CPU / memory / swap / disk / thermal / GPU / LLM into a ranked verdict — what's wrong and the fix. Exit code **0** healthy, **1** warning, **2** critical. |
-| `dashboard` | Serves the same correlation as browsable pages — one per resource, only the ones this machine actually has. Loopback-only (`127.0.0.1`), opens your browser automatically. |
-| `cpu` `mem` `disk` `net` `power` | Deep dive on one resource: the current numbers plus just that resource's findings. |
+| `doctor` | Correlates CPU / memory / swap / disk / thermal / GPU / LLM / containers into a ranked verdict — what's wrong and the fix. Exit code **0** healthy, **1** warning, **2** critical. |
+| `view` | The whole machine on one terminal screen: the verdict, tiled resource panels, and the heaviest processes. Also bare `vitals` on a TTY. |
+| `heal` | Apply a finding's own remedy — previewed, confirmed, from a compile-time allow-list. Non-automatable findings stay printed instructions. |
+| `dashboard` | Serves the same correlation as browsable pages that refresh themselves in place — one per resource, only the ones this machine actually has. Loopback-only (`127.0.0.1`), opens your browser automatically. |
+| `cpu` `mem` `disk` `net` `power` | Deep dive on one resource: the current numbers plus just that resource's findings. `disk` also ranks processes by live I/O rate (Linux/Windows); `power` shows a real per-process energy reading on macOS. |
 | `gpu` | Per-GPU VRAM / util / temp / power / clocks and the processes holding VRAM, via `nvidia-smi` / `rocm-smi` / `ioreg`. |
+| `containers` | When a Docker-compatible runtime or a loopback Kubernetes context is present: containers/pods with per-container CPU/mem, and findings for OOM-kills, `CrashLoopBackOff`, restart loops. Read-only. |
 | `top` | Activity-Monitor-style snapshot: system CPU / RAM / load, **per-second** disk & network I/O, top processes. `--watch` for a live redraw. |
 | `memhogs` | Ranks application families (resolved from the OS's own app identity — `.app` bundle, cgroup scope, install dir) and individual processes by memory, with an OS-correct stop command each. |
 | `memcheck` | RAM / swap / pressure breakdown with a ranked verdict. |

@@ -40,3 +40,5 @@ venv/
 
 # Claude Code session-local runtime state (keep .claude/skills/ tracked)
 .claude/*.lock
+.claude/settings.json
+.claude/settings.local.json
