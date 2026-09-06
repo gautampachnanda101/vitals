@@ -298,14 +298,17 @@ var commands = []Command{
 	{
 		Name:     "containers",
 		Synopsis: "local container / Kubernetes deep dive: state, CPU/mem, failure findings",
-		Long: "Detects a locally-running Docker-compatible runtime (via its unix socket)\n" +
-			"or a local Kubernetes context (via kubectl — loopback/private API server\n" +
-			"only, never a cloud cluster). Lists containers/pods with per-container\n" +
-			"CPU and memory, and raises findings for OOM-kills, CrashLoopBackOff,\n" +
-			"restart loops and failing healthchecks. Strictly read-only. Nothing is\n" +
-			"shown when no runtime is present. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals containers", "vitals containers --json"},
+		Long: "Detects a locally-running Docker-compatible runtime (via its local\n" +
+			"socket or named pipe) or a local Kubernetes context (via kubectl —\n" +
+			"loopback/private API server only, never a cloud cluster). Lists\n" +
+			"containers/pods with per-container CPU and memory, and raises findings\n" +
+			"for OOM-kills, CrashLoopBackOff, restart loops and failing healthchecks.\n" +
+			"Strictly read-only. Nothing is shown when no runtime is present.\n" +
+			"When both Docker and a local cluster are up (kind/k3s), auto-detect\n" +
+			"stops at Docker — pass --runtime kubernetes for the pod view. Exit\n" +
+			"code follows the findings.",
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"runtime", "docker|kubernetes", "force a runtime instead of auto-detecting (use kubernetes for kind/k3s)"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{"vitals containers", "vitals containers --json", "vitals containers --runtime kubernetes"},
 	},
 	{
 		Name:     "gpu",

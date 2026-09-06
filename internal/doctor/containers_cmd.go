@@ -21,13 +21,25 @@ var containerStatsSampler = func(r containers.Report) containers.Report {
 	return containers.Sample(ctx, r)
 }
 
+// containerProber re-probes with an explicit runtime preference for
+// `vitals containers --runtime <docker|kubernetes>`; a seam so a test
+// can supply a canned Report.
+var containerProber = func(prefer string) containers.Report {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	return containers.ProbeRuntime(ctx, prefer)
+}
+
 // RunContainers is `vitals containers` — the local container runtime /
 // Kubernetes picture plus only its findings. Unlike a snapshot's cheap
 // container list, this also samples per-container CPU/memory (a ~1s
 // server-side call per running container, run concurrently). Nothing but
 // the empty "no runtime" line when none is reachable.
-func RunContainers(opts RunOptions) int {
+func RunContainers(opts RunOptions, prefer string) int {
 	snap := Collect(Options{OllamaURL: opts.OllamaURL})
+	if prefer == "docker" || prefer == "kubernetes" {
+		snap.Containers = containerProber(prefer)
+	}
 	snap.Containers = containerStatsSampler(snap.Containers)
 	report := AnalyzeResource(snap, "containers")
 

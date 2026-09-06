@@ -3,6 +3,7 @@ module vitals
 go 1.27.0
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/mattn/go-colorable v0.1.15
 	github.com/mattn/go-isatty v0.0.24
 	github.com/shirou/gopsutil/v4 v4.26.8

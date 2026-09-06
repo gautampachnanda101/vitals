@@ -1,0 +1,185 @@
+name: Containers integration
+
+# The Docker Engine-API client and the kubectl path are unit-tested
+# against fixtures (an httptest server, canned command output) on every
+# CI run. This workflow is the real thing: a live Docker daemon and a
+# live single-node Kubernetes (kind), a genuinely-broken container in
+# each, and `vitals` run as the compiled binary asserting it detects and
+# reports the failure. It only runs when the container code changes, so
+# it doesn't add ~3 min to every push.
+#
+# Note: `vitals` deliberately exits 1 (warning) / 2 (critical) when it
+# has findings — which it will here, since these containers are broken on
+# purpose. Every `vitals` call therefore captures its exit code and only
+# tolerates a valid verdict code (0/1/2); a real crash (anything else)
+# still fails the step. The assertions that matter are the Python checks
+# on the --json output.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/containers/**'
+      - 'internal/doctor/analyze_containers*.go'
+      - 'internal/doctor/containers_cmd*.go'
+      - '.github/workflows/containers-integration.yml'
+  pull_request:
+    paths:
+      - 'internal/containers/**'
+      - 'internal/doctor/analyze_containers*.go'
+      - 'internal/doctor/containers_cmd*.go'
+      - '.github/workflows/containers-integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: real Docker daemon
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build vitals
+        run: go build -o vitals .
+
+      - name: Start a container stuck in a restart loop
+        run: |
+          docker run -d --name vitals-flap --restart=always busybox sh -c 'exit 1'
+          echo "waiting for RestartCount to climb..."
+          for i in $(seq 1 30); do
+            n=$(docker inspect -f '{{.RestartCount}}' vitals-flap 2>/dev/null || echo 0)
+            echo "  RestartCount=$n"
+            [ "${n:-0}" -ge 5 ] && break
+            sleep 3
+          done
+
+      - name: Also start a memory-capped container so it gets OOM-killed (best effort)
+        run: |
+          docker run -d --name vitals-oom --memory=12m --memory-swap=12m python:3-slim \
+            python -c "b=[]
+          while True: b.append(bytearray(5_000_000))" || true
+          sleep 8
+          docker inspect -f 'OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}}' vitals-oom || true
+
+      - name: vitals containers sees the restart loop
+        run: |
+          set +e
+          ./vitals containers; rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
+          ./vitals containers --json > c.json; rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals --json crashed (exit $rc)"; exit 1; }
+          set -e
+          python3 - <<'PY'
+          import json
+          cs = json.load(open("c.json"))["snapshot"]["containers"]
+          assert cs["runtime"] == "docker", cs
+          flap = next((c for c in cs["containers"] if c["name"] == "vitals-flap"), None)
+          assert flap is not None, cs
+          assert flap["restart_count"] >= 5, flap
+          print("restart loop detected:", flap["name"], "restart_count", flap["restart_count"])
+          oom = next((c for c in cs["containers"] if c["name"] == "vitals-oom"), None)
+          if oom and (oom.get("oom_killed") or oom.get("exit_code") == 137):
+              print("OOM/killed container also detected:", oom["name"],
+                    "oom_killed", oom.get("oom_killed"), "exit_code", oom.get("exit_code"))
+          PY
+
+      - name: vitals doctor raises the restart-loop finding
+        run: |
+          set +e
+          ./vitals doctor --json > d.json; rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals doctor crashed (exit $rc)"; exit 1; }
+          set -e
+          python3 - <<'PY'
+          import json
+          d = json.load(open("d.json"))
+          assert d["schema_version"].startswith("1."), d["schema_version"]
+          fs = [f for f in d["findings"] if "restarted" in f["title"] and "vitals-flap" in f["title"]]
+          assert fs, [f["title"] for f in d["findings"]]
+          assert fs[0]["severity"] in ("warning", "critical"), fs[0]
+          print("doctor finding:", fs[0]["title"], "-", fs[0]["severity"])
+          PY
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f vitals-flap vitals-oom 2>/dev/null || true
+
+  kubernetes:
+    name: real kind cluster
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Build vitals
+        run: go build -o vitals .
+
+      - name: Create a kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: vitals-it
+
+      - name: Confirm the kube context is local
+        run: |
+          kubectl config current-context
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Start a pod stuck in CrashLoopBackOff
+        run: |
+          kubectl run crashy --image=busybox --restart=Always --command -- /bin/false
+          echo "waiting for CrashLoopBackOff..."
+          for i in $(seq 1 40); do
+            r=$(kubectl get pod crashy -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+            echo "  waiting.reason=$r"
+            [ "$r" = "CrashLoopBackOff" ] && break
+            sleep 3
+          done
+
+      - name: vitals containers --runtime kubernetes sees the crashloop
+        run: |
+          # Docker is also reachable on this runner (kind runs on it), so the
+          # explicit --runtime kubernetes override is required — this is
+          # exactly the kind/k3s case it exists for.
+          set +e
+          ./vitals containers --runtime kubernetes; rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
+          ./vitals containers --runtime kubernetes --json > c.json; rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals --json crashed (exit $rc)"; exit 1; }
+          set -e
+          python3 - <<'PY'
+          import json
+          cs = json.load(open("c.json"))["snapshot"]["containers"]
+          assert cs["runtime"] == "kubernetes", cs
+          crash = next((c for c in cs["containers"] if c["name"] == "crashy"), None)
+          assert crash is not None, cs
+          assert crash.get("waiting_on") == "CrashLoopBackOff", crash
+          print("crashloop pod detected:", crash["name"], "namespace", crash.get("namespace"))
+          PY
+
+      - name: The crashloop is a critical finding (exit 2)
+        run: |
+          set +e
+          ./vitals containers --runtime kubernetes --quiet
+          code=$?
+          set -e
+          echo "vitals containers --runtime kubernetes exit code: $code"
+          [ "$code" = "2" ] || { echo "expected exit 2 (critical), got $code"; exit 1; }
+
+      - name: A cloud-looking kube context is ignored
+        run: |
+          kubectl config set-cluster fake-cloud --server=https://api.example-cluster.eks.amazonaws.com
+          kubectl config set-context fake-cloud --cluster=fake-cloud --user="$(kubectl config view -o jsonpath='{.users[0].name}')"
+          kubectl config use-context fake-cloud
+          # --runtime kubernetes forces the kube path; a non-local server
+          # must make it return nothing rather than reaching out.
+          set +e
+          out=$(./vitals containers --runtime kubernetes --json); rc=$?
+          [ "$rc" -le 2 ] || { echo "vitals crashed (exit $rc)"; exit 1; }
+          set -e
+          echo "$out" | python3 -c "import sys,json; cs=json.load(sys.stdin)['snapshot']['containers']; assert cs['runtime'] == '', cs; print('cloud kube context correctly ignored')"

@@ -63,7 +63,7 @@ func TestRunContainersJSONAndSamplerSeam(t *testing.T) {
 		return r
 	}
 
-	code := RunContainers(RunOptions{JSON: true, Quiet: false})
+	code := RunContainers(RunOptions{JSON: true, Quiet: false}, "")
 	if sampled != true {
 		t.Error("RunContainers should always run the stats sampler seam")
 	}
@@ -71,6 +71,34 @@ func TestRunContainersJSONAndSamplerSeam(t *testing.T) {
 	// findings, so the exit code is 0.
 	if code != 0 {
 		t.Errorf("no runtime -> exit 0, got %d", code)
+	}
+}
+
+func TestRunContainersRuntimePreferenceReprobes(t *testing.T) {
+	origP, origS := containerProber, containerStatsSampler
+	defer func() { containerProber, containerStatsSampler = origP, origS }()
+	containerStatsSampler = func(r containers.Report) containers.Report { return r }
+
+	var askedFor string
+	containerProber = func(prefer string) containers.Report {
+		askedFor = prefer
+		return containers.Report{Runtime: "kubernetes", Reachable: true,
+			Containers: []containers.Container{{Name: "p", Namespace: "d", State: "Running", WaitingOn: "CrashLoopBackOff"}}}
+	}
+
+	code := RunContainers(RunOptions{Quiet: true}, "kubernetes")
+	if askedFor != "kubernetes" {
+		t.Errorf("--runtime kubernetes should re-probe with that preference, got %q", askedFor)
+	}
+	if code != 2 {
+		t.Errorf("a CrashLoopBackOff pod is critical -> exit 2, got %d", code)
+	}
+
+	// no preference -> the re-probe seam is not called
+	askedFor = ""
+	_ = RunContainers(RunOptions{Quiet: true}, "")
+	if askedFor != "" {
+		t.Errorf("no --runtime should not trigger a re-probe, got %q", askedFor)
 	}
 }
 
@@ -83,7 +111,7 @@ func TestRunContainersQuietReturnsExitCodeOnly(t *testing.T) {
 		return r
 	}
 	out := captureStdout(t, func() {
-		if code := RunContainers(RunOptions{Quiet: true}); code != 2 {
+		if code := RunContainers(RunOptions{Quiet: true}, ""); code != 2 {
 			t.Errorf("an OOM-kill finding is critical -> exit 2, got %d", code)
 		}
 	})

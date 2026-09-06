@@ -293,8 +293,9 @@ func run(argv []string, version string) int {
 		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
 		verbose := fs.Bool("verbose", false, "list every container, not just the running ones plus a cap")
 		fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
+		rt := fs.String("runtime", "", "force a runtime: \"docker\" or \"kubernetes\" (default: auto, docker first) — use \"kubernetes\" for a kind/k3s cluster whose nodes are themselves Docker containers")
 		_ = fs.Parse(args)
-		return doctor.RunContainers(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose})
+		return doctor.RunContainers(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose}, *rt)
 
 	case "top", "monitor":
 		fs := newFlagSet("top")
