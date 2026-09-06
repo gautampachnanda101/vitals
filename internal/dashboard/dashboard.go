@@ -105,17 +105,17 @@ func route(path string, ctx PageContext) (int, string) {
 	m, exists, available := findModule(slug, ctx)
 	if !exists {
 		body := `<div class="card"><p class="unavailable">Page not found. Use the nav above to find what this machine can show.</p></div>`
-		return http.StatusNotFound, layout("Not found", "", ctx.Version, nav, body)
+		return http.StatusNotFound, layoutLive("Not found", "", ctx.Version, nav, body, false)
 	}
 	if !available {
 		reason := m.UnavailableReason
 		if reason == "" {
 			reason = "not available on this machine"
 		}
-		return http.StatusOK, layout(m.NavLabel, m.Slug, ctx.Version, nav, unavailablePage(m.NavLabel, reason))
+		return http.StatusOK, layoutLive(m.NavLabel, m.Slug, ctx.Version, nav, unavailablePage(m.NavLabel, reason), false)
 	}
 
-	return http.StatusOK, layout(m.NavLabel, m.Slug, ctx.Version, nav, m.Render(ctx))
+	return http.StatusOK, layoutLive(m.NavLabel, m.Slug, ctx.Version, nav, m.Render(ctx), !noLiveRefresh[m.Slug])
 }
 
 // routeWrite computes the HTTP status and response body for a POST to

@@ -232,6 +232,14 @@ LLM at all; an LLM, when reachable, only adds AI commentary on top (see
 [vitals advice](#vitals-advice)). Press Ctrl+C in the terminal that
 launched it to stop.
 
+Every read-only page refreshes itself in place every ten seconds, so a
+dashboard left open on a second monitor stays current without a reload.
+It only polls while the tab is actually visible, and the footer carries
+an **auto-refresh: on/off** toggle (the choice is remembered per
+browser) for when you want the numbers to hold still. The Clean and
+Duplicates pages don't auto-refresh — they hold the result of a Preview
+you ran, which a refresh would wipe.
+
 The clean page mirrors `vitals clean` for the browser: a **Preview**
 button measures what a real cleanup would reclaim, with no filesystem
 mutation, and only once that's shown does an **Apply** button appear.
