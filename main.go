@@ -15,8 +15,10 @@
 //
 // Commands:
 //
+//	view       The whole machine on one terminal screen (also bare `vitals` on a TTY)
 //	dashboard  Serve vitals as a local, loopback-only web app
 //	advice     Ask a local or cloud LLM for advice on the current doctor report
+//	heal       Apply a finding's suggested fix, with confirmation
 //	clean      Cross-platform disk cleanup (caches, logs, temp, trash)
 //	dupes      Find byte-identical duplicate files (report only, never deletes)
 //	tools      List/install the companion tools vitals defers to (ncdu, btop, ...)
@@ -40,6 +42,7 @@ import (
 	"vitals/internal/advice"
 	"vitals/internal/clean"
 	"vitals/internal/config"
+	"vitals/internal/consoleview"
 	"vitals/internal/dashboard"
 	"vitals/internal/doctor"
 	"vitals/internal/dupes"
@@ -125,7 +128,16 @@ func main() {
 // package's own Run/RunFocus, which touches real OS/network state — that
 // part remains exercised by cli_smoke_test.go, not here.
 func run(argv []string, version string) int {
+	consoleview.SetVersion(version)
+
+	// Bare `vitals` on an interactive terminal renders the one-screen
+	// at-a-glance view (roadmap 011). Piped or redirected, it keeps the
+	// old behaviour — usage text, exit 2 — so scripts are unaffected.
+	// `vitals view` / VITALS_VIEW=1 force the view regardless.
 	if len(argv) < 1 {
+		if _, ok := os.LookupEnv("VITALS_VIEW"); ok || ui.ColorEnabled() {
+			return consoleview.Run(os.Stdout, consoleview.DefaultSize, consoleview.Options{OllamaURL: defaultOllamaURL()})
+		}
 		help.RenderList(os.Stderr, version)
 		return 2
 	}
@@ -176,6 +188,12 @@ func run(argv []string, version string) int {
 		history := fs.Bool("history", false, "print past clean runs (date, freed) instead of cleaning")
 		_ = fs.Parse(args)
 		return must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
+
+	case "view", "glance":
+		fs := newFlagSet("view")
+		ollamaURL := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
+		_ = fs.Parse(args)
+		return consoleview.Run(os.Stdout, consoleview.DefaultSize, consoleview.Options{OllamaURL: *ollamaURL})
 
 	case "heal":
 		fs := newFlagSet("heal")

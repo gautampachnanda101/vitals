@@ -4,11 +4,14 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: Design reviewed (2026-09-05) — full seven-agent
-`review-panel` returned unanimous go-with-changes (see [`design.md`](design.md)
-§11). Approved for implementation with the convergent must-fix list
-folded in. One product decision outstanding: whether the view becomes
-the bare-`vitals` default or ships as `vitals view` first (§11, Q1).
+**Status**: Shipped (2026-09-06) — `internal/consoleview` +
+`vitals view`, and bare `vitals` on a TTY renders it (piped/redirected
+keeps the command list; `VITALS_VIEW=1` forces it). Built to the
+§11-amended design; the two open decisions were resolved as: **both**
+`vitals view` and the bare-`vitals`-on-TTY default ship (architects'
+recommendation), and v1 takes **no display-width dependency** —
+ASCII-safe rune-count truncation with a documented CJK/emoji
+limitation. See `design.md` §12 for the as-built notes.
 **Depends on**: [doctor](../../../architecture/design.md)'s existing
 `Collect`/`Analyze` and the single-flight snapshot-cache pattern
 (`internal/dashboard`); logically parallel to

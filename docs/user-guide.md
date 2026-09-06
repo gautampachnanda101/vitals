@@ -26,6 +26,7 @@ the plain `vitals guide` terminal view) without one:
 - [Quick start](#quick-start)
 - [Quick reference](#quick-reference)
 - [vitals doctor](#vitals-doctor)
+- [vitals view](#vitals-view)
 - [vitals dashboard](#vitals-dashboard)
 - [Resource deep dives: cpu, mem, disk, net, power](#resource-deep-dives-cpu-mem-disk-net-power)
 - [vitals advice](#vitals-advice)
@@ -138,7 +139,7 @@ vitals doctor --webhook https://hooks.slack.com/...   # notify, but only when so
 vitals doctor --compare before.json after.json        # diff two saved reports
 ```
 
-The `--json` payload carries a `schema_version` (currently `1.1.0`), and the
+The `--json` payload carries a `schema_version` (currently `1.4.0`), and the
 shape only ever grows — nothing is renamed or removed without a major
 version bump. `vitals doctor --schema` prints the full JSON Schema. The
 same envelope comes back from the MCP `system_health` tool and from
@@ -153,6 +154,28 @@ getting worse" — the memory-leak finding above depends on it. It only
 records on an actual `vitals doctor` run, never during a `vitals
 serve`/`export` Prometheus scrape, and if the history file can't be written
 for any reason, `doctor` just skips it rather than failing the command.
+
+## vitals view
+
+`view` is the whole machine on one terminal screen: `doctor`'s verdict
+and findings at the top — in colour, the point of the screen — then
+tiled CPU / memory / disk / network / power / GPU panels and the top
+processes by CPU, sized to fit without scrolling. Running **bare
+`vitals`** on an interactive terminal shows this too (piped or
+redirected, bare `vitals` still prints the command list); `VITALS_VIEW=1
+vitals` forces it into a pipe, e.g. `VITALS_VIEW=1 vitals | less -R`.
+
+```bash
+vitals            # on a TTY: the at-a-glance view
+vitals view       # the same, explicitly
+```
+
+It's a **snapshot, not a live monitor** — one pass, then it returns
+(exit 0/1/2 by verdict, same as `doctor`). For a live process view,
+`vitals live` hands off to btop/htop; `vitals top` is the built-in
+fallback. Panels for absent hardware (no battery, no GPU) simply don't
+appear. On a very short terminal it trims the process rows first, then
+whole panels — never the verdict or findings.
 
 ## vitals dashboard
 

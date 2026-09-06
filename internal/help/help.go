@@ -144,6 +144,23 @@ var commands = []Command{
 		},
 	},
 	{
+		Name:     "view",
+		Synopsis: "the whole machine on one screen — verdict first, then panels",
+		Long: "A single terminal screen: doctor's verdict and findings at the top, then\n" +
+			"tiled CPU / memory / disk / network / power / GPU panels and the top\n" +
+			"processes. A snapshot, not a live monitor (`vitals live` hands off to one).\n" +
+			"Running bare `vitals` on an interactive terminal shows this too;\n" +
+			"VITALS_VIEW=1 forces it when stdout is redirected.",
+		Flags: []Flag{
+			{"ollama-url", "<url>", "Ollama base URL for the LLM-runtime check"},
+		},
+		Examples: []string{
+			"vitals",
+			"vitals view",
+			"VITALS_VIEW=1 vitals | less -R",
+		},
+	},
+	{
 		Name:     "heal",
 		Synopsis: "apply a finding's suggested fix, with confirmation",
 		Long: "The third step after `doctor` diagnoses and `advice` explains: run the\n" +
