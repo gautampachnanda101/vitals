@@ -283,6 +283,19 @@ func run(argv []string, version string) int {
 		_ = fs.Parse(args)
 		return doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose})
 
+	case "containers", "container", "docker", "k8s", "kubernetes":
+		fs := newFlagSet("containers")
+		url := fs.String("ollama-url", defaultOllamaURL(), "base URL of the Ollama server")
+		asJSON := fs.Bool("json", false, "emit the container detail and findings as JSON")
+		output := fs.String("output", "", "also write the JSON envelope to this file")
+		ci := fs.Bool("ci", false, "print one grep-friendly line instead of the full report")
+		quiet := fs.Bool("quiet", false, "print nothing; only the exit code carries the verdict")
+		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
+		verbose := fs.Bool("verbose", false, "list every container, not just the running ones plus a cap")
+		fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
+		_ = fs.Parse(args)
+		return doctor.RunContainers(doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose})
+
 	case "top", "monitor":
 		fs := newFlagSet("top")
 		top := fs.Int("top", 15, "number of processes to list")

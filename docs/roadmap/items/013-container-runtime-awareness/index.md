@@ -4,14 +4,15 @@
 
 **Implementation plan**: [what's left →](implementation-plan.md)
 
-**Status**: [`design.md`](design.md) drafted 2026-09-05 — pre-review.
-Needs a `review-panel` pass before any code (a new data source across a
-new trust boundary, a local daemon socket).
-**Depends on**: `doctor`'s `Collect`/`Analyze`, the `internal/tools`
-registry pattern; feeds [011](../011-console-at-a-glance-view/)'s
-container panel and would add a dashboard page
-**Target release**: not yet
-**Architecture**: [`design.md`](design.md) — stdlib HTTP over the Docker socket (no vendored client), `kubectl` handoff for k8s (no client-go), read-only fixed endpoint list, the local-daemon-socket trust boundary, gating like the GPU page. Pre-review.
+**Status**: **shipped (v1)** — see [`design.md`](design.md) §10–§11.
+`internal/containers` (stdlib Docker Engine-API + local-only `kubectl`),
+`doctor` findings + `--json` schema 1.5.0, `vitals containers`, and a
+nav-gated dashboard Containers page. Windows named-pipe Docker, the 011
+console panel, and a `kind`/`k3s` end-to-end pass are deferred /
+tracked in [`implementation-plan.md`](implementation-plan.md).
+**Depends on**: `doctor`'s `Collect`/`Analyze`
+**Target release**: next tag
+**Architecture**: [`design.md`](design.md) — stdlib HTTP over the Docker socket (no vendored client), `kubectl` handoff for k8s (no client-go), read-only fixed GET-only endpoint list, gating like the GPU page.
 
 ## What
 

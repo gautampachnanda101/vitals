@@ -27,6 +27,7 @@ const (
 	iconClean      = template.HTML(`<path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 015.4-5.4l-3 3-2-2z"/>`)
 	iconDuplicates = template.HTML(`<path d="M9 4H4v6M4 4l7 7M15 4h5v6M20 4l-7 7M9 20H4v-6M4 20l7-7M15 20h5v-6M20 20l-7-7"/>`)
 	iconProcesses  = template.HTML(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M11 6h9M11 12h9M11 18h9"/>`)
+	iconContainers = template.HTML(`<path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/>`)
 	iconSystem     = template.HTML(`<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>`)
 )
 
@@ -143,6 +144,11 @@ header.top h1{font-size:1.28rem;margin:0;font-weight:800}
 .btn:hover{background:var(--bg)}
 .btn:disabled{opacity:.6;cursor:default}
 footer{color:var(--muted);font-size:.78rem;margin-top:2rem;text-align:center}
+.reftoggle{font:inherit;font-size:.76rem;color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:20px;padding:.15rem .7rem;cursor:pointer}
+.reftoggle:hover{border-color:var(--accent);color:var(--accent)}
+#vitals-main.refreshing{animation:vitalsPulse .3s ease-out}
+@keyframes vitalsPulse{from{opacity:.55}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){#vitals-main.refreshing{animation:none}}
 </style>
 </head>
 <body>
@@ -153,18 +159,51 @@ footer{color:var(--muted);font-size:.78rem;margin-top:2rem;text-align:center}
 </div>
 <div class="main">
 <header class="top"><h1>{{.Title}}</h1></header>
-<main>{{.Body}}</main>
-<footer>vitals {{.Version}} — served locally, nothing leaves this machine. Press Ctrl+C in the terminal that launched it to stop.<br>Issues or feedback: <a href="https://github.com/gautampachnanda101/vitals">github.com/gautampachnanda101/vitals</a></footer>
+<main id="vitals-main"{{if .Live}} data-live="1"{{end}}>{{.Body}}</main>
+<footer>vitals {{.Version}} — served locally, nothing leaves this machine. Press Ctrl+C in the terminal that launched it to stop.{{if .Live}} · <button id="vitals-refresh-toggle" class="reftoggle" type="button">auto-refresh: on</button>{{end}}<br>Issues or feedback: <a href="https://github.com/gautampachnanda101/vitals">github.com/gautampachnanda101/vitals</a></footer>
 </div>
 </div>
+<script>
+/* Live refresh: re-fetch this same page every {{.RefreshSeconds}}s and swap in
+   the <main> content, so a left-open dashboard stays current without a
+   manual reload. Pure vanilla, no dependency. Pages with interactive
+   state (Clean, Duplicates) opt out by omitting data-live. */
+(function(){
+  var main=document.getElementById('vitals-main');
+  if(!main||main.dataset.live!=="1"||!window.fetch||!window.DOMParser)return;
+  var PERIOD={{.RefreshSeconds}}*1000, KEY='vitals.autorefresh';
+  var toggle=document.getElementById('vitals-refresh-toggle');
+  function off(){ try{return localStorage.getItem(KEY)==='off';}catch(e){return false;} }
+  function paint(){ if(toggle) toggle.textContent='auto-refresh: '+(off()?'off':'on'); }
+  function setOff(v){ try{localStorage.setItem(KEY,v?'off':'on');}catch(e){} paint(); }
+  function tick(){
+    if(off()||document.visibilityState!=='visible')return;
+    fetch(location.pathname+location.search,{headers:{'X-Vitals-Refresh':'1'},cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw 0; return r.text(); })
+      .then(function(html){
+        var next=new DOMParser().parseFromString(html,'text/html').getElementById('vitals-main');
+        if(next && next.dataset.live==="1" && !main.querySelector(':focus')){
+          main.innerHTML=next.innerHTML;
+          main.classList.remove('refreshing'); void main.offsetWidth; main.classList.add('refreshing');
+        }
+      })
+      .catch(function(){ /* server gone or a transient blip — retry next tick */ });
+  }
+  if(toggle) toggle.addEventListener('click',function(){ setOff(!off()); });
+  paint();
+  setInterval(tick,PERIOD);
+})();
+</script>
 </body>
 </html>`))
 
 type pageShellData struct {
-	Title   string
-	Nav     template.HTML
-	Body    template.HTML
-	Version string
+	Title          string
+	Nav            template.HTML
+	Body           template.HTML
+	Version        string
+	Live           bool
+	RefreshSeconds int
 }
 
 // navTmpl renders the sidebar as one section per group, in navGroupOrder —
@@ -291,7 +330,26 @@ func mustExecute(t *template.Template, data any) string {
 // activeSlug highlighted. version is whatever main.version holds ("dev"
 // outside a tagged release build); shown in the footer so a bug report
 // can include it without the reporter having to also run `vitals version`.
+// liveRefreshSeconds is how often a left-open dashboard page re-fetches
+// itself (client-side, see pageShellTmpl's script). Matches the
+// snapshotCache TTL's order of magnitude — often enough to feel live,
+// rare enough that it's no real load — and the page only polls while its
+// tab is actually visible.
+const liveRefreshSeconds = 10
+
+// noLiveRefresh names the pages that must NOT auto-swap their content:
+// they carry interactive client state (a Preview/Apply flow, its
+// in-progress result) that an innerHTML replacement would destroy.
+var noLiveRefresh = map[string]bool{"clean": true, "dupes": true}
+
 func layout(title, activeSlug, version string, available []Module, body string) string {
+	return layoutLive(title, activeSlug, version, available, body, !noLiveRefresh[activeSlug])
+}
+
+// layoutLive is layout with an explicit live-refresh decision — the
+// not-found and unavailable pages pass false (nothing on them changes),
+// a rendered module page passes whether its slug is in noLiveRefresh.
+func layoutLive(title, activeSlug, version string, available []Module, body string, live bool) string {
 	if version == "" {
 		version = "dev"
 	}
@@ -301,9 +359,11 @@ func layout(title, activeSlug, version string, available []Module, body string) 
 		// package's own templates — never raw user input — so marking
 		// them template.HTML (skip re-escaping) is safe here, unlike
 		// anywhere a genuinely untrusted string would need this type.
-		Nav:     template.HTML(mustExecute(navTmpl, navGroups(available, activeSlug))),
-		Body:    template.HTML(body),
-		Version: version,
+		Nav:            template.HTML(mustExecute(navTmpl, navGroups(available, activeSlug))),
+		Body:           template.HTML(body),
+		Version:        version,
+		Live:           live,
+		RefreshSeconds: liveRefreshSeconds,
 	})
 }
 

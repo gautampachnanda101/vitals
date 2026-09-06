@@ -152,6 +152,16 @@ FLOORS = {
     # real call on macOS. 97%+ measured; the residual gap is a
     # parser arm that only a differently-shaped `top` build would hit.
     "vitals/internal/power": 95,
+    # containers (item 013): the Docker Engine-API client and the
+    # kubectl-JSON path both run behind an injected transport — an
+    # httptest server stands in for the daemon socket, canned command
+    # output for kubectl — so parsing (container list, inspect, /stats
+    # CPU maths, pod status, the loopback-only API-server gate) is
+    # fixture-tested with no daemon in CI. The exported Probe/Sample
+    # one-liners and the real exec/dial closures get one call each. 96%+
+    # measured; the residual gap is OS-branch arms in defaultDockerEndpoint
+    # that can't all run on one runner.
+    "vitals/internal/containers": 95,
     # guide (item 009): signal.NotifyContext and openBrowser are both
     # injected via a deps struct; ServeLocal's real net.Listen + handler-
     # wrapping half is split into buildServer(handler, opts), returning

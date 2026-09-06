@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"vitals/internal/containers"
 	"vitals/internal/diag"
 	"vitals/internal/ui"
 )
@@ -24,6 +25,10 @@ type Snapshot struct {
 	Thermal Thermal    `json:"thermal"`
 	Net     []NetIface `json:"net"`
 	Power   Power      `json:"power"`
+	// Containers is the local container-runtime / Kubernetes picture, when
+	// one is reachable. Zero value (Runtime "") means none was found —
+	// gated behind SkipProbes like the GPU/power/LLM probes.
+	Containers containers.Report `json:"containers"`
 }
 
 // NetIface is one network interface's throughput over the sample window.
@@ -147,6 +152,7 @@ func Analyze(s Snapshot) diag.Report {
 	analyzeLLM(&r, s)
 	analyzeNet(&r, s)
 	analyzePower(&r, s)
+	analyzeContainers(&r, s)
 
 	if len(r.Findings) == 0 {
 		r.Add(diag.Finding{Severity: diag.OK, Title: "No bottleneck detected",
@@ -177,6 +183,8 @@ func AnalyzeResource(s Snapshot, resource string) diag.Report {
 		analyzeNet(&r, s)
 	case "power", "battery":
 		analyzePower(&r, s)
+	case "containers", "container", "docker", "k8s", "kubernetes":
+		analyzeContainers(&r, s)
 	}
 	sort.SliceStable(r.Findings, func(i, j int) bool {
 		return r.Findings[i].Severity > r.Findings[j].Severity

@@ -104,6 +104,21 @@ func TestRunHealDryRunDispatches(t *testing.T) {
 	}
 }
 
+func TestRunContainersDispatches(t *testing.T) {
+	// Exercises the `case "containers"` dispatch: flag parse + RunContainers.
+	// On a machine/CI runner with no reachable runtime this prints the
+	// "no local container runtime" line and exits 0; with one present it
+	// lists containers. Either way the dispatch and flag wiring run.
+	var code int
+	out := captureStdout(t, func() { code = run([]string{"containers"}, "1.0") })
+	if code != 0 && code != 1 && code != 2 {
+		t.Errorf("run([containers]) = %d, want a valid verdict exit code", code)
+	}
+	if !strings.Contains(out, "CONTAINERS") {
+		t.Errorf("run([containers]) should print the CONTAINERS header, got:\n%s", out)
+	}
+}
+
 func TestRunVersionPrintsVersionAndExitsZero(t *testing.T) {
 	var code int
 	out := captureStdout(t, func() { code = run([]string{"version"}, "9.9.9") })

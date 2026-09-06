@@ -163,6 +163,12 @@ func HasBattery(ctx PageContext) bool {
 	return ctx.Snapshot.Power.Percent > 0 || ctx.Snapshot.Power.OnBattery
 }
 
+// HasContainers is the Available check for the Containers module — shown
+// only when a local runtime or Kubernetes context was actually detected.
+func HasContainers(ctx PageContext) bool {
+	return ctx.Snapshot.Containers.Runtime != ""
+}
+
 // WriteAction is one POST-only, mutating dashboard endpoint (roadmap item
 // 005) — a deliberately different shape from Module, not an optional
 // field on it: a write action's Handler produces a status+body for a
