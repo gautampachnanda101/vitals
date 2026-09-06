@@ -3,6 +3,7 @@ package diag
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -118,5 +119,83 @@ func TestReportAddNormalizesUnknownSeverity(t *testing.T) {
 	r.Add(Finding{Severity: Severity(99), Title: "weird"})
 	if r.Findings[0].Severity != OK {
 		t.Errorf("out-of-range severity should clamp to OK, got %v", r.Findings[0].Severity)
+	}
+}
+
+func TestRemedyKindJSONRoundTrip(t *testing.T) {
+	for k, word := range map[RemedyKind]string{
+		RemedyManual: "manual", RemedyExec: "exec", RemedyDelegate: "delegate", RemedySignal: "signal",
+	} {
+		b, err := json.Marshal(k)
+		if err != nil || string(b) != `"`+word+`"` {
+			t.Fatalf("Marshal(%v) = %s, %v; want %q", k, b, err, word)
+		}
+		var got RemedyKind
+		if err := json.Unmarshal(b, &got); err != nil || got != k {
+			t.Errorf("Unmarshal(%s) = %v, %v; want %v", b, got, err, k)
+		}
+	}
+	var k RemedyKind
+	if err := json.Unmarshal([]byte(`"bogus"`), &k); err == nil {
+		t.Error("an unknown remedy kind must be an error, not a silent zero")
+	}
+}
+
+func TestRemedyRiskJSONRoundTrip(t *testing.T) {
+	for r, word := range map[RemedyRisk]string{RiskLow: "low", RiskMedium: "medium", RiskHigh: "high"} {
+		b, _ := json.Marshal(r)
+		if string(b) != `"`+word+`"` {
+			t.Errorf("Marshal(%v) = %s, want %q", r, b, word)
+		}
+		var got RemedyRisk
+		if json.Unmarshal(b, &got) != nil || got != r {
+			t.Errorf("round-trip %v failed: got %v", r, got)
+		}
+	}
+	var r RemedyRisk
+	if json.Unmarshal([]byte(`"extreme"`), &r) == nil {
+		t.Error("an unknown risk must be an error")
+	}
+}
+
+func TestFindingRemedyRoundTrips(t *testing.T) {
+	f := Finding{
+		Severity: Critical, ID: "disk-low", Title: "Disk / nearly full",
+		Fixes: []string{"clean it"},
+		Remedy: &Remedy{
+			Kind: RemedyDelegate, Label: "run vitals clean",
+			Argv: []string{"vitals", "clean"}, Risk: RiskMedium, Reversible: false,
+		},
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Finding
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "disk-low" || got.Remedy == nil || got.Remedy.Kind != RemedyDelegate ||
+		got.Remedy.Risk != RiskMedium || len(got.Remedy.Argv) != 2 {
+		t.Errorf("Finding did not round-trip: %+v", got)
+	}
+	plain, _ := json.Marshal(Finding{Severity: OK, Title: "fine"})
+	if strings.Contains(string(plain), "remedy") || strings.Contains(string(plain), `"id"`) {
+		t.Errorf("empty id/remedy should be omitted: %s", plain)
+	}
+}
+
+func TestRemedyEnumsRejectMalformedJSON(t *testing.T) {
+	var k RemedyKind
+	if json.Unmarshal([]byte(`123`), &k) == nil {
+		t.Error("RemedyKind.UnmarshalJSON should reject a non-string")
+	}
+	var r RemedyRisk
+	if json.Unmarshal([]byte(`{}`), &r) == nil {
+		t.Error("RemedyRisk.UnmarshalJSON should reject a non-string")
+	}
+	var s Severity
+	if json.Unmarshal([]byte(`[1]`), &s) == nil {
+		t.Error("Severity.UnmarshalJSON should reject a non-string")
 	}
 }

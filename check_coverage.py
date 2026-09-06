@@ -164,6 +164,16 @@ FLOORS = {
     # not-the-host-OS branches (only one of three runs per CI machine).
     "vitals/internal/guide": 93,
     "vitals/internal/help": 99,  # 100.0% measured; 99 for float-rounding margin
+    # heal (item 008): the apply loop is pure over an injected `runner`
+    # seam (assess/exec/confirm/isTTY) from the first commit — every
+    # branch (TTY refusal, --dry-run, per-remedy confirm yes/no, --yes,
+    # the delegate double-confirm + os.Executable resolve, the
+    # compile-time exec allowlist, RemedySignal rejection, the
+    # macOS-only purge gate, --only + unknown-id, exec failure) is a
+    # table test. Residual: promptYesNo (2 lines reading real stdin) and
+    # the unreachable defence-in-depth allowlist check inside
+    # applyRemedy. 97.4%.
+    "vitals/internal/heal": 95,
     # info: Collect's two live calls (hostInfoFn, executableFn) and
     # abbrevHome's homeDirFn are all injected function values, exercised
     # via fakes for both success and failure paths; Render and

@@ -229,10 +229,12 @@ func analyzeMemory(r *diag.Report, s Snapshot) {
 	case m.UsedPct >= thresholds.RAMHighPercent:
 		r.Add(diag.Finding{
 			Severity: diag.Warn,
+			ID:       "mac-reclaimable",
 			Title:    "RAM usage high (likely reclaimable)",
 			Detail: fmt.Sprintf("%.0f%% in use but %.0f%% is still available and no swap-out is happening — much of this is probably file cache the kernel will drop on demand",
 				m.UsedPct, m.AvailablePct),
-			Fixes: []string{"no action needed unless apps slow down", "confirm with `vitals memcheck`"},
+			Fixes:  []string{"no action needed unless apps slow down", "confirm with `vitals memcheck`", "macOS: `sudo purge` frees the drop-on-demand cache immediately"},
+			Remedy: purgeRemedy(),
 		})
 	case m.UsedPct >= thresholds.RAMWarnPercent:
 		r.Add(diag.Finding{
@@ -372,9 +374,11 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 			}
 			r.Add(diag.Finding{
 				Severity: sev,
+				ID:       "disk-low",
 				Title:    fmt.Sprintf("Disk %s nearly full", d.Mount),
 				Detail:   detail,
 				Fixes:    []string{"`vitals clean --dry-run` then apply", "explore the biggest dirs with ncdu / gdu"},
+				Remedy:   cleanDelegateRemedy(),
 			})
 		}
 		if d.UtilPct >= 90 && d.AwaitMS >= 20 {
@@ -415,12 +419,42 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 			}
 			r.Add(diag.Finding{
 				Severity: sev,
+				ID:       "disk-inodes",
 				Title:    fmt.Sprintf("Disk %s is running out of inodes", d.Mount),
 				Detail: fmt.Sprintf("%.0f%% of inodes used — free space can look fine while new files still fail to create; usually huge counts of tiny files (node_modules, mail spools, cache trees)",
 					d.InodesUsedPct),
-				Fixes: []string{"find the directory with the most files, e.g. `find <dir> -xdev | wc -l` per subtree", "`vitals clean --dry-run` then apply"},
+				Fixes:  []string{"find the directory with the most files, e.g. `find <dir> -xdev | wc -l` per subtree", "`vitals clean --dry-run` then apply"},
+				Remedy: cleanDelegateRemedy(),
 			})
 		}
+	}
+}
+
+// purgeRemedy is the `sudo purge` remedy for the reclaimable-memory
+// finding — drops the drop-on-demand file cache. Low-risk and
+// reversible (the cache refills). macOS-only; `vitals heal` skips it on
+// other platforms (purge doesn't exist there).
+func purgeRemedy() *diag.Remedy {
+	return &diag.Remedy{
+		Kind:       diag.RemedyExec,
+		Label:      "sudo purge — free the reclaimable file cache (macOS)",
+		Argv:       []string{"sudo", "purge"},
+		Risk:       diag.RiskLow,
+		Reversible: true,
+	}
+}
+
+// cleanDelegateRemedy runs `vitals clean` for a disk-space finding — via
+// delegate, so `vitals clean`'s own preview, confirmation and audit
+// history all still apply. RiskMedium: it deletes files, but only the
+// regenerable caches `clean` already gates carefully.
+func cleanDelegateRemedy() *diag.Remedy {
+	return &diag.Remedy{
+		Kind:       diag.RemedyDelegate,
+		Label:      "vitals clean — reclaim cache/log/temp space",
+		Argv:       []string{"vitals", "clean"},
+		Risk:       diag.RiskMedium,
+		Reversible: false,
 	}
 }
 

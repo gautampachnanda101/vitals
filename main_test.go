@@ -90,6 +90,20 @@ func TestRunUnknownCommandExitsTwo(t *testing.T) {
 	}
 }
 
+func TestRunHealDryRunDispatches(t *testing.T) {
+	// Exercises the `case "heal"` dispatch: flag parse + heal.Run.
+	// --dry-run touches nothing and needs no TTY; bounded by
+	// doctor.QuickAssess (~700ms, no probes).
+	var code int
+	out := captureStdout(t, func() { code = run([]string{"heal", "--dry-run"}, "1.0") })
+	if code != 0 {
+		t.Errorf("run([heal --dry-run]) = %d, want 0", code)
+	}
+	if out == "" {
+		t.Error("heal --dry-run produced no output")
+	}
+}
+
 func TestRunVersionPrintsVersionAndExitsZero(t *testing.T) {
 	var code int
 	out := captureStdout(t, func() { code = run([]string{"version"}, "9.9.9") })

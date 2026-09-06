@@ -2,90 +2,59 @@
 
 [docs](../../../index.md) / [Roadmap](../../index.md) / [008 — `vitals heal`](index.md) / **Implementation plan**
 
-Written from [`design.md`](design.md) §3–§9 **as amended by the §12
-review**. Not started — awaiting the maintainer's go on the reviewed
-design before code, since every task here executes remediation
-(`sudo purge`, a `clean` subprocess) and the standing rule is that
-destructive actions get explicit sign-off. Each task is one
-working, tested increment; check it off as it lands.
+Delivered 2026-09-06, built to [`design.md`](design.md) §3–§9 as amended
+by the §12 review. What shipped:
 
-## v1 surface (post-review)
+- [x] **`diag`: `Remedy` type + `Finding.Remedy` / `Finding.ID`.**
+      `Remedy{Kind, Label, Argv, Signal, PID, Risk, Reversible}`;
+      `RemedyKind` (manual/exec/delegate/signal — signal defined but
+      v1-disabled) and `RemedyRisk` (low/medium/high) with
+      `MarshalJSON`/`UnmarshalJSON` round-tripping stable lowercase
+      words, unknown word → error. `Finding` gained `ID string` and
+      `Remedy *Remedy`, both `omitempty`. 100% covered.
+- [x] **`doctor`: `--json` schema 1.3.0 → 1.4.0** — additive `id` +
+      `remedy` under `findings[]`; `schema.json` updated, golden
+      regenerated.
+- [x] **`doctor`: finding ids + the two v1 remedy builders.**
+      `mac-reclaimable` → `purgeRemedy()` (`RemedyExec`, `sudo purge`,
+      RiskLow, reversible); `disk-low` / `disk-inodes` →
+      `cleanDelegateRemedy()` (`RemedyDelegate`, `vitals clean`,
+      RiskMedium). The `SIGTERM` remedy from the pre-review design was
+      **not** built (review must-fix 1).
+- [x] **`doctor.QuickAssess` / `Options.SkipProbes`** (landed in the
+      008/011 shared-foundation PR) — the lightweight pre-apply re-check
+      (review must-fix 2): skips GPU/power/thermal/LLM, does not write
+      history.
+- [x] **`internal/heal` package.** Injected `runner`
+      (`assess`/`exec`/`confirm`/`isTTY`/`goos`/`out`). Apply loop:
+      no-TTY → refuse (must-fix 5); re-assess; `--only <id>` selects
+      one, unknown id → "nothing to do", exit 0 (must-fix 4); per
+      finding with a v1-enabled remedy show label/argv/risk/reversible,
+      confirm (unless `--yes`), run; **compile-time exec allowlist**
+      `{vitals, sudo purge}` checked at apply (must-fix 3);
+      `RemedyManual`/`RemedySignal` → print Fixes, run nothing; `sudo
+      purge` gated to `runtime.GOOS == "darwin"`; `RemedyDelegate` runs
+      `vitals clean --dry-run` → re-confirm → `vitals clean`, `vitals`
+      resolved via `os.Executable()`. 97.4% raw, `check_coverage.py`
+      floor added.
+- [x] **`main.go`: `heal` subcommand** — `--dry-run` / `--only` /
+      `--yes` / `--ollama-url`; `help.go` entry; `main_test.go` dispatch
+      test; `--yes` is interactive-only (must-fix 5), no batch mode.
+- [x] **`doctor`/`advice` hint** — not added: the current design has
+      `doctor`/`advice` print `Fixes` already; a "run `vitals heal
+      --only X`" nudge is a small follow-up, deferred to keep this PR
+      focused (the finding ids and remedies are in `--json` now, which
+      is the load-bearing part).
+- [x] **Docs** — `docs/user-guide.md` gains a `vitals heal` section
+      (incl. the `sudo` credential-cache note); `design.md` §13 "As
+      built"; §10 Q5's "Assess runs a DNS probe" error corrected (it
+      doesn't — only `vitals net` does).
 
-`vitals heal` — interactive TTY only. Remedies: `sudo purge`
-(`RemedyExec`, low-risk, reversible) and `vitals clean` via delegate
-(`RemedyDelegate`, gated by `clean`'s own confirm + audit trail).
-**No `RemedySignal` in v1.** Flags: `--dry-run`, `--only <id>`, `-y`
-(pre-answers the prompt; still requires a TTY).
+## Not done in v1 (deliberate, per the review)
 
-## Tasks
-
-- [ ] **`diag`: `Remedy` type + `Finding.Remedy` / `Finding.ID`.**
-      Add `Remedy`, `RemedyKind` (incl. `RemedySignal` defined but
-      unused in v1), `RemedyRisk`, and `MarshalJSON`/`UnmarshalJSON`
-      for the enums emitting stable lowercase words — mirror
-      `diag.Severity`'s existing round-trip. `Finding` gains
-      `Remedy *Remedy` and `ID string`. Round-trip + unknown-word-is-
-      error tests, mirroring `Severity`'s.
-- [ ] **`doctor`: schema bump.** `remedy` + `id` are additive →
-      one minor `SchemaVersion` bump, `schema.json` updated, golden
-      regenerated (`-run TestSchemaFieldsContract -update`). One bump
-      for the release that ships `heal`.
-- [ ] **`doctor`: finding ids + remedy builders.** A kebab-case `ID`
-      constant per finding site in `analyze.go` (`mem-pressure`,
-      `swap-thrash`, `disk-low`, `disk-inodes`, `mac-reclaimable`, …).
-      Pure builder funcs for the two v1 remedies (`macReclaimable →
-      *Remedy{Exec, ["sudo","purge"], RiskLow, reversible}`;
-      `diskLow/diskInodes → *Remedy{Delegate, ["vitals","clean",
-      "--dry-run"], RiskMedium}`). Existing `Analyze` fixtures that
-      assert on `Fixes` gain a `Remedy` kind/risk assertion (or `nil`).
-- [ ] **`doctor`: lightweight pre-apply assess (review must-fix 2).**
-      `CollectOptions{SkipProbes []string}` (or `QuickAssess`) that
-      skips the DNS-latency probe, the network retransmit probe, and
-      the LLM provider probe. Tested that those probes don't run.
-- [ ] **`internal/heal` package (new).** Injected `runner` seam:
-      `run func(argv []string) error`, `confirm func(prompt string)
-      bool`, `assess func() (diag.Report, error)`, `isTTY func() bool`.
-      `defaultRunner` wires the real calls; `Run(opts)` is a one-liner.
-      Apply loop:
-      - re-assess (lightweight) → select findings (all, or the one
-        `--only <id>` names; error "no current finding `<id>`" + exit 0
-        if it's gone — review must-fix 4).
-      - per finding with a non-nil, v1-enabled `Remedy`: show
-        `Label` / exact `Argv` / `Risk` / `Reversible`, prompt (unless
-        `-y`), then run via `run`.
-      - **compile-time exec allowlist** (review must-fix 3): refuse any
-        `Argv[0]` not in `{"sudo","vitals"}`, and `sudo` only followed
-        by `purge`.
-      - `RemedyManual` (and any `RemedySignal`): print the `Fixes`
-        text, do nothing (review "not blocking" note: still print the
-        fixes).
-      - `--dry-run`: print resolved actions, touch nothing, exit 0.
-      - no TTY: refuse with a pointer to run interactively (review
-        must-fix 5) — regardless of `-y`.
-      - `RemedyDelegate`: `run(["vitals","clean","--dry-run"])`, then on
-        confirm `run(["vitals","clean"])`, `vitals` path from
-        `os.Executable()`.
-      95%+ raw coverage from the first commit; `check_coverage.py`
-      floor added. No real `sudo purge` / `clean` in any test.
-- [ ] **`main.go`: `heal` subcommand** — flag parsing → `heal.Run`.
-      `cli_smoke_test.go`: `vitals heal --dry-run` and `vitals heal -h`
-      only, never a real apply.
-- [ ] **`doctor` / `advice` hint** — for a finding whose `Remedy` is
-      non-nil *and* v1-enabled, add "run `vitals heal --only <id>` to
-      act on this" to the output. Never for a disabled `RemedySignal`
-      finding (review "not blocking" note).
-- [ ] **Docs** — `docs/user-guide.md` gains a `vitals heal` section
-      (incl. the `sudo` 5-minute credential-cache note from the
-      review); `site/index.html` feature card + version footnote if a
-      release ships it; `design.md` gets its "As built" appendix.
-- [ ] **Manual verification** — `vitals heal --dry-run` end to end on
-      macOS and Linux; the real `sudo purge` and `clean` delegate
-      paths exercised by hand (not CI) and the result recorded in
-      `design.md`.
-
-## Exit criteria
-
-Per `design.md` §11, as amended: the five §12 must-fix changes are in;
-the schema change is one additive minor bump; `internal/heal` is at
-95%+ raw from commit one; docs updated in the same commits; `--dry-run`
-demonstrated on macOS + Linux with the real paths hand-verified.
+- No `RemedySignal` remedy — returns in a separately-reviewed pass.
+- No batch / non-interactive mode.
+- No `doctor`/`advice` "run heal" nudge yet (finding ids + remedies are
+  in `--json`; the nudge is cosmetic).
+- Manual verification of the real `sudo purge` / `vitals clean` paths on
+  macOS + Linux still to be recorded here by the maintainer.

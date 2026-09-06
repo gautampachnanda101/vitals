@@ -45,6 +45,7 @@ import (
 	"vitals/internal/dupes"
 	"vitals/internal/gpu"
 	"vitals/internal/guide"
+	"vitals/internal/heal"
 	"vitals/internal/help"
 	"vitals/internal/info"
 	"vitals/internal/llm"
@@ -175,6 +176,15 @@ func run(argv []string, version string) int {
 		history := fs.Bool("history", false, "print past clean runs (date, freed) instead of cleaning")
 		_ = fs.Parse(args)
 		return must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
+
+	case "heal":
+		fs := newFlagSet("heal")
+		dry := fs.Bool("dry-run", false, "print what each remedy would do; change nothing")
+		only := fs.String("only", "", "apply only the remedy for the finding with this id (see `vitals doctor --json`)")
+		yes := fs.Bool("yes", false, "pre-answer the confirmation prompt (still requires an interactive terminal)")
+		ollamaURL := fs.String("ollama-url", "", "base URL of the Ollama server for the pre-apply re-check")
+		_ = fs.Parse(args)
+		return heal.Run(heal.Options{DryRun: *dry, Only: *only, Yes: *yes, OllamaURL: *ollamaURL})
 
 	case "dupes":
 		fs := newFlagSet("dupes")

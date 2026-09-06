@@ -268,8 +268,12 @@ derived from the title string.
    reusable — subprocess keeps them for free.
 5. Does re-running `doctor.Assess()` inside `heal` (§7) have a latency or
    correctness problem the performance reviewer sees — `Assess` does a
-   full live collect including a DNS-latency probe? Should `heal` pass a
-   "skip the slow probes" option into `Collect`?
+   full live collect (GPU/power/thermal/LLM subprocess+HTTP probes; a
+   sampling window). Should `heal` pass a "skip the slow probes" option
+   into `Collect`? *(Correction, 2026-09-06: an earlier draft here and
+   in §7 said `Assess` runs a DNS-latency probe — it does not; that
+   probe lives only in `RunFocus` for `net`. The 011 review flagged the
+   same error. The GPU/power/LLM cost is real regardless.)*
 
 ## 11. Exit criteria
 
@@ -397,3 +401,42 @@ v1 surface is now: `sudo purge` and the `clean` delegate, interactive
 TTY only, `--dry-run` / `--only <id>` / `-y` flags, a compile-time exec
 allowlist, and a lightweight pre-apply re-assess. The
 `implementation-plan.md` can be written from §3–§9 as amended above.
+
+---
+
+## 13. As built (2026-09-06)
+
+Shipped to §3–§9 as amended by §12. Deltas from the pre-review text:
+
+- **No `RemedySignal` remedy.** `RemedySignal` exists in `diag` (the
+  schema is designed once) but no builder emits it and `internal/heal`
+  never runs it — `hasEnabledRemedy` returns false for it. (§12 must-fix 1.)
+- **Pre-apply re-check is `doctor.QuickAssess`**, not `Assess` — a
+  `SkipProbes` collect (no GPU/power/thermal/LLM) that also skips the
+  history write, so `heal` on a loop can't churn the trend file. Landed
+  in the shared-foundation change alongside 011's identical need.
+  (§12 must-fix 2; and see §10 Q5's correction — `Assess` never ran a
+  DNS probe.)
+- **Exec allowlist is compile-time and checked at apply** in
+  `execAllowed`: `vitals <anything>` or exactly `sudo purge`. Checked in
+  both `hasEnabledRemedy` (so a disallowed remedy is treated as manual)
+  and `applyRemedy` (defence in depth). (§12 must-fix 3.)
+- **`--only <id>` for a finding not present now** prints "no current
+  finding `<id>` — nothing to do" and exits 0. (§12 must-fix 4.)
+- **`--yes` is interactive-only.** It pre-answers the prompt but a
+  no-TTY run still refuses outright — there is no "run the low-risk
+  subset in a script" path in v1. (§12 must-fix 5.)
+- **`sudo purge` is gated to `runtime.GOOS == "darwin"`** in
+  `hasEnabledRemedy` — on other platforms the `mac-reclaimable` finding
+  falls through to "no automatable remedy".
+- **`RemedyDelegate`** resolves its leading `"vitals"` to
+  `os.Executable()`, runs `<self> clean --dry-run`, shows it, re-confirms,
+  then `<self> clean`.
+- **Not built:** the `doctor`/`advice` "run `vitals heal --only X`"
+  nudge. The finding `id`s and `remedy` objects are in `--json` (the
+  load-bearing part); the nudge is a cosmetic follow-up.
+
+Coverage: `internal/diag` 100%, `internal/heal` 97.4% (`check_coverage.py`
+floor 95). Manual verification of the real `sudo purge` / `vitals clean`
+execution paths on macOS + Linux is still owed and will be recorded
+here.

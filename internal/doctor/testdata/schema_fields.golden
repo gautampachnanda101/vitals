@@ -1,6 +1,14 @@
 exit_code
 findings.detail
 findings.fixes
+findings.id
+findings.remedy.argv
+findings.remedy.kind
+findings.remedy.label
+findings.remedy.pid
+findings.remedy.reversible
+findings.remedy.risk
+findings.remedy.signal
 findings.severity
 findings.title
 schema_version
