@@ -173,6 +173,50 @@ func TestProbeDockerListError(t *testing.T) {
 	}
 }
 
+func TestPortMappings(t *testing.T) {
+	in := []apiPort{
+		{PrivatePort: 80, PublicPort: 8080, Type: "tcp"},
+		{IP: "::", PrivatePort: 80, PublicPort: 8080, Type: "tcp"}, // dup of the above -> collapsed
+		{PrivatePort: 443, PublicPort: 8443},                       // no Type -> tcp default
+		{PrivatePort: 9000, PublicPort: 0},                         // not published -> dropped
+		{PrivatePort: 53, PublicPort: 5353, Type: "udp"},
+	}
+	got := portMappings(in)
+	want := []string{"8080→80/tcp", "8443→443/tcp", "5353→53/udp"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("portMappings = %v, want %v", got, want)
+	}
+
+	// cap at 8
+	var many []apiPort
+	for i := 0; i < 20; i++ {
+		many = append(many, apiPort{PrivatePort: i, PublicPort: 30000 + i, Type: "tcp"})
+	}
+	if n := len(portMappings(many)); n != 8 {
+		t.Errorf("portMappings should cap at 8, got %d", n)
+	}
+	if portMappings(nil) != nil {
+		t.Error("portMappings(nil) should be nil")
+	}
+}
+
+func TestParseContainerListCarriesPortsAndCreated(t *testing.T) {
+	body := `[{"Id":"abc123def456ff","Names":["/web"],"Image":"nginx","State":"running","Status":"Up 1 hour",
+	  "Created":1725600000,
+	  "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"},{"PrivatePort":8443,"PublicPort":0,"Type":"tcp"}]}]`
+	got := parseContainerList([]byte(body))
+	if len(got) != 1 {
+		t.Fatalf("want 1 container, got %d", len(got))
+	}
+	c := got[0]
+	if len(c.Ports) != 1 || c.Ports[0] != "8080→80/tcp" {
+		t.Errorf("published port not parsed: %v", c.Ports)
+	}
+	if c.CreatedUnix != 1725600000 {
+		t.Errorf("CreatedUnix = %d, want 1725600000", c.CreatedUnix)
+	}
+}
+
 func TestParseContainerListHealthExitAndCap(t *testing.T) {
 	if got := parseContainerList([]byte("not json")); got != nil {
 		t.Errorf("bad JSON should parse to nil, got %+v", got)

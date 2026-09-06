@@ -21,26 +21,26 @@ var containerStatsSampler = func(r containers.Report) containers.Report {
 	return containers.Sample(ctx, r)
 }
 
-// containerProber re-probes with an explicit runtime preference for
-// `vitals containers --runtime <docker|kubernetes>`; a seam so a test
-// can supply a canned Report.
-var containerProber = func(prefer string) containers.Report {
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	defer cancel()
-	return containers.ProbeRuntime(ctx, prefer)
-}
+// containerReports is the list of runtimes RunContainers works over —
+// the snapshot's own ProbeAll result in production, an override in tests
+// so they don't depend on a live daemon.
+var containerReports = func(fromSnapshot []containers.Report) []containers.Report { return fromSnapshot }
 
-// RunContainers is `vitals containers` — the local container runtime /
-// Kubernetes picture plus only its findings. Unlike a snapshot's cheap
-// container list, this also samples per-container CPU/memory (a ~1s
-// server-side call per running container, run concurrently). Nothing but
-// the empty "no runtime" line when none is reachable.
+// RunContainers is `vitals containers` — every locally-reachable
+// container runtime (Docker and/or a local Kubernetes) plus only their
+// findings. Unlike the snapshot's cheap list this also samples
+// per-container CPU/memory. `prefer` ("docker"/"kubernetes") narrows the
+// output to one runtime; "" shows all.
 func RunContainers(opts RunOptions, prefer string) int {
 	snap := Collect(Options{OllamaURL: opts.OllamaURL})
+	reps := containerReports(snap.Containers)
 	if prefer == "docker" || prefer == "kubernetes" {
-		snap.Containers = containerProber(prefer)
+		reps = filterRuntime(reps, prefer)
 	}
-	snap.Containers = containerStatsSampler(snap.Containers)
+	for i := range reps {
+		reps[i] = containerStatsSampler(reps[i])
+	}
+	snap.Containers = reps
 	report := AnalyzeResource(snap, "containers")
 
 	if err := maybeWriteOutput(opts.Output, snap, report); err != nil {
@@ -64,10 +64,18 @@ func RunContainers(opts RunOptions, prefer string) int {
 	}
 
 	ui.Header("CONTAINERS")
-	renderContainers(snap.Containers, opts.Verbose)
+	if len(reps) == 0 {
+		fmt.Println(ui.Key("  no local container runtime or Kubernetes detected"))
+	}
+	for i, rep := range reps {
+		if i > 0 {
+			fmt.Println()
+		}
+		renderContainersReport(rep, opts.Verbose)
+	}
 	if len(report.Findings) == 0 {
 		fmt.Println()
-		if snap.Containers.Reachable {
+		if anyReachable(reps) {
 			ui.Okf("no container issues detected")
 		}
 		return 0
@@ -77,7 +85,26 @@ func RunContainers(opts RunOptions, prefer string) int {
 	return report.ExitCode()
 }
 
-func renderContainers(rep containers.Report, verbose bool) {
+func filterRuntime(reps []containers.Report, want string) []containers.Report {
+	out := []containers.Report{} // non-nil so --json stays an array
+	for _, r := range reps {
+		if r.Runtime == want {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func anyReachable(reps []containers.Report) bool {
+	for _, r := range reps {
+		if r.Reachable {
+			return true
+		}
+	}
+	return false
+}
+
+func renderContainersReport(rep containers.Report, verbose bool) {
 	if rep.Runtime == "" {
 		fmt.Println(ui.Key("  no local container runtime or Kubernetes detected"))
 		return
@@ -129,6 +156,12 @@ func renderContainers(rep containers.Report, verbose bool) {
 		}
 		fmt.Printf("  %-24s %-10s %6s %22s  %s\n",
 			ui.Truncate(name, 24), ui.Truncate(strings.ToLower(c.State), 10), cpu, mem, ui.Truncate(status, 40))
+		if len(c.Ports) > 0 {
+			fmt.Printf("  %s\n", ui.Key("  ports "+strings.Join(c.Ports, " ")))
+		}
+		if c.Image != "" && verbose {
+			fmt.Printf("  %s\n", ui.Key("  image "+c.Image))
+		}
 		shown++
 	}
 }

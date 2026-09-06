@@ -164,9 +164,14 @@ func HasBattery(ctx PageContext) bool {
 }
 
 // HasContainers is the Available check for the Containers module — shown
-// only when a local runtime or Kubernetes context was actually detected.
+// when any local runtime (Docker and/or Kubernetes) was detected.
 func HasContainers(ctx PageContext) bool {
-	return ctx.Snapshot.Containers.Runtime != ""
+	for _, r := range ctx.Snapshot.Containers {
+		if r.Runtime != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // WriteAction is one POST-only, mutating dashboard endpoint (roadmap item

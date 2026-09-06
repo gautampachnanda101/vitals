@@ -141,7 +141,7 @@ vitals doctor --webhook https://hooks.slack.com/...   # notify, but only when so
 vitals doctor --compare before.json after.json        # diff two saved reports
 ```
 
-The `--json` payload carries a `schema_version` (currently `1.5.0`), and the
+The `--json` payload carries a `schema_version` (currently `1.6.0`), and the
 shape only ever grows — nothing is renamed or removed without a major
 version bump. `vitals doctor --schema` prints the full JSON Schema. The
 same envelope comes back from the MCP `system_health` tool and from
@@ -218,10 +218,12 @@ that resource:
   CPU-ranked list labelled plainly as a CPU-based estimate.
 - **GPU** — processes holding VRAM where that reading is available
   (NVIDIA), or the memory pressure itself on an Apple unified-memory GPU.
-- **Containers** — appears only when a local container runtime or
-  Kubernetes context is detected: each container/pod with per-container
-  CPU and memory (usage vs limit), and the runtime VM's own RAM ceiling.
-  See [vitals containers](#vitals-containers).
+- **Containers** — appears when any local runtime is detected, with a
+  section per runtime (Docker *and* Kubernetes together on a kind/k3s
+  host): each container/pod grouped by compose project / namespace, with
+  its ports, short ID, uptime, and per-container CPU and memory against
+  its limit. There's also a Containers card on the Overview. See
+  [vitals containers](#vitals-containers).
 
 **LLM Insight** shows local runtimes and their per-model GPU offload
 alongside cloud-provider reachability. **System** shows the machine
@@ -524,25 +526,27 @@ is a `docker` or `kubectl` command for you to run.
   cluster is ignored entirely: vitals makes no network call and touches
   no credentials.
 
-`vitals containers` lists each container/pod with its state and, sampled
-on demand, per-container CPU and memory (usage against limit). It raises
-findings for OOM-kills, `CrashLoopBackOff` / `ImagePullBackOff`, restart
-loops, and failing healthchecks — and, when the machine is already tight
-on RAM, flags that the runtime's own VM is holding memory that won't
-appear ranked in the host process list. The Containers dashboard page
-shows the same, and `doctor --json` carries a cheap container list under
-`snapshot.containers` (no per-container stats on that path — it stays
-fast).
+**Both runtimes at once.** A kind/k3s/minikube host runs a Docker daemon
+*and* a Kubernetes API — so `vitals containers` shows every reachable
+runtime, each as its own section (`DOCKER · /var/run/docker.sock`, then
+`KUBERNETES · kind-kind`). The dashboard's Containers page and its
+Overview card do the same. `--runtime docker` / `--runtime kubernetes`
+narrows the output to one.
 
-Detection is auto and tries Docker first. On a machine where a
-kind/k3s/minikube cluster runs *on* Docker, both are local at once and
-the auto path stops at Docker; pass `--runtime kubernetes` (or
-`--runtime docker`) to force one.
+Each container/pod shows its state, published ports, short ID, uptime,
+compose project / namespace grouping, and — sampled on demand —
+per-container CPU and memory against its limit. Findings cover OOM-kills,
+`CrashLoopBackOff` / `ImagePullBackOff`, restart loops, and failing
+healthchecks — and, when the machine is already tight on RAM, that the
+runtime's own VM is holding memory the host process list can't see.
+`doctor --json` carries a cheap list under `snapshot.containers` (an
+array — one entry per runtime; no per-container stats on that path, so it
+stays fast).
 
 ```bash
 vitals containers
-vitals containers --runtime kubernetes           # force the pod view on a kind/k3s host
-vitals containers --json | jq '.snapshot.containers.containers[] | select(.oom_killed)'
+vitals containers --runtime kubernetes           # just the pods on a kind/k3s host
+vitals containers --json | jq '.snapshot.containers[].containers[] | select(.oom_killed)'
 ```
 
 ## Automation and integration

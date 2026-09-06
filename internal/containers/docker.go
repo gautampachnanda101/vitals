@@ -89,13 +89,49 @@ func dockerGET(ctx context.Context, cl *http.Client, base, path string) ([]byte,
 	return body, nil
 }
 
+type apiPort struct {
+	IP          string `json:"IP"`
+	PrivatePort int    `json:"PrivatePort"`
+	PublicPort  int    `json:"PublicPort"`
+	Type        string `json:"Type"`
+}
+
 type apiContainer struct {
-	ID     string            `json:"Id"`
-	Names  []string          `json:"Names"`
-	Image  string            `json:"Image"`
-	State  string            `json:"State"`
-	Status string            `json:"Status"`
-	Labels map[string]string `json:"Labels"`
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Image   string            `json:"Image"`
+	State   string            `json:"State"`
+	Status  string            `json:"Status"`
+	Labels  map[string]string `json:"Labels"`
+	Created int64             `json:"Created"`
+	Ports   []apiPort         `json:"Ports"`
+}
+
+// portMappings condenses the Engine API's per-port list into the compact
+// "host→container/proto" strings `docker ps` shows, de-duped and bounded.
+// A bare container port with no PublicPort (not published) is dropped —
+// it's noise for a "what can I reach" view.
+func portMappings(ps []apiPort) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range ps {
+		if p.PublicPort == 0 {
+			continue
+		}
+		proto := p.Type
+		if proto == "" {
+			proto = "tcp"
+		}
+		m := fmt.Sprintf("%d→%d/%s", p.PublicPort, p.PrivatePort, proto)
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+		if len(out) >= 8 {
+			break
+		}
+	}
+	return out
 }
 
 var statusExitRE = regexp.MustCompile(`\((\d+)\)`)
@@ -137,6 +173,10 @@ func parseContainerList(body []byte) []Container {
 			if m := statusExitRE.FindStringSubmatch(rc.Status); m != nil {
 				c.ExitCode, _ = strconv.Atoi(m[1])
 			}
+		}
+		c.Ports = portMappings(rc.Ports)
+		if rc.Created > 0 {
+			c.CreatedUnix = rc.Created
 		}
 		out = append(out, c)
 	}

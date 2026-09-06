@@ -38,6 +38,9 @@ func renderOverview(ctx PageContext) string {
 	if HasGPU(ctx) {
 		body += gpuCard(s.GPUs[0])
 	}
+	if HasContainers(ctx) {
+		body += containersCard(s)
+	}
 	body += `</div>`
 
 	if len(s.LLM) > 0 {
@@ -180,6 +183,42 @@ func powerCard(s doctor.Snapshot) string {
 		Slug: "power", Label: "Power", Icon: iconPower,
 		Value: fmt.Sprintf("%.0f%%", s.Power.Percent), Pct: s.Power.Percent,
 		Severity: resourceSeverity(s, "power"), Detail: detail,
+	})
+}
+
+// containersCard summarises every reachable runtime on the Overview: the
+// combined running/total count and, as the severity driver, how many are
+// unhealthy (OOM-killed, CrashLoopBackOff, failing healthcheck). No
+// sparkline yet — a container-count trend needs its own history series,
+// tracked as a follow-up.
+func containersCard(s doctor.Snapshot) string {
+	var running, total, unhealthy int
+	var runtimes []string
+	for _, rep := range s.Containers {
+		if rep.Runtime == "" {
+			continue
+		}
+		runtimes = append(runtimes, rep.Runtime)
+		r, stop, u := rep.Counts()
+		running += r
+		total += r + stop
+		unhealthy += u
+	}
+	value := fmt.Sprintf("%d / %d", running, total)
+	detail := strings.Join(runtimes, " + ") + " — all healthy"
+	sev := "ok"
+	if unhealthy > 0 {
+		sev = resourceSeverity(s, "containers")
+		detail = fmt.Sprintf("%s — %d unhealthy", strings.Join(runtimes, " + "), unhealthy)
+	}
+	pct := 0.0
+	if total > 0 {
+		pct = float64(running) / float64(total) * 100
+	}
+	return resourceCard(resourceCardData{
+		Slug: "containers", Label: "Containers", Icon: iconContainers,
+		Value: value, Pct: pct, Severity: sev,
+		Detail: detail,
 	})
 }
 

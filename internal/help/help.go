@@ -225,16 +225,32 @@ var commands = []Command{
 	{
 		Name:     "explore",
 		Synopsis: "launch the best installed interactive disk explorer",
-		Long: "Hands off to gdu, then ncdu, then dust — whichever is installed first — on the\n" +
-			"given path (default: current directory). vitals' own `disk`/`clean` commands\n" +
-			"diagnose and estimate; this is the real drill-down-and-delete tool for it.",
-		Examples: []string{"vitals explore", "vitals explore ~/Downloads"},
+		Long: "Replaces the vitals process with gdu, then ncdu, then dust — whichever is\n" +
+			"installed first — pointed at the given path (default: the current directory).\n" +
+			"From there you're in that tool's own UI and key bindings. vitals' own\n" +
+			"`disk` / `clean` diagnose and estimate; this is the drill-down-and-delete\n" +
+			"tool for it. Nothing installed? `vitals tools --install gdu` first.",
+		Examples: []string{
+			"vitals explore                     # the current directory",
+			"vitals explore ~/Library/Caches    # start somewhere specific",
+			"vitals tools --install gdu         # if none of gdu/ncdu/dust is present",
+		},
 	},
 	{
 		Name:     "live",
 		Synopsis: "launch the best installed live system monitor",
-		Long:     "Hands off to btop, then htop — whichever is installed first — for a live,\ninteractive view. `vitals top` is the no-install fallback; this is the real thing.",
-		Examples: []string{"vitals live"},
+		Long: "Replaces the vitals process with btop, then htop — whichever is installed\n" +
+			"first — for a continuously-updating interactive view. From that point on\n" +
+			"you're in btop/htop: their UI, their key bindings, their requirements\n" +
+			"(btop refuses a terminal under 24 rows — that \"terminal size too small\"\n" +
+			"screen is btop's, not vitals'). `vitals top` is vitals' own live view\n" +
+			"(`--watch`), needs no install, and adapts to any window size. Nothing\n" +
+			"installed? `vitals tools --install btop` first.",
+		Examples: []string{
+			"vitals live                     # hands off to btop or htop",
+			"vitals top --watch --sort mem   # vitals' own live view, any terminal size",
+			"vitals tools --install btop     # if neither btop nor htop is present",
+		},
 	},
 	{
 		Name:     "memhogs",
@@ -255,8 +271,12 @@ var commands = []Command{
 		Synopsis: "RAM / swap / pressure overview with a health verdict",
 		Long: "A detailed physical-memory and swap breakdown followed by a ranked verdict\n" +
 			"with concrete remedies.",
-		Flags:    []Flag{{"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals memcheck"},
+		Flags: []Flag{{"no-color", "", "disable ANSI colour"}},
+		Examples: []string{
+			"vitals memcheck                        # the full breakdown + verdict",
+			"vitals memcheck; echo $?               # 0 healthy, 1 warning, 2 critical",
+			"vitals memhogs                         # then: which apps to close",
+		},
 	},
 	{
 		Name:     "cpu",
@@ -264,15 +284,23 @@ var commands = []Command{
 		Long: "Shows the user/sys vs I/O-wait vs steal split, load against core count,\n" +
 			"clock and package temperature, then only the CPU-related findings from the\n" +
 			"correlation engine. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals cpu", "vitals cpu --json"},
+		Flags: []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{
+			"vitals cpu",
+			"vitals cpu --json | jq '.snapshot.cpu.per_core_percent'",
+			"vitals cpu -q || echo 'CPU needs a look'   # exit code in a script",
+		},
 	},
 	{
 		Name:     "mem",
 		Synopsis: "memory deep dive: RAM, swap and swap-rate detail + findings",
 		Long:     "RAM and swap usage with the current swap-in / swap-out rates, then only the\nmemory-related findings. Exit code follows the findings.",
 		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals mem"},
+		Examples: []string{
+			"vitals mem",
+			"vitals mem --json | jq '.findings'",
+			"vitals mem --ci                            # one grep-friendly line for a log",
+		},
 	},
 	{
 		Name:     "disk",
@@ -286,28 +314,36 @@ var commands = []Command{
 		Synopsis: "network deep dive: per-interface throughput + findings",
 		Long:     "Per-second rx/tx per active interface, then only the network-related\nfindings (saturation, packet loss). Exit code follows the findings.",
 		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals net"},
+		Examples: []string{
+			"vitals net",
+			"vitals net --verbose                       # more remote peers, longer DNS probe",
+			"vitals net --json | jq '.snapshot.net'",
+		},
 	},
 	{
 		Name:     "power",
 		Synopsis: "power deep dive: battery state, health, charge rate + findings",
 		Long:     "Battery charge, OS runtime estimate, health vs design capacity and charge\ndirection, then only the power-related findings. Exit code follows the findings.",
 		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals power"},
+		Examples: []string{
+			"vitals power",
+			"vitals power --json | jq '.snapshot.power.design_capacity_fraction'",
+			"watch -n60 vitals power                    # keep an eye on a draining battery",
+		},
 	},
 	{
 		Name:     "containers",
 		Synopsis: "local container / Kubernetes deep dive: state, CPU/mem, failure findings",
 		Long: "Detects a locally-running Docker-compatible runtime (via its local\n" +
-			"socket or named pipe) or a local Kubernetes context (via kubectl —\n" +
-			"loopback/private API server only, never a cloud cluster). Lists\n" +
-			"containers/pods with per-container CPU and memory, and raises findings\n" +
-			"for OOM-kills, CrashLoopBackOff, restart loops and failing healthchecks.\n" +
-			"Strictly read-only. Nothing is shown when no runtime is present.\n" +
-			"When both Docker and a local cluster are up (kind/k3s), auto-detect\n" +
-			"stops at Docker — pass --runtime kubernetes for the pod view. Exit\n" +
+			"socket or named pipe) and/or a local Kubernetes context (via kubectl —\n" +
+			"loopback/private API server only, never a cloud cluster), and shows\n" +
+			"each as its own section — a kind/k3s host has both at once. Lists\n" +
+			"containers/pods with ports, per-container CPU and memory, and raises\n" +
+			"findings for OOM-kills, CrashLoopBackOff, restart loops and failing\n" +
+			"healthchecks. Strictly read-only. Nothing is shown when no runtime is\n" +
+			"present. --runtime docker|kubernetes narrows the output to one. Exit\n" +
 			"code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"runtime", "docker|kubernetes", "force a runtime instead of auto-detecting (use kubernetes for kind/k3s)"}, {"no-color", "", "disable ANSI colour"}},
+		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "list every container, not just running + a cap (-v)"}, {"runtime", "docker|kubernetes", "show only this runtime instead of every detected one"}, {"no-color", "", "disable ANSI colour"}},
 		Examples: []string{"vitals containers", "vitals containers --json", "vitals containers --runtime kubernetes"},
 	},
 	{
@@ -317,8 +353,12 @@ var commands = []Command{
 			"processes holding VRAM (NVIDIA). Reads the vendor CLI that is already\n" +
 			"installed; reports nothing gracefully when none is present. For a live\n" +
 			"per-process view, use nvtop.",
-		Flags:    []Flag{{"json", "", "emit GPU telemetry as JSON"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals gpu", "vitals gpu --json"},
+		Flags: []Flag{{"json", "", "emit GPU telemetry as JSON"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{
+			"vitals gpu",
+			"vitals gpu --live                          # hand off to nvtop for a live per-process view",
+			"vitals gpu --json | jq '.devices[] | {name, util_percent, temp_c}'",
+		},
 	},
 	{
 		Name:     "llm",

@@ -16,7 +16,8 @@ var errDial = errors.New("dial: no such socket")
 // context, so these return an empty Report; the point is that the wiring
 // runs without panicking.
 func TestExportedWrappersAndDefaultWiring(t *testing.T) {
-	_ = Probe(context.Background()) // must not panic with or without a runtime
+	_ = Probe(context.Background())    // must not panic with or without a runtime
+	_ = ProbeAll(context.Background()) // 0, 1 or 2 entries — must not panic either
 
 	// Sample short-circuits for anything that isn't a reachable docker report.
 	if r := Sample(context.Background(), Report{}); r.Runtime != "" {

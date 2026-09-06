@@ -312,7 +312,11 @@ a path-scoped live integration workflow (real Docker daemon + real
 **Still deferred:** the console-view (011) `containers` panel — it needs
 `QuickAssess` to carry containers, which trades against 011's no-probe
 speed model and is 011's call; `RestartCount` trend history;
-`internal/tools` registry rows; k8s nodes/events/deployments.
+`internal/tools` registry rows; k8s nodes/events/deployments; an opt-in
+for a **non-local / remote Kubernetes context** (the `isLocalAPIServer`
+gate rejects public API servers today — see
+`implementation-plan.md`'s "Future" section for the shape of that
+opt-in and the trust-boundary review it needs first).
 
 **Verification:** repo gates green. Fixture tests cover the Engine-API
 list/inspect/`stats` CPU maths, pod status parsing (CrashLoop, OOM,

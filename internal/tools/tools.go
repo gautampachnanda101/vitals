@@ -280,14 +280,37 @@ func launch(d deps, category string, args []string) error {
 		if !installed(d, t) {
 			continue
 		}
-		return d.runCmd(t.binary(), args, os.Stdin, os.Stdout, os.Stderr)
+		err := d.runCmd(t.binary(), args, os.Stdin, os.Stdout, os.Stderr)
+		if err == nil {
+			return nil
+		}
+		// The handoff tool ran but exited non-zero — its own output is
+		// already on screen (e.g. btop's "terminal size too small"). Add
+		// one line tying it back to vitals and pointing at the built-in
+		// fallback, instead of a bare "error: exit status 1".
+		return fmt.Errorf("%s exited with an error (%v) — its message is above; %s", t.Name, err, fallbackHint(category))
 	}
 	names := make([]string, len(candidates))
 	for i, t := range candidates {
 		names[i] = t.Name
 	}
-	return fmt.Errorf("none of %s is installed — run `vitals tools install %s`",
-		strings.Join(names, "/"), firstOrEmpty(names))
+	return fmt.Errorf("none of %s is installed — install one with `vitals tools install %s`, or %s",
+		strings.Join(names, "/"), firstOrEmpty(names), fallbackHint(category))
+}
+
+// fallbackHint names the vitals-native command to reach for when a
+// companion tool for this category isn't available or misbehaves.
+func fallbackHint(category string) string {
+	switch category {
+	case "live monitor":
+		return "`vitals top --watch` is vitals' own live view (no install, any terminal size)"
+	case "disk explorer":
+		return "`vitals disk` is vitals' own per-mount / biggest-paths view"
+	case "GPU monitor":
+		return "`vitals gpu` is vitals' own per-GPU view"
+	default:
+		return "`vitals top` is vitals' own view"
+	}
 }
 
 func firstOrEmpty(names []string) string {

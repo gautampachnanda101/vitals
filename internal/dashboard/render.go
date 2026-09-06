@@ -8,27 +8,37 @@ import (
 	"vitals/internal/diag"
 )
 
-// Nav icons: small, stroke-based, 24x24-viewBox glyphs — one per Module,
-// set as its own Icon field at registration. Deliberately not emoji
-// (AGENTS.md's own "avoid AI slop tropes" guidance, applied here): a
-// consistent line-icon vocabulary scales and recolors with the theme
-// (stroke="currentColor" inherits .navgroup a's own color, so the active
-// state's accent color and dark-mode's swap both apply for free).
+// Nav icons: the standard Lucide (lucide.dev) line-icon set, 24x24
+// viewBox, 2px round strokes — the same vocabulary VS Code, GitHub and
+// most modern dashboards use, so each glyph reads at a glance. Inlined as
+// path data, not a dependency (consistent with this repo's "inline the
+// small surface you actually use" rule — see AGENTS.md). Deliberately not
+// emoji. Rendered in the accent colour, not the label's muted grey, so
+// the sidebar stays scannable in dark mode (see .navgroup a svg below).
+//
+// Identifier -> Lucide name: iconOverview=layout-dashboard, iconCPU=cpu,
+// iconProcesses=list, iconMemory=memory-stick, iconDisk=hard-drive,
+// iconNetwork=network, iconPower=battery-medium, iconContainers=container,
+// iconGPU=microchip, iconAdvice=lightbulb, iconLLM=bot, iconClean=sparkles,
+// iconDuplicates=copy, iconSystem=settings.
 const (
-	iconOverview   = template.HTML(`<path d="M3 12l9-8 9 8M5 10v10h14V10"/>`)
-	iconCPU        = template.HTML(`<rect x="5" y="5" width="14" height="14" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>`)
-	iconMemory     = template.HTML(`<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 4v4M16 4v4M8 16v4M16 16v4"/>`)
-	iconDisk       = template.HTML(`<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>`)
-	iconNetwork    = template.HTML(`<path d="M4 18h16M4 18V9l8-5 8 5v9"/><path d="M9 18v-5h6v5"/>`)
-	iconPower      = template.HTML(`<rect x="3" y="7" width="16" height="10" rx="1.5"/><path d="M19 10v4"/>`)
-	iconGPU        = template.HTML(`<rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 20h8M12 17v3"/>`)
-	iconAdvice     = template.HTML(`<path d="M12 3a5 5 0 00-5 5v2a4 4 0 00-2 3.5A3.5 3.5 0 008.5 17H9v3h6v-3h.5a3.5 3.5 0 003.5-3.5A4 4 0 0017 10V8a5 5 0 00-5-5z"/>`)
-	iconLLM        = template.HTML(`<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/><path d="M8 15h8"/>`)
-	iconClean      = template.HTML(`<path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 015.4-5.4l-3 3-2-2z"/>`)
-	iconDuplicates = template.HTML(`<path d="M9 4H4v6M4 4l7 7M15 4h5v6M20 4l-7 7M9 20H4v-6M4 20l7-7M15 20h5v-6M20 20l-7-7"/>`)
-	iconProcesses  = template.HTML(`<circle cx="6" cy="6" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M11 6h9M11 12h9M11 18h9"/>`)
-	iconContainers = template.HTML(`<path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/>`)
-	iconSystem     = template.HTML(`<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>`)
+	iconOverview   = template.HTML(`<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>`)
+	iconCPU        = template.HTML(`<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>`)
+	iconMemory     = template.HTML(`<path d="M6 19v-3"/><path d="M10 19v-3"/><path d="M14 19v-3"/><path d="M18 19v-3"/><path d="M8 11V9"/><path d="M16 11V9"/><path d="M12 11V9"/><path d="M2 15h20"/><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.1a2 2 0 0 0 0 3.837V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5.1a2 2 0 0 0 0-3.837Z"/>`)
+	iconDisk       = template.HTML(`<line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/>`)
+	iconNetwork    = template.HTML(`<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>`)
+	iconPower      = template.HTML(`<rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/><line x1="10" x2="10" y1="11" y2="13"/>`)
+	iconGPU        = template.HTML(`<path d="M18 12h2"/><path d="M18 16h2"/><path d="M18 8h2"/><path d="M4 12h2"/><path d="M4 16h2"/><path d="M4 8h2"/><path d="M6 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"/><path d="M9 9h6v6H9z"/>`)
+	iconAdvice     = template.HTML(`<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>`)
+	iconLLM        = template.HTML(`<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`)
+	iconClean      = template.HTML(`<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>`)
+	iconDuplicates = template.HTML(`<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`)
+	iconProcesses  = template.HTML(`<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`)
+	iconContainers = template.HTML(`<path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"/><path d="M10 21.9V14L2.1 9.1"/><path d="m10 14 11.9-6.9"/><path d="M14 19.8v-8.1"/><path d="M18 17.5V9.4"/>`)
+	// iconKubernetes: Lucide ship-wheel — reads as the k8s helm mark, and
+	// visually distinct from the plain container/box glyph.
+	iconKubernetes = template.HTML(`<circle cx="12" cy="12" r="8"/><path d="M12 2v7.5"/><path d="m19 5-5.23 5.23"/><path d="M22 12h-7.5"/><path d="m19 19-5.23-5.23"/><path d="M12 14.5V22"/><path d="M10.23 13.77 5 19"/><path d="M9.5 12H2"/><path d="M10.23 10.23 5 5"/><circle cx="12" cy="12" r="2.5"/>`)
+	iconSystem     = template.HTML(`<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`)
 )
 
 // pageShellTmpl is the whole document — system fonts only, every color
@@ -64,11 +74,11 @@ var pageShellTmpl = template.Must(template.New("pageShell").Parse(`<!doctype htm
      check (see internal/dashboard/render_test.go) before changing any of
      these, not just eyeballing it. */
   --bg:#fbfaf7; --surface:#fff; --surface-2:#f3f1ea; --ink:#1b1f23; --muted:#4b4e53; --line:#e3e1db;
-  --accent:#2b5d53; --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3;
+  --accent:#2b5d53; --ok:#2b5d53; --ok-bg:#e2eeea; --warn:#9a6b08; --warn-bg:#fbf1dc; --crit:#b3401f; --crit-bg:#fbe9e3; --k8s:#2f6fb0; --k8s-bg:#e6eff8;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#14171a; --surface:#1b1f23; --surface-2:#1f242a; --ink:#e9eaea; --muted:#b4b9bd; --line:#2a2e33;
-  --accent:#6fbfa8; --ok:#6fbfa8; --ok-bg:#1b2b26; --warn:#d9a441; --warn-bg:#362b18; --crit:#e2694a; --crit-bg:#3a241f; }
+  --accent:#6fbfa8; --ok:#6fbfa8; --ok-bg:#1b2b26; --warn:#d9a441; --warn-bg:#362b18; --crit:#e2694a; --crit-bg:#3a241f; --k8s:#6ea8e0; --k8s-bg:#1c2b3a; }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -83,8 +93,9 @@ h1:first-child,h2:first-child,h3:first-child{margin-top:0}
 .brand b{font-size:1.05rem;font-weight:800}
 .brand span{display:block;font-size:.68rem;color:var(--muted);margin-top:.15rem}
 .navgroup h4{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 .35rem .55rem;font-weight:700}
-.navgroup a{display:flex;align-items:center;gap:.6rem;padding:.46rem .55rem;border-radius:8px;color:var(--muted);font-size:.86rem;font-weight:500;text-decoration:none;margin-bottom:.05rem}
-.navgroup a svg{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.8}
+.navgroup a{display:flex;align-items:center;gap:.65rem;padding:.5rem .55rem;border-radius:8px;color:var(--muted);font-size:.86rem;font-weight:500;text-decoration:none;margin-bottom:.05rem}
+.navgroup a svg{width:17px;height:17px;flex:0 0 auto;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.navgroup a:hover{color:var(--ink);background:var(--surface-2)}
 .navgroup a[aria-current="page"]{background:var(--ok-bg);color:var(--accent);font-weight:700}
 .main{flex:1;min-width:0;padding:1.5rem 2rem 2.6rem;max-width:1000px}
 header.top{margin-bottom:1.2rem}
@@ -122,6 +133,20 @@ header.top h1{font-size:1.28rem;margin:0;font-weight:800}
 .pill.ok{color:var(--ok);background:var(--ok-bg)}
 .pill.warn{color:var(--warn);background:var(--warn-bg)}
 .pill.crit{color:var(--crit);background:var(--crit-bg)}
+.pill.muted{color:var(--muted);background:var(--surface-2)}
+.rtsection{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:1rem 1.15rem;margin-bottom:1.4rem}
+.rtsection.k8s{border-left-color:var(--k8s)}
+.rtsection-head{display:flex;align-items:center;gap:.5rem;font-weight:800;font-size:.95rem;color:var(--accent);margin-bottom:.7rem}
+.rtsection.k8s .rtsection-head{color:var(--k8s)}
+.rtsection-head svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.rtsection-head .ep{font-weight:500;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem}
+.rtchip{font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:.1rem .4rem;background:var(--ok-bg);color:var(--accent)}
+.rtchip.k8s{background:var(--k8s-bg);color:var(--k8s)}
+.rttoggle{display:flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rtlabel{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-right:.3rem}
+.rtpill{font-size:.8rem;font-weight:600;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:.25rem .8rem}
+.rtpill:hover{border-color:var(--accent);color:var(--accent)}
+.rtpill.on{background:var(--ok-bg);border-color:var(--accent);color:var(--accent)}
 .verdict{display:flex;align-items:center;gap:.8rem;border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.2rem;border:1px solid}
 .verdict.ok{background:var(--ok-bg);border-color:var(--ok)} .verdict.warning{background:var(--warn-bg);border-color:var(--warn)} .verdict.critical{background:var(--crit-bg);border-color:var(--crit)}
 .dot{width:.65rem;height:.65rem;border-radius:50%;flex:0 0 auto}

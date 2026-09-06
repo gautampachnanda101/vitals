@@ -25,10 +25,10 @@ func TestAnalyzeContainersSilentWhenNoRuntime(t *testing.T) {
 	}
 	// A reachable runtime with only healthy containers is also silent.
 	r = diag.Report{}
-	analyzeContainers(&r, Snapshot{Containers: containers.Report{
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{{
 		Runtime: "docker", Reachable: true,
 		Containers: []containers.Container{{Name: "web", State: "running", Health: "healthy"}},
-	}})
+	}}})
 	if len(r.Findings) != 0 {
 		t.Errorf("all-healthy should raise nothing, got %+v", r.Findings)
 	}
@@ -36,10 +36,10 @@ func TestAnalyzeContainersSilentWhenNoRuntime(t *testing.T) {
 
 func TestAnalyzeContainersOOMKillIsCritical(t *testing.T) {
 	var r diag.Report
-	analyzeContainers(&r, Snapshot{Containers: containers.Report{
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{{
 		Runtime: "docker", Reachable: true,
 		Containers: []containers.Container{{Name: "worker", State: "exited", OOMKilled: true, ExitCode: 137}},
-	}})
+	}}})
 	f, ok := findingTitled(r, "worker was OOM-killed")
 	if !ok {
 		t.Fatalf("expected an OOM-kill finding, got %+v", r.Findings)
@@ -57,10 +57,10 @@ func TestAnalyzeContainersOOMKillIsCritical(t *testing.T) {
 
 func TestAnalyzeContainersCrashLoopIsCriticalWithKubectlFixes(t *testing.T) {
 	var r diag.Report
-	analyzeContainers(&r, Snapshot{Containers: containers.Report{
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{{
 		Runtime: "kubernetes", Reachable: true,
 		Containers: []containers.Container{{Name: "api-7c9", Namespace: "prod", State: "Running", WaitingOn: "CrashLoopBackOff"}},
-	}})
+	}}})
 	f, ok := findingTitled(r, "api-7c9 is stuck in CrashLoopBackOff")
 	if !ok {
 		t.Fatalf("expected a crashloop finding, got %+v", r.Findings)
@@ -76,14 +76,14 @@ func TestAnalyzeContainersCrashLoopIsCriticalWithKubectlFixes(t *testing.T) {
 
 func TestAnalyzeContainersRestartLoopAndUnhealthyAreWarnings(t *testing.T) {
 	var r diag.Report
-	analyzeContainers(&r, Snapshot{Containers: containers.Report{
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{{
 		Runtime: "docker", Reachable: true,
 		Containers: []containers.Container{
 			{Name: "flappy", State: "running", RestartCount: 12},
 			{Name: "sick", State: "running", Health: "unhealthy"},
 			{Name: "fine", State: "running", RestartCount: 2},
 		},
-	}})
+	}}})
 	if f, ok := findingTitled(r, "flappy has restarted 12 times"); !ok || f.Severity != diag.Warn {
 		t.Errorf("restart loop should be a warning, got ok=%v %+v", ok, f)
 	}
@@ -96,7 +96,7 @@ func TestAnalyzeContainersRestartLoopAndUnhealthyAreWarnings(t *testing.T) {
 }
 
 func TestAnalyzeContainersVMRAMHogOnlyWhenMemoryIsTight(t *testing.T) {
-	base := Snapshot{Containers: containers.Report{Runtime: "docker", Reachable: true, VMTotalBytes: 8 << 30}}
+	base := Snapshot{Containers: []containers.Report{{Runtime: "docker", Reachable: true, VMTotalBytes: 8 << 30}}}
 
 	var loose diag.Report
 	base.Memory.UsedPct = 40
@@ -117,11 +117,33 @@ func TestAnalyzeContainersVMRAMHogOnlyWhenMemoryIsTight(t *testing.T) {
 	}
 }
 
+func TestAnalyzeContainersAcrossBothRuntimes(t *testing.T) {
+	var r diag.Report
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{
+		{Runtime: "docker", Reachable: true,
+			Containers: []containers.Container{{Name: "worker", State: "exited", OOMKilled: true}}},
+		{Runtime: "kubernetes", Reachable: true,
+			Containers: []containers.Container{{Name: "api", Namespace: "prod", State: "Running", WaitingOn: "CrashLoopBackOff"}}},
+	}})
+	if _, ok := findingTitled(r, "worker was OOM-killed"); !ok {
+		t.Error("the docker runtime's OOM finding is missing")
+	}
+	if _, ok := findingTitled(r, "api is stuck in CrashLoopBackOff"); !ok {
+		t.Error("the kubernetes runtime's crashloop finding is missing")
+	}
+	// an unreachable runtime in the list contributes nothing, doesn't panic
+	r = diag.Report{}
+	analyzeContainers(&r, Snapshot{Containers: []containers.Report{{Runtime: "docker", Note: "wedged"}}})
+	if len(r.Findings) != 0 {
+		t.Errorf("an unreachable runtime should raise nothing, got %+v", r.Findings)
+	}
+}
+
 func TestAnalyzeContainersRunsViaAnalyzeAndAnalyzeResource(t *testing.T) {
-	s := Snapshot{Containers: containers.Report{
+	s := Snapshot{Containers: []containers.Report{{
 		Runtime: "docker", Reachable: true,
 		Containers: []containers.Container{{Name: "x", State: "exited", OOMKilled: true}},
-	}}
+	}}}
 	if _, ok := findingTitled(Analyze(s), "OOM-killed"); !ok {
 		t.Error("Analyze should include container findings")
 	}
