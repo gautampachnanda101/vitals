@@ -39,6 +39,8 @@ func TestRouteMarksReadOnlyPagesLiveAndInteractiveOnesNot(t *testing.T) {
 		{Slug: "cpu", NavLabel: "CPU", Available: Always, Render: func(PageContext) string { return "CPU" }},
 		{Slug: "clean", NavLabel: "Clean", Available: Always, Render: func(PageContext) string { return "CLEAN" }},
 		{Slug: "dupes", NavLabel: "Duplicates", Available: Always, Render: func(PageContext) string { return "DUP" }},
+		{Slug: "disk", NavLabel: "Disk", Available: Always, Render: func(PageContext) string { return "DISK" }},
+		{Slug: "advice", NavLabel: "Advice", Available: Always, Render: func(PageContext) string { return "ADV" }},
 	})
 
 	for _, p := range []string{"/", "/cpu"} {
@@ -46,7 +48,7 @@ func TestRouteMarksReadOnlyPagesLiveAndInteractiveOnesNot(t *testing.T) {
 			t.Errorf("read-only page %s should auto-refresh", p)
 		}
 	}
-	for _, p := range []string{"/clean", "/dupes"} {
+	for _, p := range []string{"/clean", "/dupes", "/disk", "/advice"} {
 		if _, body := route(p, PageContext{}); strings.Contains(body, `data-live="1"`) {
 			t.Errorf("interactive page %s must not auto-refresh", p)
 		}
@@ -58,7 +60,7 @@ func TestRouteMarksReadOnlyPagesLiveAndInteractiveOnesNot(t *testing.T) {
 }
 
 func TestNoLiveRefreshCoversTheInteractivePages(t *testing.T) {
-	for _, slug := range []string{"clean", "dupes"} {
+	for _, slug := range []string{"clean", "dupes", "disk", "advice"} {
 		if !noLiveRefresh[slug] {
 			t.Errorf("%q carries interactive client state and must be in noLiveRefresh", slug)
 		}

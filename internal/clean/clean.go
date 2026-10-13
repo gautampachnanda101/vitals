@@ -1,13 +1,10 @@
-// Package clean implements a cross-platform disk cleanup routine in pure Go.
-//
-// All file removal is done with the Go standard library so the binary is fully
-// self-contained. Optional package-manager cleanups (brew, docker, pip, apt...)
-// are only attempted when the corresponding executable is already on PATH; if it
-// is missing the step is silently skipped.
+// Package clean plans and applies selective, bounded cross-platform cleanup.
 package clean
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -43,11 +40,15 @@ type Options struct {
 	DryRun      bool // report what would be deleted, delete nothing
 	Assume      bool // skip the interactive confirmation prompt
 	ShowHistory bool // print past runs from the audit log instead of cleaning
+	Categories  string
+	MinAge      time.Duration
+	MinAgeSet   bool
+	JSON        bool
+	Tools       string // optional comma-separated subset of tool actions
 }
 
 type runner struct {
 	opts      Options
-	home      string
 	freedByRM atomic.Int64 // bytes accounted for by our own deletions
 
 	recordsMu sync.Mutex
@@ -70,11 +71,15 @@ type runner struct {
 // instead of vitals clean's own stdout. FreeBefore/FreeAfter are 0 when
 // unavailable (freeSpace can't determine it), not a sentinel error.
 type Result struct {
-	FreedBytes int64
-	FreeBefore int64
-	FreeAfter  int64
-	Records    []PurgeRecord
-	DryRun     bool
+	FreedBytes int64         `json:"freed_bytes"`
+	FreeBefore int64         `json:"free_before"`
+	FreeAfter  int64         `json:"free_after"`
+	Records    []PurgeRecord `json:"records,omitempty"`
+	DryRun     bool          `json:"dry_run"`
+	Actions    []Action      `json:"actions"`
+	Complete   bool          `json:"complete"`
+	Error      string        `json:"error,omitempty"`
+	Warning    string        `json:"warning"`
 }
 
 // Apply runs the real (or, with opts.DryRun, a measure-only) cleanup and
@@ -85,45 +90,29 @@ type Result struct {
 // logic, the same relationship doctor.Assess has to doctor.Collect+
 // Analyze.
 func Apply(home string, opts Options) Result {
-	r := &runner{
-		opts: opts, home: home,
-		lookPath: exec.LookPath,
-		runCmd:   func(name string, args ...string) error { return exec.Command(name, args...).Run() },
+	opts, err := normalizedOptions(opts)
+	if err != nil {
+		return Result{DryRun: opts.DryRun, Error: err.Error(), Warning: RiskWarning}
 	}
-
-	freeBefore := freeSpace()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); r.cleanDevCaches() }()
-	go func() {
-		defer wg.Done()
-		switch runtime.GOOS {
-		case "linux":
-			r.cleanLinux()
-		case "darwin":
-			r.cleanMacOS()
-		case "windows":
-			r.cleanWindows()
-		default:
-			ui.Warnf("no OS-specific cleanup for %s", runtime.GOOS)
+	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
+	p := buildPlan(ctx, cleanupTargets(runtime.GOOS, home, opts), time.Now().Add(-opts.MinAge), planFileLimit)
+	markToolAvailability(&p, exec.LookPath)
+	discoverToolCaches(ctx, &p, probeToolCache)
+	cancel()
+	if opts.DryRun {
+		return previewResult(p)
+	}
+	before := freeSpace()
+	result := executePlan(context.Background(), p, runCleanupCommand, nil)
+	result.FreeBefore, result.FreeAfter = before, freeSpace()
+	if path, ok := cleanHistoryPath(); ok {
+		if err := appendCleanHistoryTo(path, RunRecord{Time: time.Now(), TotalBytes: result.FreedBytes, Purges: result.Records, Actions: result.Actions}); err != nil {
+			result.Error = fmt.Sprintf("cleanup finished but audit history could not be saved: %v", err)
 		}
-	}()
-	wg.Wait()
-
-	freeAfter := freeSpace()
-
-	if !opts.DryRun {
-		recordRun(RunRecord{Time: time.Now(), TotalBytes: r.freedByRM.Load(), Purges: r.records})
+	} else {
+		result.Error = "cleanup finished but config directory is unavailable; audit history could not be saved"
 	}
-
-	return Result{
-		FreedBytes: r.freedByRM.Load(),
-		FreeBefore: freeBefore,
-		FreeAfter:  freeAfter,
-		Records:    r.records,
-		DryRun:     opts.DryRun,
-	}
+	return result
 }
 
 // Run executes the cleanup and prints a report.
@@ -131,6 +120,9 @@ func Run(opts Options) error { return run(defaultDeps, opts) }
 
 func run(d deps, opts Options) error {
 	if opts.ShowHistory {
+		if opts.JSON {
+			return fmt.Errorf("clean --history cannot be combined with --json; use --history for readable audit output")
+		}
 		ui.Header("CLEAN HISTORY")
 		fmt.Print(renderCleanHistory(History()))
 		return nil
@@ -140,32 +132,64 @@ func run(d deps, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("cannot determine home directory: %w", err)
 	}
-
-	ui.Header("CROSS-PLATFORM DISK CLEANER")
-	fmt.Printf("  OS: %s/%s   Home: %s\n", runtime.GOOS, runtime.GOARCH, home)
-	if opts.DryRun {
-		ui.Warnf("dry-run: nothing will be deleted")
-	} else if !opts.Assume && !confirm(d.confirmReader) {
-		ui.Infof("aborted")
+	opts, err = normalizedOptions(opts)
+	if err != nil {
+		return err
+	}
+	if opts.JSON && !opts.DryRun && !opts.Assume {
+		return fmt.Errorf("clean --json requires --dry-run or --yes; preview before applying")
+	}
+	if opts.JSON {
+		result := Apply(home, opts)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			return err
+		}
+		if result.Error != "" {
+			return fmt.Errorf("%s", result.Error)
+		}
 		return nil
 	}
 
+	ui.Header("CROSS-PLATFORM DISK CLEANER")
+	fmt.Printf("  OS: %s/%s   Home: %s\n", runtime.GOOS, runtime.GOARCH, home)
+	fmt.Printf("  Selected: %s; temp min-age: %s\n", opts.Categories, opts.MinAge)
+	ui.Warnf("%s", RiskWarning)
+	fmt.Println("  Logs, Trash and tool commands are opt-in. Close affected applications; see vitals guide.")
+	if opts.DryRun {
+		ui.Warnf("dry-run: nothing will be deleted")
+	} else if !opts.Assume {
+		ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
+		preview := Preview(ctx, home, opts)
+		cancel()
+		renderActions(preview)
+		if preview.Error != "" {
+			return fmt.Errorf("%s", preview.Error)
+		}
+		if !confirm(d.confirmReader) {
+			ui.Infof("aborted")
+			return nil
+		}
+	}
+
 	result := Apply(home, opts)
+	renderActions(result)
 
 	ui.Header("SUMMARY")
 	measured := ui.HumanBytes(result.FreedBytes)
+	fmt.Println("  Logical file bytes only; not guaranteed physical space recovery. Empty directories are retained.")
 	if opts.DryRun {
 		fmt.Printf("  Would remove (measured)      : %s\n", measured)
 	} else {
 		fmt.Printf("  Removed (measured)           : %s\n", measured)
 	}
-	// Filesystem free space is shown as context only, never as a "reclaimed"
-	// figure: other processes write to the disk concurrently, so the delta is
-	// not attributable to this run. The measured byte count above is the
-	// honest number.
 	if !opts.DryRun && result.FreeBefore > 0 && result.FreeAfter > 0 {
 		fmt.Printf("  Root filesystem free space   : %s -> %s\n",
 			ui.HumanBytes(result.FreeBefore), ui.HumanBytes(result.FreeAfter))
+	}
+	if result.Error != "" {
+		return fmt.Errorf("%s", result.Error)
 	}
 	if opts.DryRun {
 		ui.Okf("dry-run complete — re-run without --dry-run to apply")
@@ -175,8 +199,37 @@ func run(d deps, opts Options) error {
 	return nil
 }
 
+func renderActions(result Result) {
+	for _, a := range result.Actions {
+		size := ui.HumanBytes(a.Bytes)
+		if !result.DryRun {
+			size = ui.HumanBytes(a.Removed)
+		}
+		if a.Kind == "command" {
+			size = "reclaim unknown"
+		}
+		fmt.Printf("  [%s] %s  %s  %s\n    %s\n", a.Category, a.Status, size, a.Target, a.Reason)
+		if a.Preserved > 0 {
+			fmt.Printf("    Preserved %d recent or non-regular files\n", a.Preserved)
+		}
+		for _, issue := range a.Issues {
+			ui.Warnf("%s", issue)
+		}
+		for _, path := range a.Protected {
+			fmt.Printf("    Protected: %s (models/data or manager-owned cache); use the owning tool or vitals explore to review.\n", path)
+		}
+		if a.Discovery != "" {
+			fmt.Printf("    Discovery: %s\n", a.Discovery)
+		}
+		for _, path := range a.Locations {
+			fmt.Printf("    Discovered cache: %s\n", path)
+		}
+	}
+
+}
+
 func confirm(r io.Reader) bool {
-	fmt.Print(ui.Yellow + "This permanently deletes cache/log/temp files. Continue? [y/N] " + ui.Reset)
+	fmt.Print(ui.Yellow + "Proceed at your own risk? No undo: selected files are deleted and selected tool commands run. Apply rescans, not the earlier preview. Continue? [y/N] " + ui.Reset)
 	sc := bufio.NewScanner(r)
 	if !sc.Scan() {
 		return false
@@ -215,14 +268,22 @@ func freeSpace() int64 {
 // ReclaimableSummary so `vitals disk` reports the same directories `clean`
 // would actually touch.
 func devCacheDirs(home string) []string {
+	cacheHome := filepath.Join(home, ".cache")
+	if path := os.Getenv("XDG_CACHE_HOME"); filepath.IsAbs(path) {
+		cacheHome = path
+	}
+	gradleHome := os.Getenv("GRADLE_USER_HOME")
+	if !filepath.IsAbs(gradleHome) {
+		gradleHome = filepath.Join(home, ".gradle")
+	}
+	cargoHome := os.Getenv("CARGO_HOME")
+	if !filepath.IsAbs(cargoHome) {
+		cargoHome = filepath.Join(home, ".cargo")
+	}
 	return []string{
-		filepath.Join(home, ".cache"),
-		filepath.Join(home, ".npm", "_cacache"),
-		filepath.Join(home, ".yarn", "berry", "cache"),
-		filepath.Join(home, "Library", "Caches", "pip"),
-		filepath.Join(home, ".gradle", "caches"),
-		filepath.Join(home, ".m2", "repository", ".cache"),
-		filepath.Join(home, ".cargo", "registry", "cache"), // downloaded .crate archives — re-fetched on demand
+		cacheHome,
+		filepath.Join(gradleHome, "caches"),
+		filepath.Join(cargoHome, "registry", "cache"),
 	}
 }
 
@@ -263,63 +324,19 @@ func osCacheDirs(goos, home string) []string {
 			if matches, _ := filepath.Glob(filepath.Join(la, "Mozilla", "Firefox", "Profiles", "*", "cache2")); len(matches) > 0 {
 				dirs = append(dirs, matches...)
 			}
+			for _, browser := range []string{"Google", "Microsoft"} {
+				product := "Chrome"
+				if browser == "Microsoft" {
+					product = "Edge"
+				}
+				matches, _ := filepath.Glob(filepath.Join(la, browser, product, "User Data", "*", "Cache"))
+				dirs = append(dirs, matches...)
+			}
 		}
 		return dirs
 	default:
 		return nil
 	}
-}
-
-func (r *runner) cleanDevCaches() {
-	ui.Infof("developer & runtime caches")
-	for _, d := range devCacheDirs(r.home) {
-		r.purgeContents(d)
-	}
-	r.optional("docker", "system", "prune", "-f")
-	r.optional("pip", "cache", "purge")
-	r.optional("npm", "cache", "clean", "--force")
-	r.optional("pnpm", "store", "prune")
-}
-
-func (r *runner) cleanLinux() {
-	ui.Infof("linux package caches & temp")
-	r.optional("apt-get", "clean")
-	r.optional("dnf", "clean", "all")
-	r.optional("yum", "clean", "all")
-	r.optional("pacman", "-Scc", "--noconfirm")
-	r.optional("journalctl", "--vacuum-time=7d")
-	r.optional("flatpak", "uninstall", "--unused", "-y")
-	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
-		r.purgeContents(d)
-	}
-}
-
-func (r *runner) cleanMacOS() {
-	ui.Infof("macOS caches, logs & trash")
-	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
-		r.purgeContents(d)
-	}
-	r.optional("brew", "cleanup", "-s")
-	r.optional("xcrun", "simctl", "delete", "unavailable")
-}
-
-func (r *runner) cleanWindows() {
-	ui.Infof("windows temp & component store")
-	for _, d := range osCacheDirs(runtime.GOOS, r.home) {
-		r.purgeContents(d)
-	}
-	if sr := os.Getenv("SystemRoot"); sr != "" {
-		r.purgeContents(filepath.Join(sr, "Temp"))
-		r.purgeContents(filepath.Join(sr, "Prefetch"))
-	}
-	if !r.opts.DryRun {
-		r.optional("powershell", "-NoProfile", "-Command",
-			"Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
-	}
-	// Component-store cleanup: superseded WinSxS versions of updated
-	// components, the closest Windows equivalent of `brew cleanup` /
-	// `apt-get clean`. Needs elevation; silently no-ops without it.
-	r.optional("dism.exe", "/online", "/cleanup-image", "/startcomponentcleanup")
 }
 
 // CacheEntry is one candidate directory's measured size, for reporting what a
@@ -339,8 +356,16 @@ func ReclaimableSummary(budget time.Duration) (entries []CacheEntry, complete bo
 	if err != nil {
 		return nil, false
 	}
-	dirs := append(devCacheDirs(home), osCacheDirs(runtime.GOOS, home)...)
-	return measureDirs(dirs, budget)
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	result := Preview(ctx, home, Options{})
+	for _, a := range result.Actions {
+		if a.Bytes > 0 {
+			entries = append(entries, CacheEntry{Path: a.Target, Bytes: a.Bytes})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Bytes > entries[j].Bytes })
+	return entries, result.Complete
 }
 
 // measureDirs is ReclaimableSummary's testable core: given an explicit

@@ -9,6 +9,7 @@ import (
 
 	"vitals/internal/config"
 	"vitals/internal/diag"
+	"vitals/internal/diskusage"
 	"vitals/internal/ui"
 )
 
@@ -22,6 +23,8 @@ type RunOptions struct {
 	Webhook              string // if set, POST the JSON envelope here when the verdict needs attention
 	WebhookAllowInsecure bool   // allow plain http and loopback/private/link-local --webhook targets (refused by default)
 	Verbose              bool   // show more than the default view has room for (every core, the full reclaimable list, ...)
+	DiskScan             *diskusage.Options
+	DiskRoot             string
 }
 
 // Assess collects a snapshot and analyses it, returning both. Shared by the
@@ -44,7 +47,7 @@ func Assess(opts RunOptions) (Snapshot, diag.Report) {
 func QuickAssess(opts RunOptions) (Snapshot, diag.Report) {
 	snap := Collect(Options{OllamaURL: opts.OllamaURL, SkipProbes: true})
 	report := Analyze(snap)
-	addLeakFinding(&report, LoadHistory())
+	addLeakFinding(&report, LoadHistory(), snap)
 	return snap, report
 }
 
@@ -57,7 +60,7 @@ func QuickAssess(opts RunOptions) (Snapshot, diag.Report) {
 func finishAssess(snap Snapshot) (Snapshot, diag.Report) {
 	recordHistory(snap)
 	report := Analyze(snap)
-	addLeakFinding(&report, LoadHistory())
+	addLeakFinding(&report, LoadHistory(), snap)
 	return snap, report
 }
 
@@ -66,25 +69,104 @@ const (
 	leakMinGrowthBytes = 200 << 20 // 200 MB
 )
 
+// isLikelyCacheOrRuntime returns true for processes known to allocate memory
+// dynamically for caching (such as LLM KV caches and attention buffers),
+// database buffer pools, managed runtime heaps, or container engines.
+func isLikelyCacheOrRuntime(name string) bool {
+	lower := strings.ToLower(name)
+	indicators := []string{
+		"llama", "ollama", "vllm", "localai", "model",
+		"postgres", "mysql", "mariadb", "redis", "mongod", "clickhouse",
+		"java", "node", "python", "ruby", "deno", "bun", "go",
+		"docker", "containerd", "k3s", "kind",
+	}
+	for _, ind := range indicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasMemoryPressure returns true when host memory is constrained or actively swapping.
+func hasMemoryPressure(mem Memory) bool {
+	cfg := config.Load()
+	warnPct := cfg.RAMWarnPercent
+	if warnPct <= 0 {
+		warnPct = 78
+	}
+	if mem.UsedPct >= warnPct {
+		return true
+	}
+	if mem.AvailablePct > 0 && mem.AvailablePct < 15 {
+		return true
+	}
+	if mem.SwapUsedPct >= 30 || mem.SwapOutPerSec > 0 {
+		return true
+	}
+	return false
+}
+
 // addLeakFinding appends a warning when history shows a sustained RSS climb,
-// dropping Analyze's lone "No bottleneck detected" placeholder first so a
-// real finding never sits next to a stale "all healthy" one.
-func addLeakFinding(report *diag.Report, history []HistoryPoint) {
+// taking into account machine memory pressure and process behavior (e.g. LLM
+// KV caches, database buffer pools, and allocator retention).
+func addLeakFinding(report *diag.Report, history []HistoryPoint, snap Snapshot) {
 	proc, growth, ok := DetectMemoryGrowth(history, leakMinSamples, leakMinGrowthBytes)
 	if !ok {
 		return
 	}
+
+	memPressure := hasMemoryPressure(snap.Memory)
+	isCacheOrRuntime := isLikelyCacheOrRuntime(proc.Name)
+
+	// If the machine has ample RAM headroom and no swap pressure, caching runtimes
+	// (LLMs allocating KV cache and attention buffers, database buffer pools, or
+	// allocator heap retention) are operating normally. Do not flag them as leaks.
+	if !memPressure && isCacheOrRuntime {
+		return
+	}
+
 	if len(report.Findings) == 1 && report.Findings[0].Severity == diag.OK {
 		report.Findings = nil
 	}
+
+	if memPressure {
+		if isCacheOrRuntime {
+			report.Add(diag.Finding{
+				Severity: diag.Warn,
+				Title:    fmt.Sprintf("%s memory footprint expanding under system memory pressure", proc.Name),
+				Detail: fmt.Sprintf("pid %d grew by %s over recorded history without shrinking while host memory is constrained (%.0f%% RAM used, %.0f%% swap). For %s, this often reflects active KV cache/context slot allocation or buffer pools competing with system memory.",
+					proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct, snap.Memory.SwapUsedPct, proc.Name),
+				Fixes: []string{
+					fmt.Sprintf("review %s configuration to constrain context length, KV cache slots, or buffer limits", proc.Name),
+					fmt.Sprintf("if memory pressure causes thrashing and the process does not cap its usage, restart it gracefully or `kill %d`", proc.PID),
+				},
+			})
+		} else {
+			report.Add(diag.Finding{
+				Severity: diag.Warn,
+				Title:    fmt.Sprintf("%s is steadily climbing in memory under system memory pressure", proc.Name),
+				Detail: fmt.Sprintf("pid %d grew by %s over recorded history with no drop back down while host RAM is constrained (%.0f%% used, %.0f%% swap) — a possible memory leak or unmanaged working set",
+					proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct, snap.Memory.SwapUsedPct),
+				Fixes: []string{
+					fmt.Sprintf("inspect %s (pid %d) activity and logs for unbounded memory growth", proc.Name, proc.PID),
+					fmt.Sprintf("restart the process if memory pressure persists: `kill %d`", proc.PID),
+					"if growth resumes unabated after restart, file it as a leak with the maintainer",
+				},
+			})
+		}
+		return
+	}
+
+	// No memory pressure on host, but an unknown process is monotonically growing
 	report.Add(diag.Finding{
 		Severity: diag.Warn,
 		Title:    fmt.Sprintf("%s is steadily climbing in memory", proc.Name),
-		Detail: fmt.Sprintf("pid %d grew by %s over the recorded history with no drop back down — a likely memory leak, not normal usage",
-			proc.PID, ui.HumanBytes(int64(growth))),
+		Detail: fmt.Sprintf("pid %d grew by %s over recorded history with no drop back down. Host RAM is currently healthy (%.0f%% used), but steady unreleased growth may indicate a memory leak or unbounded cache.",
+			proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct),
 		Fixes: []string{
-			fmt.Sprintf("restart it: `kill %d` (or quit the app normally)", proc.PID),
-			"if it recurs, file it as a leak with the app's maintainer",
+			fmt.Sprintf("monitor %s (pid %d) to check if its working set stabilizes", proc.Name, proc.PID),
+			fmt.Sprintf("if growth continues unbounded or begins pressuring memory, restart it: `kill %d`", proc.PID),
 		},
 	})
 }
@@ -249,12 +331,14 @@ func fullestDisk(ds []Disk) (Disk, bool) {
 }
 
 type JSONEnvelope struct {
-	SchemaVersion string         `json:"schema_version"`
-	Timestamp     string         `json:"timestamp"`
-	Verdict       string         `json:"verdict"`
-	ExitCode      int            `json:"exit_code"`
-	Findings      []diag.Finding `json:"findings"`
-	Snapshot      Snapshot       `json:"snapshot"`
+	SchemaVersion string            `json:"schema_version"`
+	Timestamp     string            `json:"timestamp"`
+	Verdict       string            `json:"verdict"`
+	ExitCode      int               `json:"exit_code"`
+	Findings      []diag.Finding    `json:"findings"`
+	Snapshot      Snapshot          `json:"snapshot"`
+	Resource      string            `json:"resource,omitempty"`
+	DiskUsage     *diskusage.Result `json:"disk_usage,omitempty"`
 }
 
 // JSONReport builds the canonical `--json` envelope for a snapshot + verdict.

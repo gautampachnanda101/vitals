@@ -1,6 +1,7 @@
 package advice
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"vitals/internal/diag"
+	"vitals/internal/diskusage"
+	"vitals/internal/doctor"
 	"vitals/internal/llm"
 )
 
@@ -167,5 +170,196 @@ func TestNoLLMMessageWithFindingsPointsBackAtThem(t *testing.T) {
 	msg := noLLMMessage(diag.Report{Findings: []diag.Finding{{Title: "disk nearly full"}}}, errors.New("connection refused"))
 	if !strings.Contains(msg, "findings above") {
 		t.Errorf("noLLMMessage with real findings should point back at them, got: %q", msg)
+	}
+}
+
+func TestBuildPromptInstructsOnMachineRelativeMemoryAndKVAllocation(t *testing.T) {
+	prompt := BuildPrompt([]byte(`{"verdict":"ok"}`))
+	lower := strings.ToLower(prompt)
+	for _, want := range []string{"key-value", "kv", "allocator", "pressure", "kill"} {
+		if !strings.Contains(lower, want) {
+			t.Errorf("prompt missing memory guidance %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestBuildPromptIncludesDiskUsage(t *testing.T) {
+	payload := []byte(`{"report":{"verdict":"ok"},"disk_usage":{"root":"/Users/user","top_folders":[{"path":"/Users/user/.ollama","bytes":7381975040}]}}`)
+	prompt := BuildPrompt(payload)
+	if !strings.Contains(prompt, "/Users/user/.ollama") {
+		t.Errorf("prompt should embed disk_usage data, got:\n%s", prompt)
+	}
+	if !strings.Contains(strings.ToLower(prompt), "disk usage") {
+		t.Errorf("prompt should mention disk usage guidance, got:\n%s", prompt)
+	}
+}
+
+func TestRunWithTextModeHealthyWithLLM(t *testing.T) {
+	var buf strings.Builder
+	deps := runDeps{
+		assess: func(opts doctor.RunOptions) (doctor.Snapshot, diag.Report) {
+			return doctor.Snapshot{}, diag.Report{}
+		},
+		generate: func(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+			return "Keep system updated.", nil
+		},
+		out: &buf,
+	}
+
+	err := runWith(deps, Options{})
+	if err != nil {
+		t.Fatalf("runWith unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Keep system updated.") {
+		t.Errorf("expected commentary body, got: %s", out)
+	}
+}
+
+func TestRunWithTextModeWithFindingsAndNoLLM(t *testing.T) {
+	var buf strings.Builder
+	deps := runDeps{
+		assess: func(opts doctor.RunOptions) (doctor.Snapshot, diag.Report) {
+			return doctor.Snapshot{}, diag.Report{
+				Findings: []diag.Finding{
+					{Severity: diag.Critical, Title: "High Swap", Detail: "swap 90%", Fixes: []string{"reboot"}},
+				},
+			}
+		},
+		generate: func(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+			return "", errors.New("no LLM running")
+		},
+		out: &buf,
+	}
+
+	err := runWith(deps, Options{})
+	if err != nil {
+		t.Fatalf("runWith unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Keep system updated.") {
+		t.Errorf("expected no AI commentary body when LLM fails, got: %s", out)
+	}
+}
+
+func TestRunWithScanAndJSON(t *testing.T) {
+	var buf strings.Builder
+	scanCalled := false
+	deps := runDeps{
+		assess: func(opts doctor.RunOptions) (doctor.Snapshot, diag.Report) {
+			return doctor.Snapshot{}, diag.Report{}
+		},
+		scan: func(ctx context.Context, root string, opts diskusage.Options) (diskusage.Result, error) {
+			scanCalled = true
+			return diskusage.Result{
+				Root:          root,
+				Entries:       42,
+				ObservedBytes: 1024 * 1024 * 50,
+			}, nil
+		},
+		generate: func(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+			if !strings.Contains(string(reportJSON), `"disk_usage"`) {
+				t.Errorf("expected disk_usage in reportJSON, got: %s", string(reportJSON))
+			}
+			return "Disk usage looks reasonable.", nil
+		},
+		home: func() (string, error) {
+			return "/Users/testuser", nil
+		},
+		out: &buf,
+	}
+
+	opts := Options{
+		JSON:       true,
+		Scan:       true,
+		ScanBudget: "5s",
+		Top:        5,
+	}
+	err := runWith(deps, opts)
+	if err != nil {
+		t.Fatalf("runWith: %v", err)
+	}
+	if !scanCalled {
+		t.Errorf("expected disk scan to be called")
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"source": "heuristic+llm"`) {
+		t.Errorf("expected source heuristic+llm in JSON output, got: %s", out)
+	}
+	if !strings.Contains(out, `"llm_advice": "Disk usage looks reasonable."`) {
+		t.Errorf("expected llm_advice in JSON output, got: %s", out)
+	}
+}
+
+func TestRunWithJSONErrorFallback(t *testing.T) {
+	var buf strings.Builder
+	deps := runDeps{
+		assess: func(opts doctor.RunOptions) (doctor.Snapshot, diag.Report) {
+			return doctor.Snapshot{}, diag.Report{}
+		},
+		generate: func(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+			return "", errors.New("timeout connecting to LLM")
+		},
+		out: &buf,
+	}
+
+	err := runWith(deps, Options{JSON: true})
+	if err != nil {
+		t.Fatalf("runWith: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"source": "heuristic"`) {
+		t.Errorf("expected source heuristic, got: %s", out)
+	}
+	if !strings.Contains(out, `"llm_error": "timeout connecting to LLM"`) {
+		t.Errorf("expected llm_error in json, got: %s", out)
+	}
+}
+
+func TestRunWithScanTextOutput(t *testing.T) {
+	var buf strings.Builder
+	deps := runDeps{
+		assess: func(opts doctor.RunOptions) (doctor.Snapshot, diag.Report) {
+			return doctor.Snapshot{}, diag.Report{}
+		},
+		scan: func(ctx context.Context, root string, opts diskusage.Options) (diskusage.Result, error) {
+			return diskusage.Result{
+				Root:          root,
+				Entries:       1234,
+				ObservedBytes: 1024 * 1024 * 100,
+			}, nil
+		},
+		generate: func(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
+			return "Clean up temporary caches.", nil
+		},
+		home: func() (string, error) {
+			return "/Users/testuser", nil
+		},
+		out: &buf,
+	}
+
+	err := runWith(deps, Options{Scan: true, Root: "/Users/testuser"})
+	if err != nil {
+		t.Fatalf("runWith: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "disk scan: 100.00 MB observed in 1234 entries") {
+		t.Errorf("expected disk scan text output, got: %s", out)
+	}
+}
+
+func TestRunDefaultDelegation(t *testing.T) {
+	// Exercise Run with unreachable local endpoints in JSON mode.
+	// It will run doctor.Assess, skip scan, fail generate, and output JSON.
+	opts := Options{
+		JSON:        true,
+		OllamaURL:   "http://127.0.0.1:1",
+		LMStudioURL: "http://127.0.0.1:1",
+		LlamaCppURL: "http://127.0.0.1:1",
+		VLLMURL:     "http://127.0.0.1:1",
+	}
+	err := Run(opts)
+	if err != nil {
+		t.Fatalf("Run default delegation error: %v", err)
 	}
 }

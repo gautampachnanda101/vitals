@@ -3,8 +3,10 @@ package metrics
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -91,6 +93,17 @@ func TestNewMuxServesMetricsAndRoot(t *testing.T) {
 }
 
 func TestServeShutsDownCleanlyWhenItsSignalContextIsDone(t *testing.T) {
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = old
+		w.Close()
+		r.Close()
+	})
 	d := deps{
 		collect: fakeCollect(""),
 		newSignalContext: func() (context.Context, context.CancelFunc) {
@@ -108,6 +121,25 @@ func TestServeShutsDownCleanlyWhenItsSignalContextIsDone(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("serve did not shut down after its signal context was already done")
+	}
+	w.Close()
+	os.Stdout = old
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(output), "http://")
+	if start < 0 {
+		t.Fatalf("missing metrics URL in %q", output)
+	}
+	rawURL := strings.Fields(string(output)[start:])[0]
+	endpoint, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, port, err := net.SplitHostPort(endpoint.Host)
+	if err != nil || host != "127.0.0.1" || port == "0" || endpoint.Path != "/metrics" {
+		t.Fatalf("banner URL = %q; want actual bound loopback endpoint", rawURL)
 	}
 }
 

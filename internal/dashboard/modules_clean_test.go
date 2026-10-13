@@ -26,6 +26,60 @@ func withFakeCleanApply(t *testing.T, fn func(string, clean.Options) clean.Resul
 	t.Cleanup(func() { cleanApplyFn = old })
 }
 
+func TestCleanSelectionValidation(t *testing.T) {
+	withFakeCleanApply(t, failIfCleanApplyCalled(t))
+	for _, body := range []string{
+		`{"confirm":true,"categories":"unknown"}`,
+		`{"confirm":true,"categories":""}`,
+		`{"confirm":true,"min_age":"invalid"}`,
+		`{"confirm":true,"min_age":"-1h"}`,
+		`{"confirm":true,"tools":"uv"}`,
+		`{"confirm":true,"categories":"tools","tools":"unknown"}`,
+	} {
+		if status, _ := handleCleanApply(PageContext{}, []byte(body)); status != http.StatusBadRequest {
+			t.Fatalf("apply accepted %s: %d", body, status)
+		}
+		if status, _ := handleCleanPreview(PageContext{}, []byte(body)); status != http.StatusBadRequest {
+			t.Fatalf("preview accepted %s: %d", body, status)
+		}
+	}
+	if status, _ := handleCleanPreview(PageContext{}, []byte("{")); status != http.StatusBadRequest {
+		t.Fatal("accepted malformed preview")
+	}
+}
+
+func TestCleanApplyUsesSelectedPolicyAndShowsFailures(t *testing.T) {
+	withFakeCleanApply(t, func(_ string, opts clean.Options) clean.Result {
+		if opts.Categories != "tools" || opts.Tools != "uv,pnpm" || opts.MinAge != 0 || !opts.MinAgeSet {
+			t.Fatalf("selection lost: %+v", opts)
+		}
+		return clean.Result{Error: "Some actions failed", Actions: []clean.Action{{
+			Target: "<script>bad</script>", Kind: "command", Category: "tools", Status: "failed", Issues: []string{"denied"}, Protected: []string{"models"},
+		}}}
+	})
+	status, body := handleCleanApply(PageContext{}, []byte(`{"confirm":true,"categories":"tools","tools":"uv,pnpm","min_age":"0h"}`))
+	if status != http.StatusOK || !strings.Contains(body, "Some actions failed") || !strings.Contains(body, "Reclaim unknown") || !strings.Contains(body, "denied") || !strings.Contains(body, "models") || strings.Contains(body, "<script>bad</script>") {
+		t.Fatalf("unsafe or misleading result: %d %s", status, body)
+	}
+}
+
+func TestCleanPlanRendersCompleteAndIncomplete(t *testing.T) {
+	for _, complete := range []bool{false, true} {
+		body := renderCleanPlan(clean.Result{DryRun: true, Complete: complete, Actions: []clean.Action{{Target: "cache", Bytes: 1024}}})
+		want := `data-clean-complete="false"`
+		if complete {
+			want = `data-clean-complete="true"`
+		}
+		if !strings.Contains(body, want) || !strings.Contains(body, "1.00 KB") {
+			t.Fatalf("plan completeness/size missing: %s", body)
+		}
+	}
+	body := renderCleanPlan(clean.Result{})
+	if !strings.Contains(body, "Nothing measurable") {
+		t.Fatal(body)
+	}
+}
+
 func TestRenderCleanPreviewShowsTheTotalAndEachEntry(t *testing.T) {
 	entries := []clean.CacheEntry{
 		{Path: "/home/x/.cache", Bytes: 1024},

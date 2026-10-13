@@ -31,8 +31,14 @@ func init() {
 func resourcePage(resource string, body func(doctor.Snapshot) string) func(PageContext) string {
 	return func(ctx PageContext) string {
 		report := doctor.AnalyzeResource(ctx.Snapshot, resource)
-		headline := reportHeadline(report, "No issues found")
-		out := verdictBanner(headline, "", report.Worst())
+		healthy := "No issues found"
+		sub := ""
+		if resource == "disk" {
+			healthy = "No configured health threshold exceeded"
+			sub = "This does not guarantee enough free space for your next workload. Review the capacity and path analysis below."
+		}
+		headline := reportHeadline(report, healthy)
+		out := verdictBanner(headline, sub, report.Worst())
 		out += body(ctx.Snapshot)
 		out += findingsCard(report.SortedBySeverity())
 		return out
@@ -94,7 +100,7 @@ func renderMem(s doctor.Snapshot) string {
 
 func renderDisk(s doctor.Snapshot) string {
 	if len(s.Disks) == 0 {
-		return card(`<p class="unavailable">No disks reported.</p>`)
+		return card(`<p class="unavailable">No disks reported. Filesystem capacity telemetry is unavailable; read-only home path analysis below can still identify observed consumers. Run <code>vitals guide</code> for more detail.</p>`) + biggestPathsSection()
 	}
 	var out string
 	for _, d := range s.Disks {

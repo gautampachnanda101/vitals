@@ -364,8 +364,9 @@ const liveRefreshSeconds = 10
 
 // noLiveRefresh names the pages that must NOT auto-swap their content:
 // they carry interactive client state (a Preview/Apply flow, its
-// in-progress result) that an innerHTML replacement would destroy.
-var noLiveRefresh = map[string]bool{"clean": true, "dupes": true}
+// in-progress result, or in-flight async client fetch) that an innerHTML
+// replacement would destroy.
+var noLiveRefresh = map[string]bool{"clean": true, "dupes": true, "disk": true, "advice": true}
 
 func layout(title, activeSlug, version string, available []Module, body string) string {
 	return layoutLive(title, activeSlug, version, available, body, !noLiveRefresh[activeSlug])

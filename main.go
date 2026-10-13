@@ -44,6 +44,7 @@ import (
 	"vitals/internal/config"
 	"vitals/internal/consoleview"
 	"vitals/internal/dashboard"
+	"vitals/internal/diskusage"
 	"vitals/internal/doctor"
 	"vitals/internal/dupes"
 	"vitals/internal/gpu"
@@ -186,8 +187,18 @@ func run(argv []string, version string) int {
 		dry := fs.Bool("dry-run", false, "report what would be removed without deleting anything")
 		yes := fs.Bool("yes", false, "skip the confirmation prompt")
 		history := fs.Bool("history", false, "print past clean runs (date, freed) instead of cleaning")
+		categories := fs.String("categories", "caches,temp", "comma-separated caches,temp,logs,trash,tools; logs/trash/tools are opt-in")
+		minAge := fs.Duration("min-age", 7*24*time.Hour, "preserve temp files newer than this age (e.g. 168h)")
+		jsonOut := fs.Bool("json", false, "structured cleanup preview/result; applying requires --yes")
+		tools := fs.String("tools", "", "optional tool subset, e.g. uv,pnpm; requires --categories tools")
 		_ = fs.Parse(args)
-		return must(clean.Run(clean.Options{DryRun: *dry, Assume: *yes, ShowHistory: *history}))
+		opts, err := clean.ParseOptions(*categories, *minAge)
+		if err != nil {
+			return must(err)
+		}
+		opts.DryRun, opts.Assume, opts.ShowHistory, opts.JSON, opts.MinAgeSet = *dry, *yes, *history, *jsonOut, true
+		opts.Tools = *tools
+		return must(clean.Run(opts))
 
 	case "view", "glance":
 		fs := newFlagSet("view")
@@ -280,8 +291,33 @@ func run(argv []string, version string) int {
 		fs.BoolVar(quiet, "q", false, "shorthand for --quiet")
 		verbose := fs.Bool("verbose", false, "show more than the default view has room for (every core, the full reclaimable list, more net peers)")
 		fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
+		var scan bool
+		var root string
+		scanOpts := diskusage.DefaultOptions()
+		if cmd == "disk" {
+			fs.BoolVar(&scan, "scan", false, "read-only recursive space analysis")
+			fs.StringVar(&root, "root", "", "directory to scan (default home; requires --scan)")
+			fs.IntVar(&scanOpts.Top, "top", scanOpts.Top, "number of ranked paths (1-100; requires --scan)")
+			fs.DurationVar(&scanOpts.Budget, "scan-budget", scanOpts.Budget, "cooperative scan budget (up to 5m; requires --scan)")
+		}
 		_ = fs.Parse(args)
-		return doctor.RunFocus(cmd, doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose})
+		if cmd == "disk" && !scan {
+			invalid := false
+			fs.Visit(func(f *flag.Flag) {
+				if f.Name == "root" || f.Name == "top" || f.Name == "scan-budget" {
+					invalid = true
+				}
+			})
+			if invalid {
+				fmt.Fprintln(os.Stderr, "--root, --top and --scan-budget require disk --scan; see vitals help disk")
+				return 2
+			}
+		}
+		opts := doctor.RunOptions{OllamaURL: *url, JSON: *asJSON, Output: *output, CI: *ci, Quiet: *quiet, Verbose: *verbose}
+		if scan {
+			opts.DiskScan, opts.DiskRoot = &scanOpts, root
+		}
+		return doctor.RunFocus(cmd, opts)
 
 	case "containers", "container", "docker", "k8s", "kubernetes":
 		fs := newFlagSet("containers")
@@ -322,6 +358,10 @@ func run(argv []string, version string) int {
 		provider := fs.String("provider", "", "force a provider (ollama, lmstudio, llamacpp, vllm, openai, anthropic, groq, ...); default: auto-detect")
 		model := fs.String("model", "", "override the provider's default model")
 		asJSON := fs.Bool("json", false, "emit {\"advice\": \"...\"} as JSON instead of plain text")
+		scan := fs.Bool("scan", false, "run deep disk usage scan to inform advice")
+		root := fs.String("root", "", "root directory for deep disk usage scan (default: user home)")
+		scanBudget := fs.String("scan-budget", "10s", "time budget for disk usage scan (e.g. 10s, 30s)")
+		top := fs.Int("top", 10, "number of largest directories and files to inspect")
 		_ = fs.Parse(args)
 		return must(advice.Run(advice.Options{
 			OllamaURL:   *url,
@@ -331,6 +371,10 @@ func run(argv []string, version string) int {
 			Provider:    *provider,
 			Model:       *model,
 			JSON:        *asJSON,
+			Scan:        *scan,
+			Root:        *root,
+			ScanBudget:  *scanBudget,
+			Top:         *top,
 		}))
 
 	case "llm":

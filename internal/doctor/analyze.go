@@ -371,9 +371,17 @@ func analyzeThermal(r *diag.Report, s Snapshot) {
 
 func analyzeDisks(r *diag.Report, s Snapshot) {
 	for _, d := range s.Disks {
-		if d.UsedPct >= thresholds.DiskWarnPercent {
+		warnThresh := thresholds.DiskWarnPercent
+		if warnThresh <= 0 {
+			warnThresh = 90
+		}
+		critThresh := thresholds.DiskCriticalPercent
+		if critThresh <= 0 {
+			critThresh = 97
+		}
+		if d.UsedPct >= warnThresh {
 			sev := diag.Warn
-			if d.UsedPct >= thresholds.DiskCriticalPercent {
+			if d.UsedPct >= critThresh {
 				sev = diag.Critical
 			}
 			detail := fmt.Sprintf("%s is %.0f%% full (%s free)", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)))
@@ -389,6 +397,30 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 				Fixes:    []string{"`vitals clean --dry-run` then apply", "explore the biggest dirs with ncdu / gdu"},
 				Remedy:   cleanDelegateRemedy(),
 			})
+		} else {
+			elevatedThresh := warnThresh - 10
+			if elevatedThresh < 50 {
+				elevatedThresh = 50
+			}
+			headroomThresh := warnThresh - 15
+			if headroomThresh < 40 {
+				headroomThresh = 40
+			}
+			if d.UsedPct >= elevatedThresh || (d.FreeBytes > 0 && d.FreeBytes < 50*(1<<30) && d.UsedPct >= headroomThresh) {
+				detail := fmt.Sprintf("%s is %.0f%% full with %s free headroom", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)))
+				if d.GrowthBytesPerSec > 0 {
+					secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
+					detail += " and filling — " + timeToFull(secs)
+				}
+				r.Add(diag.Finding{
+					Severity: diag.Warn,
+					ID:       "disk-elevated",
+					Title:    fmt.Sprintf("Disk %s usage elevated", d.Mount),
+					Detail:   detail,
+					Fixes:    []string{"`vitals clean --dry-run` to reclaim caches/logs", "inspect largest directories with `vitals disk --scan` or `vitals tools`"},
+					Remedy:   cleanDelegateRemedy(),
+				})
+			}
 		}
 		if d.UtilPct >= 90 && d.AwaitMS >= 20 {
 			r.Add(diag.Finding{

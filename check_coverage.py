@@ -39,16 +39,11 @@ FLOORS = {
     # covered package), validated by cli_smoke_test.go and (for dashboard
     # specifically, since it never exits on its own) dashboard_smoke_test.go
     # exec'ing the real binary instead.
-    "vitals": 39,
-    # advice: Run is thin live glue (doctor.Assess, then the
-    # already-100%-covered Generate, then print/JSON-encode) — nothing
-    # left to extract without testing doctor.Assess itself. Dropped from
-    # 39 to 37 when Run started calling doctor.PrintFindings directly for
-    # the styled/coloured terminal path (matching vitals doctor's own
-    # output instead of a plain text dump) — still glue, still exercised
-    # end-to-end by cli_smoke_test.go, not unit tested for the same reason
-    # as the rest of Run.
-    "vitals/internal/advice": 37,
+    "vitals": 49,  # 50.0% measured after disk scan flag/validation coverage
+    # advice: Run now uses injected dependencies (runDeps) so Assess, Scan,
+    # and Generate can be tested across both text and JSON modes without
+    # external network/process calls. Measured at 95.6%.
+    "vitals/internal/advice": 94,
     # clean (item 009): os.UserHomeDir and the os.Stdin confirm read are
     # injected via a deps struct (homeDir, confirmReader), same shape as
     # internal/tools'/internal/dupes'; optional()'s package-manager exec
@@ -67,23 +62,13 @@ FLOORS = {
     # freeSpace/History/appendCleanHistoryTo's own error branches
     # (disk.Usage/os.Create failing) would need a real permission/IO
     # failure to exercise honestly.
-    "vitals/internal/clean": 84,
+    "vitals/internal/clean": 94,  # 95.3% measured after selective cleanup and native discovery
     "vitals/internal/config": 99,  # 100.0% measured; 99 for float-rounding margin
-    # dashboard: floor dropped from 98 with roadmap item 002 (the vitals
-    # dashboard MVP), not a regression — Serve (dashboard.go) is new,
-    # genuinely live glue (wires the snapshot cache + route into an
-    # http.Handler, then calls guide.ServeLocal, a blocking server), the
-    # same shape as every other Serve function in this codebase. route
-    # and loopbackAddr, the pure logic Serve wraps, are both 100%.
-    # Raised to 91 after the html/template migration + advice-cache fix
-    # (item 007's review follow-ups): mustExecute's panic branch (only
-    # reachable from a template/struct mismatch, i.e. a coding bug) and
-    # generateAdvice's json.Marshal error branch (doctor.JSONReport is
-    # plain structs/slices/strings, can't realistically fail to marshal)
-    # are the only remaining gaps, both the same class of genuinely
-    # unreachable defensive code already exempted elsewhere in this repo.
-    "vitals/internal/dashboard": 91,
+    # Shared disk scanner integration tests cover the live HTTP handler,
+    # confinement, cache/admission and async fragment: 95.6% raw measured.
+    "vitals/internal/dashboard": 94,
     "vitals/internal/diag": 96,
+    "vitals/internal/diskusage": 97,  # 98.3% raw measured, including production limits
     # doctor (item 009, second slice): Collect is now decomposed behind a
     # source struct (same shape as internal/monitor's), with named
     # per-signal collectors — collectCPU/collectMemory/collectGPUs/
@@ -98,14 +83,13 @@ FLOORS = {
     # bigger subsystems (per-mount filtering/cooldown state, three
     # platforms' battery reads) that deserve their own decomposition pass
     # rather than being folded into this one. readLinuxBattery (Linux-only
-    # sysfs reads) and the CLI entrypoints (Run/Assess/RunFocus and their
-    # print helpers focusDetail/printFindings/printReclaimable/
-    # listExcludedMounts) remain untouched — thin glue over already-tested
-    # pure logic, not this item's target. The correlation engine itself
+    # sysfs reads) and some CLI entrypoints still need coverage work.
+    # Item 014 adds injected focus scan/collection tests, raising raw
+    # coverage to 79.6%; the 95% raw target remains unmet. The correlation engine itself
     # (Analyze/AnalyzeResource and every analyze* rule) and the small pure
     # helpers (pct, throttleNote, fullestDisk, summaryLine, diskGrowthRate,
     # procSuffix/quitFix/coreSpread/timeToFull/nz) are at or near 100%.
-    "vitals/internal/doctor": 71,
+    "vitals/internal/doctor": 78,
     # dupes (item 009): os.UserHomeDir and the os.Stdin confirm prompt are
     # both injected via a deps struct (homeDir, confirmReader), same
     # shape as internal/tools'; Run/applyHardlinksWithConfirmation/

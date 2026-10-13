@@ -39,11 +39,27 @@ func Serve(opts Options) error {
 	}
 
 	cache := newSnapshotCache(opts.OllamaURL)
+	return guide.ServeLocal(dashboardHandler(opts, cache), "the dashboard", guide.ServeOptions{Addr: addr, NoOpen: opts.NoOpen})
+}
+
+func dashboardHandler(opts Options, cache *snapshotCache) http.Handler {
 	llmOpts := llm.CompleteOptions{OllamaURL: opts.OllamaURL}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a, ok := findAsyncFragment(r.URL.Path); ok && a.SameOrigin {
+			status, body := route(r.URL.Path, PageContext{Request: r})
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			if status == http.StatusServiceUnavailable {
+				w.Header().Set("Retry-After", "2")
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+			return
+		}
 		snap := cache.Get()
 		ctx := PageContext{
+			Request:   r,
 			Snapshot:  snap.Snapshot,
 			Report:    snap.Report,
 			Providers: snap.Providers,
@@ -68,7 +84,6 @@ func Serve(opts Options) error {
 		_, _ = w.Write([]byte(body))
 	})
 
-	return guide.ServeLocal(handler, "the dashboard", guide.ServeOptions{Addr: addr, NoOpen: opts.NoOpen})
 }
 
 // loopbackAddr forces addr onto the loopback interface regardless of what
@@ -96,6 +111,11 @@ func loopbackAddr(addr string) (string, error) {
 // already rendered.
 func route(path string, ctx PageContext) (int, string) {
 	if a, ok := findAsyncFragment(path); ok {
+		if a.SameOrigin && ctx.Request != nil {
+			if status := protectedFragmentStatus(ctx.Request); status != http.StatusOK {
+				return status, `<p class="unavailable">Cross-origin or unsupported scan request rejected. Open the Disk page on this dashboard.</p>`
+			}
+		}
 		return a.Handler(ctx)
 	}
 
@@ -116,6 +136,23 @@ func route(path string, ctx PageContext) (int, string) {
 	}
 
 	return http.StatusOK, layoutLive(m.NavLabel, m.Slug, ctx.Version, nav, m.Render(ctx), !noLiveRefresh[m.Slug])
+}
+
+func protectedFragmentStatus(r *http.Request) int {
+	if r.Method != http.MethodGet {
+		return http.StatusMethodNotAllowed
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return http.StatusForbidden
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && origin != scheme+"://"+r.Host {
+		return http.StatusForbidden
+	}
+	return http.StatusOK
 }
 
 // routeWrite computes the HTTP status and response body for a POST to

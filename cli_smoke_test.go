@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"vitals/internal/doctor"
 	"vitals/internal/llm"
 )
 
@@ -85,7 +88,8 @@ func TestCLISmoke(t *testing.T) {
 		// hardlink, so this only exercises the flag-wiring/confirmation
 		// path, never ApplyHardlinks' actual file mutation.
 		{"dupes-hardlink-empty-dir", []string{"dupes", "--root", dupesRoot, "--hardlink", "--yes"}},
-		{"clean-dry-run", []string{"clean", "--dry-run"}},
+		{"clean-dry-run", []string{"clean", "--categories", "caches", "--dry-run"}},
+		{"clean-plan-json", []string{"clean", "--categories", "caches", "--dry-run", "--json"}},
 		{"clean-history", []string{"clean", "--history"}},
 		{"export", []string{"export"}},
 		// --ollama-url points at a closed port so this never depends on
@@ -96,6 +100,7 @@ func TestCLISmoke(t *testing.T) {
 		// unit-level Heuristic/Generate coverage this complements.
 		{"advice-no-llm", []string{"advice", "--ollama-url", "http://127.0.0.1:1"}},
 		{"advice-no-llm-json", []string{"advice", "--ollama-url", "http://127.0.0.1:1", "--json"}},
+		{"advice-no-llm-scan-json", []string{"advice", "--ollama-url", "http://127.0.0.1:1", "--scan", "--top", "5", "--scan-budget", "1s", "--json"}},
 	}
 
 	for _, c := range cases {
@@ -149,6 +154,181 @@ func TestCLISmoke(t *testing.T) {
 			}
 			if !slices.Contains(allowed, exitCode) {
 				t.Errorf("vitals %s exited %d, want one of %v:\n%s", strings.Join(c.args, " "), exitCode, allowed, out.String())
+			}
+		})
+	}
+}
+
+func TestDiskScanCLIReportsExactFixtureWithoutMutation(t *testing.T) {
+	bin := buildCLIOnce(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"large/nested.txt": strings.Repeat("a", 6000),
+		"small/tiny.txt":   "1234567890",
+		"loose.txt":        strings.Repeat("b", 3000),
+	}
+	for name, contents := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := make(map[string]os.FileInfo)
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err == nil {
+			before[path] = info
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "scan.json")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "disk", "--scan", "--root", root, "--top", "1", "--json", "--output", output)
+	scratch := t.TempDir()
+	cmd.Env = append(os.Environ(), "HOME="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=", "NO_COLOR=1")
+	for _, key := range llm.CloudAPIKeyEnvVars() {
+		cmd.Env = append(cmd.Env, key+"=")
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err = cmd.Run()
+	processCode := 0
+	if err != nil {
+		var exit *exec.ExitError
+		if !isExitError(err, &exit) || exit.ExitCode() > 2 {
+			t.Fatalf("scan CLI: %v %s", err, stderr.String())
+		}
+		processCode = exit.ExitCode()
+	}
+	var result doctor.JSONEnvelope
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("JSON: %v\n%s\n%s", err, stdout.String(), stderr.String())
+	}
+	healthCode := 0
+	for _, finding := range result.Findings {
+		healthCode = max(healthCode, finding.Severity.ExitCode())
+	}
+	if processCode != healthCode || result.ExitCode != healthCode {
+		t.Fatalf("complete scan exit: process=%d JSON=%d, want health verdict %d", processCode, result.ExitCode, healthCode)
+	}
+	scan := result.DiskUsage
+	if scan == nil || !scan.Complete || scan.ObservedBytes != 9010 || len(scan.Directories) != 1 ||
+		filepath.Base(scan.Directories[0].Path) != "large" || scan.Directories[0].Bytes != 6000 ||
+		len(scan.Files) != 1 || scan.Files[0].Bytes != 6000 || len(scan.RootFiles) != 1 || scan.RootFiles[0].Bytes != 3000 {
+		t.Fatalf("wrong fixture accounting: %+v", scan)
+	}
+	saved, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var savedResult doctor.JSONEnvelope
+	if err := json.Unmarshal(saved, &savedResult); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result, savedResult) {
+		t.Fatal("scan stdout differs from --output")
+	}
+	count := 0
+	entries := 0
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		entries++
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		original, exists := before[path]
+		if !exists || original.Mode() != info.Mode() || !original.ModTime().Equal(info.ModTime()) ||
+			(!entry.IsDir() && original.Size() != info.Size()) {
+			t.Errorf("changed or unexpected metadata: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		count++
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if string(data) != files[filepath.ToSlash(rel)] {
+			t.Errorf("changed or unexpected file: %s", path)
+		}
+		return nil
+	})
+	if err != nil || count != len(files) || entries != len(before) {
+		t.Fatalf("fixture tree changed: files %d entries %d error %v", count, entries, err)
+	}
+}
+
+func TestDiskScanCLIIncompleteAndMissingRootExitCodes(t *testing.T) {
+	bin := buildCLIOnce(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, root, budget string
+		wantError          bool
+	}{
+		{"budget", root, "1ns", false},
+		{"missing", filepath.Join(root, "missing"), "1s", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, bin, "disk", "--scan", "--root", tc.root,
+				"--scan-budget", tc.budget, "--json", "--ollama-url", "http://127.0.0.1:1")
+			scratch := t.TempDir()
+			cmd.Env = append(os.Environ(), "HOME="+scratch, "APPDATA="+scratch, "XDG_CONFIG_HOME=")
+			for _, key := range llm.CloudAPIKeyEnvVars() {
+				cmd.Env = append(cmd.Env, key+"=")
+			}
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
+			var exit *exec.ExitError
+			if !isExitError(err, &exit) {
+				t.Fatalf("incomplete scan must exit nonzero: %v\n%s", err, stderr.String())
+			}
+			var result doctor.JSONEnvelope
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatalf("JSON: %v\n%s", err, stdout.String())
+			}
+			if result.DiskUsage == nil || result.DiskUsage.Complete {
+				t.Fatalf("missing incomplete result: %+v", result.DiskUsage)
+			}
+			wantCode := 1
+			for _, finding := range result.Findings {
+				wantCode = max(wantCode, finding.Severity.ExitCode())
+			}
+			if tc.wantError {
+				wantCode = 2
+				if result.DiskUsage.ErrorCount == 0 || len(result.DiskUsage.Errors) == 0 {
+					t.Fatal("missing root must provide structured access errors")
+				}
+			} else if !slices.Contains(result.DiskUsage.StopReasons, "budget_exceeded") {
+				t.Fatalf("missing budget reason: %v", result.DiskUsage.StopReasons)
+			}
+			if exit.ExitCode() != wantCode || result.ExitCode != wantCode {
+				t.Fatalf("exit process=%d JSON=%d want=%d", exit.ExitCode(), result.ExitCode, wantCode)
 			}
 		})
 	}

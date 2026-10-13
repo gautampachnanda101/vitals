@@ -22,6 +22,10 @@ func maybeWriteOutput(path string, s Snapshot, r diag.Report) error {
 // the resource deep-dive commands so a report can be saved for later —
 // e.g. an enterprise host without SSH access, or a before/after comparison.
 func WriteJSONReport(path string, s Snapshot, r diag.Report) error {
+	return writeJSONEnvelope(path, JSONReport(s, r))
+}
+
+func writeJSONEnvelope(path string, envelope JSONEnvelope) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -33,5 +37,8 @@ func WriteJSONReport(path string, s Snapshot, r diag.Report) error {
 
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
-	return enc.Encode(JSONReport(s, r))
+	if err := enc.Encode(envelope); err != nil {
+		return err
+	}
+	return f.Close()
 }

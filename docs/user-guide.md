@@ -204,8 +204,15 @@ that resource:
 - **CPU / Memory** — the top processes by CPU% and by resident memory.
 - **Processes** — the full `vitals top` table as a page.
 - **Disk** — the biggest directories and biggest single files under your
-  home folder, from a time-bounded scan (results are marked partial if
-  the scan didn't finish); on Linux and Windows, also the top processes
+  home folder, from a read-only scan shared with `vitals disk --scan`.
+  Visual donut charts display space distribution across top folders and files.
+  Results are cached up to 10 minutes (64-entry LRU), so navigating up and down
+  the directory tree or returning to the page uses cached data without rescanning.
+  Directory drill-down, breadcrumbs/up navigation and rescan controls
+  narrow the scope; loading, access errors and partial lower-bound sizes
+  are visible rather than hidden. The page renders before scanning.
+  Logical file sizes are not promised recoverable physical storage.
+  On Linux and Windows, also the top processes
   by live disk I/O rate. That per-process rate isn't available on macOS,
   so the section is simply absent there rather than showing zeros.
 - **Network** — the active connections: which process is talking to
@@ -243,11 +250,15 @@ browser) for when you want the numbers to hold still. The Clean and
 Duplicates pages don't auto-refresh — they hold the result of a Preview
 you ran, which a refresh would wipe.
 
-The clean page mirrors `vitals clean` for the browser: a **Preview**
-button measures what a real cleanup would reclaim, with no filesystem
-mutation, and only once that's shown does an **Apply** button appear.
-Apply asks for confirmation in the browser before it runs, then
-performs the same cache/log/temp cleanup `vitals clean` does — this
+The clean page mirrors `vitals clean` for the browser: select categories
+and a temporary-file minimum age, then **Preview** without filesystem
+mutation. Caches and old temporary files are selected by default; logs,
+Trash and tool commands require explicit selection. Only a complete preview
+reveals **Apply**; changing selection requires another preview. Commands
+are listed with their consequences and unknown reclaim, not a false byte
+estimate. Apply asks for confirmation and rescans the selected categories
+(the preview is not a frozen file list), then reports each action's outcome.
+It performs the same selective cleanup `vitals clean` does — this
 genuinely deletes files, the same as running the CLI command without
 `--dry-run`. Every mutating request the dashboard accepts is rejected
 unless it comes from the dashboard's own page (a same-origin check,
@@ -271,8 +282,9 @@ a bare gauge:
   hung on, since a dead network share can block indefinitely at the OS
   level. Also shown: device util/await/IOPS, inode headroom (space can
   look fine while new files still fail to create), a tracked growth rate
-  with projected time-to-full, and a reclaimable-cache estimate — the same
-  directories `vitals clean` would touch, actually measured and capped to
+  with projected time-to-full, and a default cache/temp cleanup-candidate
+  estimate in logical bytes — the same scope `vitals clean` would touch,
+  actually measured and capped to
   a short time budget so a huge cache can't stall the command. When
   `smartctl` (smartmontools) is installed, each physical disk's
   S.M.A.R.T. pass/fail, temperature, and — on NVMe — the percentage of
@@ -297,12 +309,38 @@ All five take `--json`, `--output FILE`, `--ci`, and `--quiet`/`-q`, same as
 `doctor`.
 
 ```bash
-vitals disk                              # per-mount space, IOPS, reclaimable estimate
+vitals disk                              # per-mount health and cleanup candidates
+vitals disk --scan                       # recursive space consumers under home, read-only
+vitals disk --scan --root "$HOME/Library" --top 20 --scan-budget 1m
+vitals disk --scan --json | jq '.disk_usage.directories'
 vitals cpu --json | jq '.snapshot.cpu.per_core_percent'
 vitals net --ci                          # one line, for a log
 vitals power -q; echo $?                 # exit code only
 vitals mem --output mem-snapshot.json
 ```
+
+`disk --scan` defaults to 20 rows and a 30-second cooperative scan budget.
+`--root`, `--top` (1–100) and `--scan-budget` (>0, at most 5 minutes)
+require `--scan`; `--quiet` and `--ci` cannot hide a requested scan.
+The budget applies to scanning after telemetry collection and is checked
+between filesystem operations; it cannot interrupt a blocked OS call.
+Incomplete scans exit at least 1, root/scan failures exit 2, and an existing
+critical health finding still exits 2. With `--scan`, JSON stdout and
+`--output` carry the same resource-tagged envelope and `disk_usage` field;
+without it, existing output shapes are unchanged.
+
+Directory rows are recursive logical bytes; the separate file rows overlap
+those totals, so **do not add the tables together**. Partial totals are
+lower bounds and rankings mean "largest observed", not necessarily the
+true largest. Symlinks, special files and detected nested mounts are skipped;
+unavailable mount-boundary detection is stated explicitly. Home-only scans
+do not account for other users, system data or snapshots. Hardlinks, sparse
+files and filesystem clones/compression mean these numbers are not exact
+allocated bytes or guaranteed reclaim. Drill down first; use
+`vitals clean --dry-run` for supported caches, and the owning application's
+storage management for models/VMs rather than deleting individual blobs.
+A healthy disk verdict means no configured threshold was exceeded, not
+that your next workload has enough free space.
 
 ## vitals advice
 
@@ -331,13 +369,25 @@ local model you have pulled? `vitals llm` lists a reachable local
 provider's model names directly — see [vitals llm](#vitals-llm) below —
 so there's no need to go check with the provider's own CLI first.
 
+`advice` can also incorporate a deep disk usage scan into the prompt and commentary
+via `--scan` (supporting `--root`, `--scan-budget`, and `--top`), highlighting the
+largest space consumers when disk capacity is tight. On the dashboard, the Advice page
+automatically incorporates recent cached disk scans into its context. Memory
+diagnostics are machine-capacity and memory-pressure aware — distinguishing true
+leaks from normal KV cache, attention buffer, and allocator retention in runtimes
+like `llama-server` or database servers, advising context/cache limits or graceful
+restarts instead of blind kill commands when host memory is healthy.
+
 ```bash
 vitals advice
+vitals advice --scan                                      # include deep disk usage in prompt & advice
+vitals advice --scan --root "$HOME/Library" --top 10      # scoped scan
 vitals advice --provider ollama --model llama3.1:8b
 OPENAI_API_KEY=sk-... vitals advice --provider openai
 vitals advice --provider lmstudio --lmstudio-url http://localhost:1234
 vitals advice --json | jq -r .heuristic_advice   # always present, no LLM required
 vitals advice --json | jq -r .llm_advice         # present only when a provider answered
+vitals advice --scan --json | jq -r .disk_usage.directories # disk scan data in JSON payload
 ```
 
 `--json`'s `source` field is `"heuristic"` or `"heuristic+llm"`, and
@@ -445,20 +495,84 @@ vitals memcheck
 
 ## vitals clean, dupes, tools, explore, live
 
+**Cleanup is at your own risk.** Back up important data and close affected
+applications before applying. Deletion is permanent: no quarantine,
+rollback or undo is provided. A preview or a file's age cannot guarantee
+that it is unused. Opt-in controls and preservation checks reduce risk;
+they do not eliminate it. CLI, JSON (`warning`) and dashboard output carry
+this warning, including the final confirmation.
+
 The disk-cleanup family, from "reclaim space right now" to "let me look
 around and decide myself":
 
-- **clean** — removes developer and OS caches, logs, temp directories and
-  trash using the Go standard library, and runs `brew`/`docker`/`npm`/`pip`
-  prune, plus `flatpak`/`dism.exe` component-store cleanup on Linux and
-  Windows, whenever those tools are already on PATH. `--dry-run` measures
-  without deleting; `--yes` skips the confirmation prompt. The summary
-  reports only the bytes actually measured, never a filesystem-delta
-  guess, since other processes write to disk at the same time. `--history`
-  lists past runs by date and bytes freed — `clean` frees space
-  immediately rather than quarantining it, since fixing a full disk right
-  now is the whole point, so this log is the only record of what a past
-  run actually did.
+- **clean** — defaults to developer/OS caches and temporary files older
+  than seven days. **Changed default:** logs, Trash, package-manager
+  cleanup and resource-pruning commands are no longer swept automatically.
+  Use `--categories caches,temp,logs,trash,tools` to explicitly select
+  categories; selection replaces, rather than extends, the default.
+  `--yes` only skips confirmation, never expands selection.
+  `--min-age 168h` controls temporary-file eligibility, not caches, logs
+  or Trash. Close affected applications: age does not prove a file is
+  unused, and removing caches may require downloads or rebuilds.
+  `--dry-run` shows the shared plan without deletion or command execution;
+  `--json` exposes action estimates, completeness, preserved-file counts,
+  outcomes and issues (applying JSON mode requires `--yes`).
+  Overlapping paths are counted once; differing overlapping categories
+  use conservative temporary-file retention. Symlinks, non-regular files,
+  changed files and directory structures are preserved. Scans check
+  cancellation inside traversal, cap at 100,000 entries and 30 seconds
+  (three seconds for browser previews); incomplete targets are never
+  cleaned. Preview again with fewer categories if a limit is reached.
+  Tool commands are opt-in, show their consequences and unknown reclaim,
+  and have a two-minute timeout per command. Missing tools and failures
+  are reported, not silently ignored. `--tools uv,pnpm` restricts the
+  tool selection; it requires `tools` in `--categories`. With no subset,
+  all installed supported tools are selected. Windows Prefetch is no longer purged.
+  Package-manager paths are discovered with bounded, read-only native
+  queries (`npm config get cache`, `pnpm store path`, `pip cache dir`,
+  `uv cache dir`, `go env GOCACHE`, `brew --cache`, `conda info --json`,
+  and NuGet's cache-list command). The plan includes the discovery
+  command and returned locations. `pip3` is used when `pip` is absent.
+  Failed or malformed discovery skips that action with an explanation;
+  it never falls back to a guessed package-manager folder.
+  Direct archive-cache targets honor `GRADLE_USER_HOME`, `CARGO_HOME`
+  and `XDG_CACHE_HOME`, with their documented defaults when unset.
+  OS paths derive from the current home and OS environment rather than
+  a particular user's absolute paths; Windows browser discovery includes
+  all cache-bearing Chrome/Edge/Firefox profiles. Managers without a
+  verified location query remain native-command-only, with unknown reclaim.
+  Apply rescans: an earlier preview is not a frozen authorization of
+  specific files. Results credit only successfully removed logical file
+  bytes, not guaranteed physical space recovery (hardlinks, snapshots and
+  concurrent writes affect that). Free-space change is context only.
+  Partial failures produce a nonzero CLI exit and structured issues;
+  browser results show the same issues. `--history` lists past runs
+  as readable text and cannot be combined with `--json`;
+  the audit log also records action outcomes, including failures. Cleanup
+  is immediate, not quarantine or rollback.
+
+  Coverage is cross-platform and workload-based, not a scan of one
+  developer's machine:
+
+  | User/workload | Covered cleanup | Deliberately preserved |
+  | --- | --- | --- |
+  | Everyday desktop / office | OS/application caches; Windows Chrome/Edge/Firefox cache targets; old temporary files where available | Documents, browser profiles, passwords, downloads; Trash is opt-in |
+  | JS / Python developers | npm, pnpm, pip and uv native cache discovery and cleanup | Source trees, dependencies inside projects; known manager-owned cache trees are not manually swept |
+  | Go / Java / Rust / .NET developers | Go build/test cache command; environment-aware Gradle cache targets and Cargo downloaded archives; NuGet HTTP cache command | Installed SDKs/tools, Go modules, NuGet global packages, project outputs; Maven/Yarn are not guessed |
+  | Data science / local AI | Conda archive/index cleanup without package-cache or environment removal; common model/dataset cache names and model file extensions are protected | Conda environments, extracted Conda packages, known model/dataset/checkpoint trees |
+  | Container / platform operators | Explicit Docker prune; apt/dnf/yum/pacman, Flatpak, journal, Homebrew, unavailable simulators, DISM as platform-appropriate | Docker volumes; pruning stopped containers and downgrade/history copies requires explicit tool selection |
+  | Creators / gamers | Ordinary OS cache/temp cleanup | Known Adobe/Blender/game cache trees, autosaves and backups are conservatively protected; no speculative asset/save cleanup |
+
+  Protected-name rules are conservative safeguards, not a universal
+  classifier for every application's data. Unlisted custom data stored
+  in cache directories can still be selected: review the plan and use
+  `vitals explore` for large assets, models or game libraries rather
+  than treating “unused” as permission to delete.
+  uv must manage its own cache; `uv cache prune` can also remove
+  centralized project environments, which are recreated when needed.
+  Conda uses only `--tarballs --index-cache --yes`, never `--all` or
+  `--force-pkgs-dirs`. Go does not clear `-modcache`; NuGet clears only
+  `http-cache`, not `global-packages`.
 - **dupes** — walks a directory tree (home by default), groups files by
   size and then by content hash, and reports every set of byte-identical
   files along with the space keeping just one copy would reclaim. By
@@ -480,13 +594,18 @@ around and decide myself":
   `--yes` is set.
 - **explore** — hands off to gdu, then ncdu, then dust, whichever is
   installed first, for real interactive drill-down-and-delete. `disk` and
-  `clean` diagnose and estimate; this is the tool built for browsing.
+  `clean` diagnose and estimate; `disk --scan` and dashboard drill-down are
+  read-only summaries, while companions offer a full interactive explorer.
 - **live** — hands off to btop, then htop, whichever is installed first,
   for a live interactive view. `vitals top` is the fallback when neither
   is installed.
 
 ```bash
 vitals clean --dry-run
+vitals clean --categories caches --dry-run --json
+vitals clean --categories trash --dry-run  # explicitly review permanent Trash removal
+vitals clean --categories temp --min-age 336h --dry-run
+vitals clean --categories tools --tools uv,pnpm,conda --dry-run
 vitals clean --history
 vitals dupes --root ~/Downloads --hardlink
 vitals tools --install btop

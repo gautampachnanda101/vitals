@@ -52,7 +52,7 @@ every platform into `./dist/`.
 | `view` | The whole machine on one terminal screen: the verdict, tiled resource panels, and the heaviest processes. Also bare `vitals` on a TTY. |
 | `heal` | Apply a finding's own remedy — previewed, confirmed, from a compile-time allow-list. Non-automatable findings stay printed instructions. |
 | `dashboard` | Serves the same correlation as browsable pages that refresh themselves in place — one per resource, only the ones this machine actually has. Loopback-only (`127.0.0.1`), opens your browser automatically. |
-| `cpu` `mem` `disk` `net` `power` | Deep dive on one resource: the current numbers plus just that resource's findings. `disk` also ranks processes by live I/O rate (Linux/Windows); `power` shows a real per-process energy reading on macOS. |
+| `cpu` `mem` `disk` `net` `power` | Deep dive on one resource. `disk --scan` ranks recursive directories and largest files, read-only; `--root PATH` narrows the scan, also available through dashboard drill-down. Logical sizes and partial results are labeled. `disk` also ranks live I/O (Linux/Windows); `power` shows per-process energy on macOS. |
 | `gpu` | Per-GPU VRAM / util / temp / power / clocks and the processes holding VRAM, via `nvidia-smi` / `rocm-smi` / `ioreg`. |
 | `containers` | When a Docker-compatible runtime or a loopback Kubernetes context is present: containers/pods with per-container CPU/mem, and findings for OOM-kills, `CrashLoopBackOff`, restart loops. Read-only. |
 | `top` | Activity-Monitor-style snapshot: system CPU / RAM / load, **per-second** disk & network I/O, top processes. `--watch` for a live redraw. |
@@ -60,7 +60,7 @@ every platform into `./dist/`.
 | `memcheck` | RAM / swap / pressure breakdown with a ranked verdict. |
 | `llm` | Every local (Ollama, LM Studio, llama.cpp, vLLM) and cloud (OpenAI, Anthropic, Groq, Mistral, …, Ollama Cloud) LLM endpoint, over open OpenAI-compatible APIs — probed only when the provider's API-key env var is set. Per-model GPU offload %. Keys are never printed. |
 | `llm fit <model>` | The largest quant of a model that fully fits your VRAM, with the spill % for the ones that don't. |
-| `clean` | Cross-platform disk cleanup (dev/OS caches, logs, temp, trash) + `brew`/`docker`/`npm`/`pip` prune when present. `--dry-run` first. |
+| `clean` | Cross-platform cleanup preview: caches/temp by default; logs, trash and native tool cleanup are explicit opt-ins. Models and personal data are not automatic deletion candidates. `--dry-run` first. |
 | `serve` / `export` | Prometheus `/metrics` (OpenTelemetry semantic-convention names) — as a server or a one-shot dump. |
 | `mcp` | Run as a Model Context Protocol server on stdio (`claude mcp add vitals -- vitals mcp`). A Claude Code plugin (skill + `/vitals-*` commands + optional pre-flight hook) is in [`plugin/`](plugin/). |
 | `guide` / `help [<cmd>]` / `completion <shell>` | Embedded user guide, contextual help, and bash/zsh/fish completion. |

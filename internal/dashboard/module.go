@@ -11,6 +11,7 @@ package dashboard
 import (
 	"fmt"
 	"html/template"
+	"net/http"
 	"sort"
 
 	"vitals/internal/diag"
@@ -23,6 +24,9 @@ import (
 // so every page reflects the current machine rather than a cached
 // snapshot.
 type PageContext struct {
+	// Request carries cancellation, query values and browser-origin metadata
+	// for request-scoped fragments. Existing snapshot-only modules ignore it.
+	Request   *http.Request
 	Snapshot  doctor.Snapshot
 	Report    diag.Report
 	Providers []llm.Provider
@@ -74,6 +78,8 @@ type Module struct {
 type AsyncFragment struct {
 	Path    string // full URL path, e.g. "/advice/commentary"
 	Handler func(PageContext) (status int, body string)
+	// SameOrigin protects expensive read-only work from cross-site GETs.
+	SameOrigin bool
 }
 
 var asyncFragments []AsyncFragment

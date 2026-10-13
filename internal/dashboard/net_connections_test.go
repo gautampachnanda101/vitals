@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	gnet "github.com/shirou/gopsutil/v4/net"
+	"vitals/internal/diskusage"
 	"vitals/internal/monitor"
 	"vitals/internal/power"
 )
@@ -28,7 +30,9 @@ func stubResourceExtras(t *testing.T) {
 	t.Helper()
 	withFakeProcessCache(t, func() (monitor.Snapshot, error) { return monitor.Snapshot{}, nil })
 	withFakeConnCache(t, func() ([]gnet.ConnectionStat, error) { return nil, nil })
-	withFakeDiskUsageCache(t, func() (diskScanResult, error) { return diskScanResult{}, nil })
+	withFakeDiskUsageCache(t, func(context.Context, string, diskusage.Options) (diskusage.Result, error) {
+		return diskusage.Result{}, nil
+	})
 	withFakePowerImpactCache(t, func() ([]power.Proc, bool) { return nil, false })
 }
 

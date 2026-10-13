@@ -193,7 +193,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
       </div>
       <div class="card">
         <h3>A browsable dashboard</h3>
-        <p>The same verdict as loopback-only web pages that refresh themselves in place: a grouped sidebar, a page per resource with the top consumers on each — biggest files, active connections, processes holding VRAM, per-process disk I/O — plus a Containers page, LLM offload and machine details. Opens your browser automatically; nothing leaves your machine.</p>
+        <p>The same verdict as loopback-only web pages that refresh themselves in place: a grouped sidebar, a page per resource with the top consumers on each — read-only disk directory drill-down and rescan with visible partial results, biggest files, active connections, processes holding VRAM, per-process disk I/O — plus a Containers page, LLM offload and machine details. Disk analysis shares its scanner with <code>vitals disk --scan</code>; logical sizes are not guaranteed reclaim. Opens your browser automatically; nothing leaves your machine.</p>
         <span class="cmd">vitals dashboard</span>
       </div>
       <div class="card">
@@ -203,7 +203,7 @@ footer .links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.8rem}
       </div>
       <div class="card">
         <h3>Safe disk cleanup</h3>
-        <p>Cross-platform cache/log/temp cleanup and byte-identical duplicate detection — always <code>--dry-run</code> first, never deletes without confirmation.</p>
+        <p>Selective cache and old-temp cleanup, with logs, Trash and tool commands opt-in. Preview consequences and see partial failures. Cleanup is at your own risk: back up first; deletion has no undo.</p>
         <span class="cmd">vitals clean --dry-run · vitals dupes</span>
       </div>
       <div class="card">

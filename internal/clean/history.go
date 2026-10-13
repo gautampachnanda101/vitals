@@ -27,6 +27,7 @@ type RunRecord struct {
 	Time       time.Time     `json:"time"`
 	TotalBytes int64         `json:"total_bytes"`
 	Purges     []PurgeRecord `json:"purges,omitempty"`
+	Actions    []Action      `json:"actions,omitempty"`
 }
 
 // cleanHistoryMaxRuns bounds the audit log so it can't grow without limit —

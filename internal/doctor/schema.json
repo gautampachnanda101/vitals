@@ -3,7 +3,7 @@
   "$id": "https://github.com/gautampachnanda101/vitals/schema/doctor.json",
   "title": "vitals doctor --json payload",
   "description": "Envelope emitted by `vitals doctor --json` and the resource deep-dive commands, and carried in the MCP system_health tool result.",
-  "x-schema-version": "1.6.0",
+  "x-schema-version": "1.7.0",
   "type": "object",
   "required": ["schema_version", "timestamp", "verdict", "exit_code", "findings", "snapshot"],
   "additionalProperties": false,
@@ -12,6 +12,47 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "verdict": { "type": "string", "enum": ["ok", "warning", "critical"] },
     "exit_code": { "type": "integer", "enum": [0, 1, 2] },
+    "resource": { "type": "string" },
+    "disk_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "options", "directories", "files", "root_files", "observed_bytes", "entries", "elapsed_ms", "complete", "stop_reasons", "skipped_symlinks", "skipped_special", "skipped_mounts", "boundary_detection_available", "error_count", "errors"],
+      "properties": {
+        "root": { "type": "string" },
+        "options": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["top", "budget"],
+          "properties": {
+            "top": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "budget": { "type": "integer", "description": "Cooperative scan budget in nanoseconds; not a command-wide timeout." }
+          }
+        },
+        "directories": { "type": ["array", "null"], "items": { "$ref": "#/$defs/disk_usage_row" } },
+        "files": { "type": ["array", "null"], "items": { "$ref": "#/$defs/disk_usage_row" } },
+        "root_files": { "type": ["array", "null"], "items": { "$ref": "#/$defs/disk_usage_row" } },
+        "observed_bytes": { "type": "integer" },
+        "entries": { "type": "integer" },
+        "elapsed_ms": { "type": "integer" },
+        "complete": { "type": "boolean" },
+        "stop_reasons": { "type": ["array", "null"], "items": { "type": "string" } },
+        "skipped_symlinks": { "type": "integer" },
+        "skipped_special": { "type": "integer" },
+        "skipped_mounts": { "type": "integer" },
+        "boundary_detection_available": { "type": "boolean" },
+        "error_count": { "type": "integer" },
+        "errors": {
+          "type": ["array", "null"],
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "message"],
+            "properties": { "path": { "type": "string" }, "message": { "type": "string" } }
+          }
+        }
+      }
+    },
     "findings": {
       "type": "array",
       "items": {
@@ -215,6 +256,16 @@
     }
   },
   "$defs": {
+    "disk_usage_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "complete"],
+      "properties": {
+        "path": { "type": "string" },
+        "bytes": { "type": "integer" },
+        "complete": { "type": "boolean" }
+      }
+    },
     "proc_ref": {
       "type": "object",
       "description": "The process attributed as the top consumer for this resource, empty when none could be identified.",

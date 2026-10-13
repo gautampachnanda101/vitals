@@ -574,16 +574,15 @@ func TestPowerAndGPUModulesAreConditionallyAvailable(t *testing.T) {
 	}
 }
 
-func TestOnlyAdviceRegistersAnAsyncFragment(t *testing.T) {
-	// Runs against the real registry (populated by every module's own
-	// init()) — advice is the only page today with request-scoped work
-	// too slow to do inline; a future one would register its own
-	// AsyncFragment the same way, not grow this test.
+func TestSlowModulesRegisterAsyncFragments(t *testing.T) {
 	if _, ok := findAsyncFragment("/advice/commentary"); !ok {
 		t.Error("advice should have registered /advice/commentary as an AsyncFragment")
 	}
-	if len(asyncFragments) != 1 {
-		t.Errorf("expected exactly one registered AsyncFragment, got %d: %+v", len(asyncFragments), asyncFragments)
+	if disk, ok := findAsyncFragment("/disk/usage"); !ok || !disk.SameOrigin {
+		t.Error("disk should register a same-origin protected /disk/usage fragment")
+	}
+	if len(asyncFragments) != 2 {
+		t.Errorf("expected exactly two registered AsyncFragments, got %d: %+v", len(asyncFragments), asyncFragments)
 	}
 }
 

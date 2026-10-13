@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -82,13 +83,18 @@ func Serve(opts Options) error { return serve(defaultDeps, opts) }
 
 func serve(d deps, opts Options) error {
 	addr := resolveAddr(opts.Addr)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
 	srv := &http.Server{Addr: addr, Handler: newMux(d, opts.OllamaURL), ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := d.newSignalContext()
 	defer stop()
 
 	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
-	ui.Okf("serving Prometheus metrics on http://localhost%s/metrics", addr)
+	go func() { errc <- srv.Serve(ln) }()
+	ui.Okf("serving Prometheus metrics on http://%s/metrics", ln.Addr())
 
 	select {
 	case err := <-errc:

@@ -1,10 +1,13 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +38,18 @@ func init() {
 // hard-to-mistype last step before a real, irreversible delete, on top
 // of (not instead of) the server-side same-origin check.
 var cleanPageTmpl = template.Must(template.New("cleanPage").Parse(`<div class="card">
-<p>Measure what a real <code>vitals clean</code> run would reclaim — cache, log and temp files — without deleting anything.</p>
+<p class="unavailable"><strong>Cleanup is at your own risk.</strong> Back up important data and close affected applications. Deletion is permanent with no undo; previews do not guarantee files are unused.</p>
+<p>Preview selected cleanup actions without deleting anything. Close affected applications first. Apply rescans; a preview is not a frozen file list.</p>
+<fieldset id="clean-categories"><legend>Cleanup categories</legend>
+<label><input type="checkbox" value="caches" checked> Caches (may need downloading or rebuilding)</label>
+<label><input type="checkbox" value="temp" checked> Old temporary files</label>
+<label><input type="checkbox" value="logs"> Logs (troubleshooting history is lost)</label>
+<label><input type="checkbox" value="trash"> Trash (recovery is lost)</label>
+<label><input type="checkbox" value="tools"> Tool commands (may remove unused resources; reclaim unknown)</label>
+</fieldset>
+<label>Temporary-file minimum age <input id="clean-min-age" value="168h" aria-label="Temporary-file minimum age"></label>
+<label>Tool subset (blank selects all installed supported tools) <input id="clean-tools" aria-label="Cleanup tool subset" placeholder="uv,pnpm,conda"></label>
+<p>Age is not proof a file is unused. Logical bytes are not guaranteed physical recovery. Empty directories and symlinks are retained.</p>
 <button type="button" class="btn" id="clean-preview-btn">Preview</button>
 <button type="button" class="btn" id="clean-apply-btn" hidden>Apply</button>
 </div>
@@ -47,16 +61,28 @@ var cleanPageTmpl = template.Must(template.New("cleanPage").Parse(`<div class="c
   var applyBtn = document.getElementById('clean-apply-btn');
   var out = document.getElementById('clean-preview-result');
   var applyOut = document.getElementById('clean-apply-result');
+  var selection = document.getElementById('clean-categories');
+  var age = document.getElementById('clean-min-age');
+  var tools = document.getElementById('clean-tools');
+  function options(){
+    return {categories: Array.from(selection.querySelectorAll('input:checked')).map(function(e){return e.value;}).join(','), min_age: age.value, tools: tools.value};
+  }
+  function invalidate(){ applyBtn.hidden = true; out.innerHTML = ''; }
+  selection.addEventListener('change', invalidate);
+  age.addEventListener('input', invalidate);
+  tools.addEventListener('input', invalidate);
+  var previewOptions;
   previewBtn.addEventListener('click', function(){
+    previewOptions = options();
     previewBtn.disabled = true;
     applyBtn.hidden = true;
     out.innerHTML = '<p class="unavailable">Measuring…</p>';
     applyOut.innerHTML = '';
-    fetch('/clean/preview', {method: 'POST'})
+    fetch('/clean/preview', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(previewOptions)})
       .then(function(r){ return r.text().then(function(t){ return {ok: r.ok, text: t}; }); })
       .then(function(res){
-        out.innerHTML = res.ok ? res.text : '<p class="unavailable">Preview failed.</p>';
-        applyBtn.hidden = !res.ok;
+        if (res.ok) { out.innerHTML = res.text; } else { out.textContent = 'Preview failed: ' + res.text; }
+        applyBtn.hidden = !res.ok || !out.querySelector('[data-clean-complete="true"]') || JSON.stringify(previewOptions) !== JSON.stringify(options());
       })
       .catch(function(){
         out.innerHTML = '<p class="unavailable">Preview failed — could not reach the server.</p>';
@@ -64,7 +90,7 @@ var cleanPageTmpl = template.Must(template.New("cleanPage").Parse(`<div class="c
       .finally(function(){ previewBtn.disabled = false; });
   });
   applyBtn.addEventListener('click', function(){
-    if (!window.confirm('This permanently deletes the files listed above. Continue?')) {
+    if (!window.confirm('Proceed at your own risk? Back up important data first. Apply selected categories and listed tool commands? Files are rescanned; deletion is permanent with no undo.')) {
       return;
     }
     applyBtn.disabled = true;
@@ -72,11 +98,11 @@ var cleanPageTmpl = template.Must(template.New("cleanPage").Parse(`<div class="c
     fetch('/clean/apply', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirm: true})
+      body: JSON.stringify(Object.assign({confirm: true}, previewOptions))
     })
       .then(function(r){ return r.text().then(function(t){ return {ok: r.ok, text: t}; }); })
       .then(function(res){
-        applyOut.innerHTML = res.ok ? res.text : '<p class="unavailable">Apply failed.</p>';
+        if (res.ok) { applyOut.innerHTML = res.text; } else { applyOut.textContent = 'Apply failed: ' + res.text; }
         if (res.ok) { applyBtn.hidden = true; }
       })
       .catch(function(){
@@ -100,13 +126,18 @@ const cleanPreviewBudget = 3 * time.Second
 // what a real `vitals clean` would reclaim without deleting anything.
 // Reuses ReclaimableSummary directly — no new cleanup logic, per
 // docs/roadmap/items/005-dashboard-write-actions/design.md §4.
-func handleCleanPreview(_ PageContext, _ []byte) (int, string) {
-	entries, complete := clean.ReclaimableSummary(cleanPreviewBudget)
-	var total int64
-	for _, e := range entries {
-		total += e.Bytes
+func handleCleanPreview(_ PageContext, body []byte) (int, string) {
+	opts, err := cleanRequestOptions(body)
+	if err != nil {
+		return http.StatusBadRequest, cleanRequestError(err)
 	}
-	return http.StatusOK, renderCleanPreview(entries, total, complete)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return http.StatusInternalServerError, `{"error":"cannot determine home directory"}`
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanPreviewBudget)
+	defer cancel()
+	return http.StatusOK, renderCleanPlan(clean.Preview(ctx, home, opts))
 }
 
 // cleanPreviewRow is one measured directory, pre-formatted for display
@@ -171,7 +202,48 @@ var cleanApplyMu sync.Mutex
 // would be inventing a bar the CLI's own --yes/-y flag doesn't have
 // either. See design.md §7.
 type cleanApplyRequest struct {
-	Confirm bool `json:"confirm"`
+	Confirm    bool    `json:"confirm"`
+	Categories *string `json:"categories"`
+	MinAge     string  `json:"min_age"`
+	Tools      string  `json:"tools"`
+}
+
+func cleanRequestOptions(body []byte) (clean.Options, error) {
+	var req cleanApplyRequest
+	if len(body) != 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			return clean.Options{}, err
+		}
+	}
+	categories := ""
+	if req.Categories != nil {
+		categories = *req.Categories
+		if strings.TrimSpace(categories) == "" {
+			return clean.Options{}, fmt.Errorf("select at least one cleanup category")
+		}
+	}
+	age := 7 * 24 * time.Hour
+	if req.MinAge != "" {
+		var err error
+		age, err = time.ParseDuration(req.MinAge)
+		if err != nil {
+			return clean.Options{}, fmt.Errorf("min_age must be a duration such as 168h")
+		}
+	}
+	opts, err := clean.ParseOptions(categories, age)
+	if err == nil {
+		opts.Tools = req.Tools
+		err = clean.ValidateOptions(opts)
+	}
+	opts.MinAgeSet = true
+	return opts, err
+}
+
+func cleanRequestError(err error) string {
+	body, _ := json.Marshal(struct {
+		Error string `json:"error"`
+	}{err.Error()})
+	return string(body)
 }
 
 // handleCleanApply is /clean/apply's WriteAction.Handler: the real,
@@ -189,6 +261,10 @@ func handleCleanApply(_ PageContext, body []byte) (int, string) {
 	if err := json.Unmarshal(body, &req); err != nil || !req.Confirm {
 		return http.StatusBadRequest, `{"error":"confirm must be true"}`
 	}
+	opts, err := cleanRequestOptions(body)
+	if err != nil {
+		return http.StatusBadRequest, cleanRequestError(err)
+	}
 	if !cleanApplyMu.TryLock() {
 		return http.StatusConflict, `{"error":"a clean is already running"}`
 	}
@@ -198,7 +274,8 @@ func handleCleanApply(_ PageContext, body []byte) (int, string) {
 	if err != nil {
 		return http.StatusInternalServerError, `{"error":"cannot determine home directory"}`
 	}
-	result := cleanApplyFn(home, clean.Options{Assume: true})
+	opts.Assume = true
+	result := cleanApplyFn(home, opts)
 	return http.StatusOK, renderCleanApplyResult(result)
 }
 
@@ -222,12 +299,53 @@ var cleanApplyTmpl = template.Must(template.New("cleanApply").Parse(
 // renderCleanApplyResult mirrors renderCleanPreview exactly: total
 // first, then one row per non-empty purge location.
 func renderCleanApplyResult(result clean.Result) string {
+	if len(result.Actions) > 0 || result.Error != "" {
+		return renderCleanPlan(result)
+	}
 	rows := make([]cleanApplyRow, len(result.Records))
 	for i, r := range result.Records {
 		rows[i] = cleanApplyRow{Dir: r.Dir, Bytes: ui.HumanBytes(r.Bytes)}
 	}
+
 	return mustExecute(cleanApplyTmpl, struct {
 		Total string
 		Rows  []cleanApplyRow
 	}{ui.HumanBytes(result.FreedBytes), rows})
+}
+
+var cleanPlanTmpl = template.Must(template.New("cleanPlan").Parse(`<div class="card" data-clean-complete="{{.Complete}}">
+<h3>{{if .DryRun}}Would reclaim{{else}}Removed{{end}} (logical file bytes): {{.Total}}</h3>
+<p class="unavailable">{{.Warning}}</p>
+{{if .Error}}<p class="unavailable">{{.Error}}</p>{{end}}
+{{range .Rows}}<div class="card"><strong>{{.Category}} — {{.Status}}</strong>
+<div>{{.Target}}</div><p>{{.Reason}}</p><p>{{.Size}}; preserved files: {{.Preserved}}</p>
+{{if .Discovery}}<p>Discovery: {{.Discovery}}</p>{{end}}
+{{range .Locations}}<p>Discovered cache: {{.}}</p>{{end}}
+{{range .Issues}}<p class="unavailable">{{.}}</p>{{end}}
+{{range .Protected}}<p>Protected: {{.}} — models/data or manager-owned cache; review with the owning tool or <code>vitals explore</code>.</p>{{end}}
+</div>{{else}}<p>Nothing measurable found. No files need cleaning in these categories; see vitals guide.</p>{{end}}</div>`))
+
+func renderCleanPlan(result clean.Result) string {
+	type row struct {
+		clean.Action
+		Size string
+	}
+	rows := make([]row, len(result.Actions))
+	for i, a := range result.Actions {
+		bytes := a.Removed
+		if result.DryRun {
+			bytes = a.Bytes
+		}
+		size := ui.HumanBytes(bytes)
+		if a.Kind == "command" {
+			size = "Reclaim unknown"
+		}
+		rows[i] = row{a, size}
+	}
+	return mustExecute(cleanPlanTmpl, struct {
+		DryRun, Complete bool
+		Total, Error     string
+		Warning          string
+		Rows             []row
+	}{result.DryRun, result.Complete, ui.HumanBytes(result.FreedBytes), result.Error, clean.RiskWarning, rows})
 }

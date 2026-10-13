@@ -1,15 +1,19 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	"vitals/internal/advice"
+	"vitals/internal/diskusage"
 	"vitals/internal/doctor"
 	"vitals/internal/guide"
+	"vitals/internal/llm"
 )
 
 func init() {
@@ -58,6 +62,18 @@ func newPrepareAdviceCache() *prepareAdviceCache {
 	return &prepareAdviceCache{ttl: prepareAdviceCacheTTL, generate: generateAdvice}
 }
 
+// Peek returns the cached advice reply and error if present and not expired,
+// without waiting or triggering generation. Used by renderAdvice to render
+// cached commentary immediately on revisit or page reload.
+func (c *prepareAdviceCache) Peek() (string, error, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(c.expiry) && (c.reply != "" || c.err != nil) {
+		return c.reply, c.err, true
+	}
+	return "", nil, false
+}
+
 // Get returns the cached advice, generating it first if missing or
 // stale. A caller that arrives mid-refresh waits on that same refresh
 // rather than starting its own — identical shape to snapshotCache.Get.
@@ -100,15 +116,44 @@ func (c *prepareAdviceCache) Get(ctx *PageContext) (string, error) {
 // swap-and-restore pattern withRegistry uses for the module registry.
 var defaultAdviceCache = newPrepareAdviceCache()
 
+type adviceDeps struct {
+	scan     func(context.Context, string, diskusage.Options) (diskusage.Result, error)
+	home     func() (string, error)
+	generate func([]byte, llm.CompleteOptions) (string, error)
+}
+
+var defaultAdviceDeps = adviceDeps{
+	scan:     diskusage.Scan,
+	home:     os.UserHomeDir,
+	generate: advice.Generate,
+}
+
 // generateAdvice does the actual LLM call — split out from
 // renderAdviceCommentary so prepareAdviceCache.Get has something
 // pure-ish (given a ctx) to memoize.
 func generateAdvice(ctx *PageContext) (string, error) {
-	reportJSON, err := json.Marshal(doctor.JSONReport(ctx.Snapshot, ctx.Report))
+	envelope := doctor.JSONReport(ctx.Snapshot, ctx.Report)
+	latest := defaultDiskUsageCache.Latest()
+	if latest == nil {
+		if home, err := defaultAdviceDeps.home(); err == nil && home != "" {
+			scanCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			opts := diskusage.Options{Budget: 2 * time.Second, Top: 10}
+			res, err := defaultAdviceDeps.scan(scanCtx, home, opts)
+			cancel()
+			if err == nil || res.Entries > 0 {
+				defaultDiskUsageCache.Put(home, opts, res)
+				latest = &res
+			}
+		}
+	}
+	if latest != nil {
+		envelope.DiskUsage = latest
+	}
+	reportJSON, err := json.Marshal(envelope)
 	if err != nil {
 		return "", err
 	}
-	return advice.Generate(reportJSON, ctx.LLMOpts)
+	return defaultAdviceDeps.generate(reportJSON, ctx.LLMOpts)
 }
 
 // adviceErrorTmpl renders an LLM error's message — a string that can
@@ -130,11 +175,24 @@ var adviceErrorTmpl = template.Must(template.New("adviceError").Parse(
 // means the browser couldn't even ask.
 const adviceCommentaryScript = `<script>
 (function(){
-  var el = document.getElementById('ai-commentary');
-  fetch('/advice/commentary').then(function(r){ return r.text(); }).then(function(html){
-    document.getElementById('ai-commentary').outerHTML = html;
-  }).catch(function(){
-    if (el) el.innerHTML = '<p class="unavailable">Could not reach the dashboard for AI commentary.</p>';
+  var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function(){ ctrl.abort(); }, 65000) : null;
+  fetch('/advice/commentary', { signal: ctrl ? ctrl.signal : undefined }).then(function(r){
+    if (timer) clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function(html){
+    var target = document.getElementById('ai-commentary');
+    if (target) target.outerHTML = html;
+  }).catch(function(err){
+    if (timer) clearTimeout(timer);
+    var target = document.getElementById('ai-commentary');
+    if (target) {
+      var msg = (err && err.name === 'AbortError')
+        ? 'AI commentary request timed out waiting for LLM response.'
+        : 'Could not reach the dashboard for AI commentary.';
+      target.innerHTML = '<p class="unavailable">' + msg + '</p>';
+    }
   });
 })();
 </script>`
@@ -152,6 +210,17 @@ func renderAdvice(ctx PageContext) string {
 	headline := reportHeadline(ctx.Report, "Healthy — nothing needs attention")
 	body := verdictBanner(headline, "What vitals doctor's own rule-based checks found", ctx.Report.Worst())
 	body += findingsCard(ctx.Report.SortedBySeverity())
+	if reply, err, ok := defaultAdviceCache.Peek(); ok {
+		switch {
+		case reply != "":
+			body += `<div id="ai-commentary" class="card"><h3>AI commentary</h3>` + guide.RenderFragment(reply) + `</div>`
+		case err != nil:
+			body += mustExecute(adviceErrorTmpl, err.Error())
+		default:
+			body += `<div id="ai-commentary"></div>`
+		}
+		return body
+	}
 	body += `<div id="ai-commentary" class="card"><p class="unavailable">Asking the LLM for further commentary&hellip;</p></div>`
 	body += adviceCommentaryScript
 	return body

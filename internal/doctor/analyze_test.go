@@ -342,6 +342,30 @@ func TestConfiguredThresholdsChangeVerdicts(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDiskElevated(t *testing.T) {
+	// 83% full with 40GB free should trigger elevated finding
+	snap := Snapshot{
+		Disks: []Disk{{Mount: "/", UsedPct: 83, FreeBytes: 40 << 30}},
+	}
+	r := Analyze(snap)
+	f := find(r, "usage elevated")
+	if f.Title == "" || f.Severity != diag.Warn {
+		t.Fatalf("83%% full with 40GB free should trigger elevated disk warning, got %+v", r.Findings)
+	}
+
+	// 50% full with 100GB free should trigger no elevated finding and report clean
+	clean := Snapshot{
+		Disks: []Disk{{Mount: "/", UsedPct: 50, FreeBytes: 100 << 30}},
+	}
+	rClean := Analyze(clean)
+	if f := find(rClean, "elevated"); f.Title != "" {
+		t.Fatalf("healthy disk should have no elevated finding, got %+v", rClean.Findings)
+	}
+	if rClean.Worst() != diag.OK {
+		t.Fatalf("healthy disk should have OK worst severity, got %v", rClean.Worst())
+	}
+}
+
 func TestAnalyzeSortsCriticalFirst(t *testing.T) {
 	r := Analyze(Snapshot{
 		CPU:    CPU{Cores: 8, UsedPct: 78}, // warn-ish

@@ -6,13 +6,17 @@
 package advice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"vitals/internal/diag"
+	"vitals/internal/diskusage"
 	"vitals/internal/doctor"
 	"vitals/internal/guide"
 	"vitals/internal/llm"
@@ -31,6 +35,10 @@ type Options struct {
 	Provider    string // force a provider ("ollama", "lmstudio", "openai", "anthropic", ...); empty = auto-detect
 	Model       string // override the provider's default model
 	JSON        bool   // emit {"advice": "..."} instead of plain text
+	Scan        bool   // run deep disk usage scan to inform advice
+	Root        string // root directory for disk usage scan
+	ScanBudget  string // duration budget for disk usage scan
+	Top         int    // number of top files/dirs to report
 }
 
 // BuildPrompt turns a `vitals doctor --json` envelope into an LLM prompt
@@ -45,6 +53,21 @@ Give prioritized advice that adds what a per-finding list cannot: if two or more
 to the same process or root cause, say so and give the one fix that addresses both; rank what matters
 most when there is more than one issue. If a finding truly has nothing more to add beyond its own fix,
 say so in one line instead of padding it out. A few concise sentences, not an essay.
+
+Guidelines for accurate, evidence-based systems advice:
+- Machine-relative memory evaluation: Always evaluate memory usage, swap, and process sizes relative
+  to total host capacity and memory pressure (available RAM, swap usage, swap thrashing). On large-memory
+  machines with ample headroom, resident memory growth is often harmless caching.
+- Caching vs leaks: Distinguish normal caching, buffer pools, and allocator behavior from true memory leaks.
+  For example, local LLM runtimes (llama-server, ollama, vllm) allocate Key-Value (KV) cache slots and
+  attention buffers across interactions and hold them resident; modern C/C++ allocators retain peak heap
+  pages rather than returning them to the OS immediately. Databases and VMs behave similarly.
+  Never recommend blind process termination (`+"`kill <pid>`"+`) as the first resort for caching runtimes;
+  recommend tuning context length, batch size, slot allocation, or graceful application restarts.
+- Disk usage synthesis: If "disk_usage" details (top directories, model blobs, or large single files) are
+  present, synthesize them with any disk findings to recommend concrete, safe remediation (e.g. running
+  `+"`vitals clean`"+` for caches, or managing model weights/VM images inside their owning applications
+  rather than deleting raw files).
 
 If the report is healthy (verdict "ok", no findings), say so briefly and do not invent problems that
 aren't there. There are no external sources for this — everything you need is in the JSON below. Do
@@ -100,9 +123,80 @@ func Generate(reportJSON []byte, opts llm.CompleteOptions) (string, error) {
 // genuinely take a while to load and generate on a memory-constrained
 // machine, so a status line prints before that (potentially slow) call,
 // not just silence until it returns or times out at completeTimeout.
+type runDeps struct {
+	assess   func(doctor.RunOptions) (doctor.Snapshot, diag.Report)
+	scan     func(context.Context, string, diskusage.Options) (diskusage.Result, error)
+	generate func([]byte, llm.CompleteOptions) (string, error)
+	home     func() (string, error)
+	out      io.Writer
+}
+
+var defaultDeps = runDeps{
+	assess:   doctor.Assess,
+	scan:     diskusage.Scan,
+	generate: Generate,
+	home:     os.UserHomeDir,
+	out:      os.Stdout,
+}
+
 func Run(opts Options) error {
-	snap, report := doctor.Assess(doctor.RunOptions{OllamaURL: opts.OllamaURL})
-	reportJSON, err := json.Marshal(doctor.JSONReport(snap, report))
+	return runWith(defaultDeps, opts)
+}
+
+func runWith(deps runDeps, opts Options) error {
+	if deps.assess == nil {
+		deps.assess = doctor.Assess
+	}
+	if deps.scan == nil {
+		deps.scan = diskusage.Scan
+	}
+	if deps.generate == nil {
+		deps.generate = Generate
+	}
+	if deps.home == nil {
+		deps.home = os.UserHomeDir
+	}
+	out := deps.out
+	if out == nil {
+		out = os.Stdout
+	}
+
+	snap, report := deps.assess(doctor.RunOptions{OllamaURL: opts.OllamaURL})
+	envelope := doctor.JSONReport(snap, report)
+
+	var du *diskusage.Result
+	if opts.Scan {
+		budget := 10 * time.Second
+		if opts.ScanBudget != "" {
+			if b, err := time.ParseDuration(opts.ScanBudget); err == nil && b > 0 {
+				budget = b
+			}
+		}
+		top := opts.Top
+		if top <= 0 {
+			top = 10
+		}
+		root := opts.Root
+		if root == "" {
+			if h, err := deps.home(); err == nil {
+				root = h
+			}
+		}
+		if root != "" {
+			scanOpts := diskusage.Options{Budget: budget, Top: top}
+			if err := diskusage.Validate(scanOpts); err == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), budget)
+				res, err := deps.scan(ctx, root, scanOpts)
+				cancel()
+				if err == nil || res.Entries > 0 {
+					du = &res
+					envelope.DiskUsage = du
+				}
+			}
+		}
+	}
+
+	reportJSON, err := json.Marshal(envelope)
 	if err != nil {
 		return fmt.Errorf("build report: %w", err)
 	}
@@ -110,17 +204,21 @@ func Run(opts Options) error {
 
 	if !opts.JSON {
 		ui.Header("ADVICE")
-		fmt.Printf("  %s\n\n", doctor.SummaryLine(snap))
+		fmt.Fprintf(out, "  %s\n\n", doctor.SummaryLine(snap))
+		if du != nil {
+			fmt.Fprintf(out, "  disk scan: %s observed in %d entries under %s\n\n",
+				ui.HumanBytes(du.ObservedBytes), du.Entries, diskusage.DisplayPath(du.Root))
+		}
 		if findings := report.SortedBySeverity(); len(findings) == 0 {
 			ui.Okf("no findings — this machine looks healthy")
 		} else {
 			doctor.PrintFindings(findings, true)
 		}
-		fmt.Println()
+		fmt.Fprintln(out)
 		ui.Infof("checking for a local or cloud LLM to add further commentary — this can take a while on a local model, especially the first response after it loads...")
 	}
 
-	reply, genErr := Generate(reportJSON, llm.CompleteOptions{
+	reply, genErr := deps.generate(reportJSON, llm.CompleteOptions{
 		OllamaURL:   opts.OllamaURL,
 		LMStudioURL: opts.LMStudioURL,
 		LlamaCppURL: opts.LlamaCppURL,
@@ -130,30 +228,30 @@ func Run(opts Options) error {
 	})
 
 	if opts.JSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		out := struct {
+		res := struct {
 			HeuristicAdvice string `json:"heuristic_advice"`
 			LLMAdvice       string `json:"llm_advice,omitempty"`
 			LLMError        string `json:"llm_error,omitempty"`
 			Source          string `json:"source"`
 		}{HeuristicAdvice: heuristic, Source: "heuristic"}
 		if genErr != nil {
-			out.LLMError = genErr.Error()
+			res.LLMError = genErr.Error()
 		} else {
-			out.LLMAdvice = reply
-			out.Source = "heuristic+llm"
+			res.LLMAdvice = reply
+			res.Source = "heuristic+llm"
 		}
-		return enc.Encode(out)
+		return enc.Encode(res)
 	}
 
 	if genErr != nil {
 		ui.Warnf("%s", noLLMMessage(report, genErr))
 		return nil
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 	ui.Header("AI COMMENTARY")
-	fmt.Println(guide.RenderTerminal(reply))
+	fmt.Fprintln(out, guide.RenderTerminal(reply))
 	return nil
 }
 

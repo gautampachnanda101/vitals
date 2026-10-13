@@ -14,7 +14,6 @@
 // engines x three OSes in CI for a hand-rolled, no-framework page is cost
 // without a matching bug class it would catch.
 const PORT = 18173;
-const binary = process.platform === 'win32' ? '..\\vitals.exe' : '../vitals';
 
 module.exports = {
   testDir: './tests',
@@ -28,9 +27,9 @@ module.exports = {
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
   webServer: {
-    // ../vitals: built by the CI step (or `make build`) right before this
-    // runs -- see AGENTS.md's "Build, test, lint" and the e2e CI job.
-    command: `${binary} dashboard --addr 127.0.0.1:${PORT} --no-open`,
+    // Launch the real binary with a loopback Ollama HTTP stub; no installed
+    // model or cloud credentials are needed. Playwright owns both lifecycles.
+    command: 'node server.js',
     url: `http://127.0.0.1:${PORT}/`,
     reuseExistingServer: false,
     timeout: 15_000,

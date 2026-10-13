@@ -60,7 +60,7 @@ func TestRunUsesInjectedHomeDirAndPrintsTheDryRunSummary(t *testing.T) {
 	home := t.TempDir()
 	d := deps{homeDir: func() (string, error) { return home, nil }}
 	out := captureStdout(t, func() {
-		if err := run(d, Options{DryRun: true}); err != nil {
+		if err := run(d, Options{DryRun: true, Categories: "caches"}); err != nil {
 			t.Fatalf("run: %v", err)
 		}
 	})
@@ -77,13 +77,26 @@ func TestRunErrorsWhenHomeDirFails(t *testing.T) {
 	if err := run(d, Options{}); err == nil || !strings.Contains(err.Error(), "cannot determine home directory") {
 		t.Errorf("run() = %v, want a cannot-determine-home-directory error", err)
 	}
+
+}
+
+func TestRunRejectsJSONHistoryWithoutPrintingText(t *testing.T) {
+	out := captureStdout(t, func() {
+		err := run(deps{}, Options{ShowHistory: true, JSON: true})
+		if err == nil || !strings.Contains(err.Error(), "--history cannot be combined with --json") {
+			t.Errorf("expected explicit JSON/history error, got %v", err)
+		}
+	})
+	if out != "" {
+		t.Fatalf("JSON request produced non-JSON output: %q", out)
+	}
 }
 
 func TestRunPromptsAndAbortsOnNo(t *testing.T) {
 	home := t.TempDir()
 	d := deps{homeDir: func() (string, error) { return home, nil }, confirmReader: strings.NewReader("n\n")}
 	out := captureStdout(t, func() {
-		if err := run(d, Options{}); err != nil {
+		if err := run(d, Options{Categories: "caches"}); err != nil {
 			t.Fatalf("run: %v", err)
 		}
 	})
@@ -101,7 +114,7 @@ func TestRunSkipsThePromptWithAssume(t *testing.T) {
 	home := t.TempDir()
 	d := deps{homeDir: func() (string, error) { return home, nil }, confirmReader: strings.NewReader("")} // EOF would abort if read at all
 	out := captureStdout(t, func() {
-		if err := run(d, Options{DryRun: true, Assume: true}); err != nil {
+		if err := run(d, Options{DryRun: true, Assume: true, Categories: "caches"}); err != nil {
 			t.Fatalf("run: %v", err)
 		}
 	})

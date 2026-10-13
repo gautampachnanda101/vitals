@@ -128,17 +128,28 @@ var commands = []Command{
 	{
 		Name:     "clean",
 		Synopsis: "cross-platform disk cleanup: caches, logs, temp, trash",
-		Long: "Removes developer and OS caches, logs, temp directories and trash in pure Go,\n" +
-			"and orchestrates brew / docker / npm / pip prune when those tools are present.\n" +
-			"Always dry-run first.",
+		Long: "Defaults to caches and temporary files older than seven days. Logs, Trash,\n" +
+			"and tool-managed cleanup are explicit opt-ins through --categories.\n" +
+			"Preview lists file estimates and command consequences; failures are reported.\n" +
+			"Apply rescans, preserves changed files and symlinks, and retains directories.\n" +
+			"Logical bytes are not guaranteed physical recovery. Close affected apps;\n" +
+			"age does not prove a temporary file is unused. Always dry-run first.\n" +
+			"Cleanup is at your own risk. Back up important data; deletion has no undo.",
 		Flags: []Flag{
 			{"dry-run", "", "report what would be removed without deleting anything"},
 			{"yes", "", "skip the confirmation prompt"},
 			{"history", "", "print past clean runs (date, freed) instead of cleaning"},
+			{"categories", "caches,temp", "comma-separated caches,temp,logs,trash,tools; replaces default selection"},
+			{"min-age", "168h", "minimum age for temporary files; does not apply to caches/logs/Trash"},
+			{"json", "", "structured preview/result; apply requires --yes"},
+			{"tools", "", "optional comma-separated tool subset; requires tools in --categories"},
 			{"no-color", "", "disable ANSI colour"},
 		},
 		Examples: []string{
 			"vitals clean --dry-run",
+			"vitals clean --categories caches --dry-run --json",
+			"vitals clean --categories trash --dry-run",
+			"vitals clean --categories tools --tools uv,pnpm,conda --dry-run",
 			"vitals clean --yes",
 			"vitals clean --history",
 		},
@@ -304,10 +315,15 @@ var commands = []Command{
 	},
 	{
 		Name:     "disk",
-		Synopsis: "disk deep dive: per-mount usage, device util/await + findings",
-		Long:     "Per-mount space and inode headroom plus a device busy / latency estimate,\nthen only the disk-related findings. Exit code follows the findings.",
-		Flags:    []Flag{{"json", "", "emit as JSON"}, {"output", "FILE", "also write the JSON envelope to this file"}, {"ci", "", "print one grep-friendly line"}, {"quiet", "", "print nothing (-q)"}, {"verbose", "", "show more than the default view has room for (-v)"}, {"no-color", "", "disable ANSI colour"}},
-		Examples: []string{"vitals disk", "vitals disk --verbose  # every reclaimable cache dir, not just the top 5"},
+		Synopsis: "disk health and opt-in recursive, read-only space analysis",
+		Long: "Per-mount space, device activity and disk findings. --scan additionally\n" +
+			"ranks recursive directory totals and largest files (default home). Logical\n" +
+			"bytes are not guaranteed reclaim; partial scans show observed lower bounds.\n" +
+			"Scan budgets are cooperative between filesystem calls, not command-wide\n" +
+			"timeouts. --scan cannot be combined with --quiet or --ci. Partial scans\n" +
+			"exit at least 1; scan failures exit 2; health findings can raise the exit code.",
+		Flags:    []Flag{{"json", "", "emit as JSON, including disk_usage with --scan"}, {"output", "FILE", "also write JSON; same scan result as stdout"}, {"ci", "", "print one grep-friendly line (without --scan)"}, {"quiet", "", "print nothing (-q; without --scan)"}, {"verbose", "", "show the full default cleanup-candidate list (-v)"}, {"scan", "", "read-only recursive space analysis"}, {"root", "PATH", "scan root (default home; requires --scan)"}, {"top", "N", "ranked rows, 1-100 (default 20; requires --scan)"}, {"scan-budget", "DURATION", "cooperative budget, >0 to 5m (default 30s; requires --scan)"}, {"no-color", "", "disable ANSI colour"}},
+		Examples: []string{"vitals disk", "vitals disk --scan", "vitals disk --scan --root \"$HOME/Library\" --top 20", "vitals disk --scan --json | jq '.disk_usage.directories'"},
 	},
 	{
 		Name:     "net",

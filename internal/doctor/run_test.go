@@ -155,6 +155,64 @@ func TestFinishAssessLeavesHealthyReportAloneWithNoClimbInHistory(t *testing.T) 
 	}
 }
 
+func TestFinishAssessIgnoresLLMCacheClimbWhenHostMemoryHealthy(t *testing.T) {
+	isolateConfigDir(t)
+
+	base := time.Now().Add(-time.Hour)
+	for i, rssMB := range []uint64{2000, 2500, 3000, 3500, 4000} {
+		p := mkPoint(base.Add(time.Duration(i)*10*time.Minute), 55406, "llama-server", rssMB)
+		path, _ := historyPath()
+		if err := appendHistory(path, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Host memory is healthy with ample headroom
+	_, report := finishAssess(Snapshot{CPU: CPU{Cores: 8, UsedPct: 15}, Memory: Memory{UsedPct: 35, AvailablePct: 65}})
+
+	f := find(report, "llama-server")
+	if f.Title != "" {
+		t.Errorf("llama-server KV cache growth on unconstrained machine should NOT be flagged as a leak, got: %+v", f)
+	}
+	if report.Worst() != diag.OK {
+		t.Errorf("report should remain OK, got worst = %v", report.Worst())
+	}
+}
+
+func TestFinishAssessFlagsLLMClimbUnderMemoryPressureWithContextualAdvice(t *testing.T) {
+	isolateConfigDir(t)
+
+	base := time.Now().Add(-time.Hour)
+	for i, rssMB := range []uint64{2000, 2500, 3000, 3500, 4000} {
+		p := mkPoint(base.Add(time.Duration(i)*10*time.Minute), 55406, "llama-server", rssMB)
+		path, _ := historyPath()
+		if err := appendHistory(path, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Host is under memory pressure
+	_, report := finishAssess(Snapshot{CPU: CPU{Cores: 8, UsedPct: 50}, Memory: Memory{UsedPct: 88, SwapUsedPct: 45}})
+
+	f := find(report, "llama-server")
+	if f.Title == "" {
+		t.Fatalf("expected finding under memory pressure, got %+v", report.Findings)
+	}
+	if f.Severity != diag.Warn {
+		t.Errorf("expected warning under memory pressure, got %v", f.Severity)
+	}
+	if !strings.Contains(f.Title, "expanding under system memory pressure") {
+		t.Errorf("title should mention memory pressure, got %q", f.Title)
+	}
+	if !strings.Contains(f.Detail, "KV cache") && !strings.Contains(f.Detail, "buffer") {
+		t.Errorf("detail should recognize KV cache / buffer allocation, got %q", f.Detail)
+	}
+	// First fix must be non-destructive (review context/cache limits)
+	if len(f.Fixes) == 0 || !strings.Contains(f.Fixes[0], "context length") {
+		t.Errorf("primary fix should recommend configuring context length/limits, got %+v", f.Fixes)
+	}
+}
+
 func TestFinishAssessRecordsHistory(t *testing.T) {
 	isolateConfigDir(t)
 

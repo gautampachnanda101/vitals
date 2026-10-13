@@ -1,13 +1,16 @@
 package doctor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
 	"vitals/internal/clean"
+	"vitals/internal/diskusage"
 	"vitals/internal/ui"
 )
 
@@ -17,8 +20,53 @@ var FocusResources = []string{"cpu", "mem", "disk", "net", "power"}
 // RunFocus is `vitals <resource>` — the current numbers for one resource plus
 // only that resource's findings. Exit code follows the findings.
 func RunFocus(resource string, opts RunOptions) int {
-	snap := Collect(Options{OllamaURL: opts.OllamaURL})
+	return runFocus(resource, opts, focusDeps{collect: Collect, scan: diskusage.Scan, home: os.UserHomeDir})
+}
+
+type focusDeps struct {
+	collect func(Options) Snapshot
+	scan    func(context.Context, string, diskusage.Options) (diskusage.Result, error)
+	home    func() (string, error)
+}
+
+func runFocus(resource string, opts RunOptions, d focusDeps) int {
+	if opts.DiskScan != nil {
+		if resource != "disk" || opts.Quiet || opts.CI {
+			fmt.Fprintln(os.Stderr, "disk --scan requires visible output; do not combine it with --quiet or --ci")
+			return 2
+		}
+		if err := diskusage.Validate(*opts.DiskScan); err != nil {
+			fmt.Fprintf(os.Stderr, "invalid disk scan options: %v; see vitals help disk\n", err)
+			return 2
+		}
+		if opts.DiskRoot == "" {
+			root, err := d.home()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "disk scan: cannot determine home: %v; pass --root with a real directory\n", err)
+				return 2
+			}
+			opts.DiskRoot = root
+		}
+	}
+	snap := d.collect(Options{OllamaURL: opts.OllamaURL})
 	report := AnalyzeResource(snap, resource)
+	envelope := JSONReport(snap, report)
+	exitCode := report.ExitCode()
+	var scanErr error
+	if opts.DiskScan != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		result, err := d.scan(ctx, opts.DiskRoot, *opts.DiskScan)
+		stop()
+		scanErr = err
+		envelope.DiskUsage = &result
+		envelope.Resource = resource
+		if err != nil {
+			exitCode = 2
+		} else if !result.Complete {
+			exitCode = max(exitCode, 1)
+		}
+		envelope.ExitCode = exitCode
+	}
 
 	var dnsLatency time.Duration
 	var dnsErr error
@@ -29,9 +77,22 @@ func RunFocus(resource string, opts RunOptions) int {
 			report.Add(*f)
 		}
 	}
+	if opts.DiskScan == nil {
+		exitCode = report.ExitCode()
+	}
 
-	if err := maybeWriteOutput(opts.Output, snap, report); err != nil {
+	var outputErr error
+	if opts.DiskScan != nil && opts.Output != "" {
+		outputErr = writeJSONEnvelope(opts.Output, envelope)
+	} else {
+		outputErr = maybeWriteOutput(opts.Output, snap, report)
+	}
+	if err := outputErr; err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not write --output file: %v\n", err)
+		if opts.DiskScan != nil {
+			exitCode = 2
+			envelope.ExitCode = exitCode
+		}
 	}
 
 	if opts.Quiet {
@@ -46,17 +107,26 @@ func RunFocus(resource string, opts RunOptions) int {
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(struct {
-			Resource string `json:"resource"`
-			JSONEnvelope
-		}{resource, JSONReport(snap, report)})
-		return report.ExitCode()
+		if opts.DiskScan == nil {
+			envelope = JSONReport(snap, report)
+		}
+		envelope.Resource = resource
+		if err := enc.Encode(envelope); err != nil {
+			fmt.Fprintf(os.Stderr, "could not encode disk/resource JSON: %v\n", err)
+			return 2
+		}
+		return exitCode
 	}
 
 	ui.Header(strings.ToUpper(resource))
 	focusDetail(resource, snap, opts.Verbose)
 	if resource == "disk" {
 		printDiskIOProcs(opts.Verbose)
+		if envelope.DiskUsage != nil {
+			printDiskUsage(*envelope.DiskUsage, scanErr)
+		} else {
+			fmt.Println("  Find what's occupying space: vitals disk --scan (read-only); see vitals guide.")
+		}
 	}
 	if resource == "power" || resource == "battery" {
 		printPowerProcs(opts.Verbose)
@@ -71,12 +141,16 @@ func RunFocus(resource string, opts RunOptions) int {
 
 	if len(report.Findings) == 0 {
 		fmt.Println()
-		ui.Okf("no %s issue detected", resource)
-		return 0
+		if resource == "disk" {
+			ui.Okf("no configured disk health threshold exceeded; this does not establish workload headroom")
+		} else {
+			ui.Okf("no %s issue detected", resource)
+		}
+		return exitCode
 	}
 	fmt.Println()
 	PrintFindings(report.SortedBySeverity(), false)
-	return report.ExitCode()
+	return exitCode
 }
 
 // pct formats and colour-grades a percentage where higher is worse.
@@ -227,10 +301,7 @@ func throttleNote(throttling bool) string {
 	return ""
 }
 
-// printReclaimable measures the same cache/log/trash directories `vitals
-// clean` targets and prints what's actually reclaimable — the concrete answer
-// to "what can I delete", not just a free-space percentage. Bounded to a short
-// budget so a huge cache can't stall an interactive command.
+// printReclaimable estimates eligible logical bytes in the default cleanup scope.
 func printReclaimable(verbose bool) {
 	budget := 1500 * time.Millisecond
 	limit := 5
@@ -244,6 +315,7 @@ func printReclaimable(verbose bool) {
 		total += e.Bytes
 	}
 	if total == 0 {
+		fmt.Println("  No default cleanup candidates observed; vitals disk --scan finds other space consumers without deleting them.")
 		return
 	}
 	fmt.Println()
@@ -251,7 +323,7 @@ func printReclaimable(verbose bool) {
 	if !complete {
 		suffix = ui.Key(" (partial scan — actual total is at least this much)")
 	}
-	fmt.Printf("  %s %s%s\n", ui.Key("reclaimable (caches/logs/trash):"), ui.Actionf("%s", ui.HumanBytes(total)), suffix)
+	fmt.Printf("  %s %s%s\n", ui.Key("cleanup candidates (caches/temp, logical bytes):"), ui.Actionf("%s", ui.HumanBytes(total)), suffix)
 	lines, _, remaining := reclaimableLines(entries, limit)
 	for _, l := range lines {
 		fmt.Println(l)

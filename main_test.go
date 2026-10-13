@@ -85,8 +85,34 @@ func TestRunUnknownCommandExitsTwo(t *testing.T) {
 	if code != 2 {
 		t.Errorf("run([bogus]) = %d, want 2", code)
 	}
+
 	if !strings.Contains(out, `unknown command "bogus"`) {
 		t.Errorf("got %q", out)
+	}
+}
+
+func TestDiskScanRejectsInvalidFlagsBeforeCollection(t *testing.T) {
+	for _, args := range [][]string{
+		{"disk", "--root", "/"},
+		{"disk", "--top", "20"},
+		{"disk", "--scan-budget", "30s"},
+		{"disk", "--scan", "--quiet"},
+		{"disk", "--scan", "--ci"},
+		{"disk", "--scan", "--top", "0"},
+		{"disk", "--scan", "--top", "101"},
+		{"disk", "--scan", "--scan-budget", "0s"},
+		{"disk", "--scan", "--scan-budget", "6m"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var code int
+			out := captureStdout(t, func() { code = run(args, "test") })
+			if code != 2 || !strings.Contains(out, "scan") {
+				t.Fatalf("invalid scan flags returned %d, output %q", code, out)
+			}
+			if strings.Contains(out, "DISK") {
+				t.Fatalf("invalid flags collected/rendered telemetry: %q", out)
+			}
+		})
 	}
 }
 
