@@ -813,3 +813,24 @@ func TestBuildDonutChart(t *testing.T) {
 		t.Fatalf("expected escaped label, got %s", chart.Slices[2].Label)
 	}
 }
+
+func TestPathAdviceSpecializedTargets(t *testing.T) {
+	cases := []struct {
+		path     string
+		contains string
+	}{
+		{"/Users/foo/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw", "Docker virtual disk"},
+		{"/Users/foo/.docker/data", "docker volume prune"},
+		{"/Users/foo/.ollama/models/manifests", "ollama rm"},
+		{"/Users/foo/.cache/huggingface/hub", "ollama rm"},
+		{"/Users/foo/Library/Caches/com.google.Chrome", "vitals clean"},
+		{"/Users/foo/.Trash/old.dmg", "Trash"},
+		{"/Users/foo/Documents/notes.txt", "Manual review only"},
+	}
+	for _, tc := range cases {
+		adv := pathAdvice(tc.path)
+		if !strings.Contains(adv, tc.contains) {
+			t.Errorf("pathAdvice(%q) = %q, want containing %q", tc.path, adv, tc.contains)
+		}
+	}
+}

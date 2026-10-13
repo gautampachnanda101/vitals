@@ -188,6 +188,9 @@ func TestAnalyzeReclaimablePressureIsNotCritical(t *testing.T) {
 	if f.Severity == diag.Critical {
 		t.Errorf("no swap pressure => RAM finding should be a warning, not critical")
 	}
+	if f.ID != "mac-reclaimable" {
+		t.Errorf("expected ID mac-reclaimable, got %s", f.ID)
+	}
 }
 
 func TestAnalyzeThermalCap(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -139,7 +140,7 @@ func addLeakFinding(report *diag.Report, history []HistoryPoint, snap Snapshot) 
 					proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct, snap.Memory.SwapUsedPct, proc.Name),
 				Fixes: []string{
 					fmt.Sprintf("review %s configuration to constrain context length, KV cache slots, or buffer limits", proc.Name),
-					fmt.Sprintf("if memory pressure causes thrashing and the process does not cap its usage, restart it gracefully or `kill %d`", proc.PID),
+					fmt.Sprintf("if memory pressure causes thrashing and the process does not cap its usage, restart it gracefully or `%s`", killCmd(proc.PID)),
 				},
 			})
 		} else {
@@ -150,7 +151,7 @@ func addLeakFinding(report *diag.Report, history []HistoryPoint, snap Snapshot) 
 					proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct, snap.Memory.SwapUsedPct),
 				Fixes: []string{
 					fmt.Sprintf("inspect %s (pid %d) activity and logs for unbounded memory growth", proc.Name, proc.PID),
-					fmt.Sprintf("restart the process if memory pressure persists: `kill %d`", proc.PID),
+					fmt.Sprintf("restart the process if memory pressure persists: `%s`", killCmd(proc.PID)),
 					"if growth resumes unabated after restart, file it as a leak with the maintainer",
 				},
 			})
@@ -166,9 +167,17 @@ func addLeakFinding(report *diag.Report, history []HistoryPoint, snap Snapshot) 
 			proc.PID, ui.HumanBytes(int64(growth)), snap.Memory.UsedPct),
 		Fixes: []string{
 			fmt.Sprintf("monitor %s (pid %d) to check if its working set stabilizes", proc.Name, proc.PID),
-			fmt.Sprintf("if growth continues unbounded or begins pressuring memory, restart it: `kill %d`", proc.PID),
+			fmt.Sprintf("if growth continues unbounded or begins pressuring memory, restart it: `%s`", killCmd(proc.PID)),
 		},
 	})
+}
+
+// killCmd renders a platform-appropriate process termination command.
+func killCmd(pid int32) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("Stop-Process -Id %d", pid)
+	}
+	return fmt.Sprintf("kill %d", pid)
 }
 
 // Run collects a snapshot, analyses it, prints the verdict, and returns the

@@ -281,3 +281,10 @@ func captureStdout(t *testing.T, f func()) string {
 	os.Stdout = old
 	return <-done
 }
+
+func TestKillCmd(t *testing.T) {
+	cmd := killCmd(1234)
+	if !strings.Contains(cmd, "1234") {
+		t.Errorf("killCmd(1234) = %q, want pid included", cmd)
+	}
+}

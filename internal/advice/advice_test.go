@@ -192,6 +192,11 @@ func TestBuildPromptIncludesDiskUsage(t *testing.T) {
 	if !strings.Contains(strings.ToLower(prompt), "disk usage") {
 		t.Errorf("prompt should mention disk usage guidance, got:\n%s", prompt)
 	}
+	for _, want := range []string{"docker", "docker.raw", "prune", "volume prune", "sparse"} {
+		if !strings.Contains(strings.ToLower(prompt), want) {
+			t.Errorf("prompt missing container/sparse disk guidance %q:\n%s", want, prompt)
+		}
+	}
 }
 
 func TestRunWithTextModeHealthyWithLLM(t *testing.T) {

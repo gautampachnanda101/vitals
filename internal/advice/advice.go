@@ -65,9 +65,16 @@ Guidelines for accurate, evidence-based systems advice:
   Never recommend blind process termination (`+"`kill <pid>`"+`) as the first resort for caching runtimes;
   recommend tuning context length, batch size, slot allocation, or graceful application restarts.
 - Disk usage synthesis: If "disk_usage" details (top directories, model blobs, or large single files) are
-  present, synthesize them with any disk findings to recommend concrete, safe remediation (e.g. running
-  `+"`vitals clean`"+` for caches, or managing model weights/VM images inside their owning applications
-  rather than deleting raw files).
+  present, synthesize them with any disk findings to recommend concrete, safe remediation:
+  * For application/build caches: recommend running `+"`vitals clean`"+` or using the Clean dashboard page.
+  * For container/VM disk images (e.g. Docker.raw, com.docker.docker, virtual machine disks): note that
+    sparse files on disk can have an allocated physical footprint much smaller than their logical maximum capacity.
+    Cross-reference with any container runtime data in the snapshot: check running containers, stopped containers,
+    and advise using `+"`docker system df`"+` to inspect space allocation, `+"`docker system prune`"+` to clean unused
+    build cache and images, and `+"`docker volume prune`"+` to reclaim orphaned volumes that standard prune leaves behind.
+  * For local AI/LLM model weights (e.g. .ollama, models, huggingface): advise managing models via the runtime
+    (e.g. `+"`ollama rm <model>`"+`) rather than deleting raw disk blobs directly.
+  * For personal/document directories: advise manual inspection rather than destructive commands.
 
 If the report is healthy (verdict "ok", no findings), say so briefly and do not invent problems that
 aren't there. There are no external sources for this — everything you need is in the JSON below. Do

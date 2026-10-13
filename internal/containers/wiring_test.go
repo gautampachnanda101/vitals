@@ -147,8 +147,8 @@ func TestInspectPassIsCappedAndToleratesErrors(t *testing.T) {
 	if !r.Reachable || len(r.Containers) == 0 {
 		t.Fatalf("probe should still succeed when inspect calls 404: %+v", r)
 	}
-	// total requests = /_ping + /info + /containers/json + at most maxInspect
-	if n := len(f.seenMethods()); n > 3+maxInspect {
+	// total requests = /_ping + /info + /system/df + /containers/json + at most maxInspect
+	if n := len(f.seenMethods()); n > 4+maxInspect {
 		t.Errorf("inspect pass not capped: %d requests", n)
 	}
 }

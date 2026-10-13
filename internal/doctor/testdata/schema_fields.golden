@@ -58,6 +58,14 @@ snapshot.containers.endpoint
 snapshot.containers.note
 snapshot.containers.reachable
 snapshot.containers.runtime
+snapshot.containers.storage.build_cache_bytes
+snapshot.containers.storage.containers_bytes
+snapshot.containers.storage.images_bytes
+snapshot.containers.storage.volumes_bytes
+snapshot.containers.vm_cpus
+snapshot.containers.vm_disk_bytes
+snapshot.containers.vm_disk_path
+snapshot.containers.vm_disk_physical_bytes
 snapshot.containers.vm_total_bytes
 snapshot.cpu.base_mhz
 snapshot.cpu.cores

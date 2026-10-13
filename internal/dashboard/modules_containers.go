@@ -132,10 +132,42 @@ func renderRuntimeSection(base containers.Report) string {
 	run, stopped, unhealthy := rep.Counts()
 	inner += `<div style="color:var(--muted);font-size:.85rem;margin-bottom:.8rem">` +
 		fmt.Sprintf("%d running · %d stopped · %d unhealthy", run, stopped, unhealthy)
+	if rep.VMCPUs > 0 {
+		inner += fmt.Sprintf(" · %d vCPUs", rep.VMCPUs)
+	}
 	if rep.VMTotalBytes > 0 {
 		inner += fmt.Sprintf(" · VM %s RAM", ui.HumanBytes(int64(rep.VMTotalBytes)))
 	}
+	if rep.VMDiskBytes > 0 {
+		inner += fmt.Sprintf(" · %s virtual disk", ui.HumanBytes(int64(rep.VMDiskBytes)))
+	}
 	inner += `</div>`
+
+	if rep.VMDiskBytes > 0 || rep.Storage != nil {
+		allocInfo := `<div class="subcard" style="margin-bottom:1rem;font-size:.85rem">`
+		allocInfo += `<div style="font-weight:600;margin-bottom:.4rem">VM & Storage Allocation</div>`
+		if rep.VMDiskBytes > 0 {
+			physStr := ""
+			if rep.VMDiskPhysicalBytes > 0 && rep.VMDiskPhysicalBytes != rep.VMDiskBytes {
+				physStr = fmt.Sprintf(" (sparse: %s physical on host disk)", ui.HumanBytes(int64(rep.VMDiskPhysicalBytes)))
+			}
+			allocInfo += fmt.Sprintf(`<div style="color:var(--text-dim);margin-bottom:.2rem">Virtual disk: <strong>%s limit</strong>%s</div>`,
+				ui.HumanBytes(int64(rep.VMDiskBytes)), physStr)
+			if rep.VMDiskPath != "" {
+				allocInfo += fmt.Sprintf(`<div class="mono" style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem;word-break:break-all">%s</div>`, template.HTMLEscapeString(rep.VMDiskPath))
+			}
+		}
+		if rep.Storage != nil {
+			allocInfo += fmt.Sprintf(`<div style="color:var(--text-dim)">Engine objects: <strong>%s</strong> total · %s images · %s containers · %s volumes · %s build cache</div>`,
+				ui.HumanBytes(int64(rep.Storage.Total())),
+				ui.HumanBytes(int64(rep.Storage.ImagesBytes)),
+				ui.HumanBytes(int64(rep.Storage.ContainersBytes)),
+				ui.HumanBytes(int64(rep.Storage.VolumesBytes)),
+				ui.HumanBytes(int64(rep.Storage.BuildCacheBytes)))
+		}
+		allocInfo += `</div>`
+		inner += allocInfo
+	}
 
 	for _, g := range groupContainers(rep.Containers) {
 		inner += `<div class="sectiontitle" style="margin:1rem 0 .5rem">` + template.HTMLEscapeString(g.Title) + `</div>`

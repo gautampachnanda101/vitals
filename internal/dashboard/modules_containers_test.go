@@ -147,6 +147,46 @@ func TestOverviewContainersCard(t *testing.T) {
 	}
 }
 
+func TestRenderContainersPageVMAndStorageAllocation(t *testing.T) {
+	withFakeContainerStatsCache(t, func(r containers.Report) containers.Report { return r })
+	out := renderContainersPage(ctxWith(
+		containers.Report{
+			Runtime:             "docker",
+			Reachable:           true,
+			Endpoint:            "/var/run/docker.sock",
+			VMCPUs:              4,
+			VMTotalBytes:        8 << 30,
+			VMDiskBytes:         104 << 30,
+			VMDiskPhysicalBytes: 30 << 30,
+			VMDiskPath:          "/Users/test/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",
+			Storage: &containers.StorageBreakdown{
+				ImagesBytes:     10 << 30,
+				ContainersBytes: 2 << 30,
+				VolumesBytes:    5 << 30,
+				BuildCacheBytes: 3 << 30,
+			},
+		},
+	))
+	for _, want := range []string{
+		"4 vCPUs",
+		"VM 8.00 GB RAM",
+		"104.00 GB virtual disk",
+		"VM & Storage Allocation",
+		"104.00 GB limit",
+		"sparse: 30.00 GB physical on host disk",
+		"Docker.raw",
+		"Engine objects: <strong>20.00 GB</strong> total",
+		"10.00 GB images",
+		"2.00 GB containers",
+		"5.00 GB volumes",
+		"3.00 GB build cache",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Containers page missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestHasContainersGate(t *testing.T) {
 	if HasContainers(PageContext{}) {
 		t.Error("no runtime -> module unavailable")

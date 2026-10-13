@@ -114,7 +114,52 @@ func renderDisk(s doctor.Snapshot) string {
 	// right now (Linux/Windows — omitted where the per-process counter is
 	// all-zero, i.e. macOS), and which paths hold the most space (a
 	// bounded home-folder scan). See roadmap item 012.
-	return card(out) + diskIOProcessSection() + biggestPathsSection()
+	return card(out) + containerVMDiskSection(s) + diskIOProcessSection() + biggestPathsSection()
+}
+
+// containerVMDiskSection renders a card detailing container runtime virtual
+// disk allocations (e.g. Docker Desktop VM disk) if present in the snapshot.
+func containerVMDiskSection(s doctor.Snapshot) string {
+	var rows string
+	for _, c := range s.Containers {
+		if c.VMDiskBytes == 0 && c.Storage == nil {
+			continue
+		}
+		label := c.Runtime
+		if label == "" {
+			label = "Container"
+		}
+		label = strings.ToUpper(label[:1]) + label[1:]
+		val := ""
+		if c.VMDiskBytes > 0 {
+			val = fmt.Sprintf("%s virtual limit", ui.HumanBytes(int64(c.VMDiskBytes)))
+			if c.VMDiskPhysicalBytes > 0 && c.VMDiskPhysicalBytes != c.VMDiskBytes {
+				val += fmt.Sprintf(" (%s physical on host disk)", ui.HumanBytes(int64(c.VMDiskPhysicalBytes)))
+			}
+		}
+		if c.Storage != nil {
+			storageStr := fmt.Sprintf("Engine storage: %s total (%s images, %s containers, %s volumes, %s build cache)",
+				ui.HumanBytes(int64(c.Storage.Total())),
+				ui.HumanBytes(int64(c.Storage.ImagesBytes)),
+				ui.HumanBytes(int64(c.Storage.ContainersBytes)),
+				ui.HumanBytes(int64(c.Storage.VolumesBytes)),
+				ui.HumanBytes(int64(c.Storage.BuildCacheBytes)))
+			if val != "" {
+				val += " · " + storageStr
+			} else {
+				val = storageStr
+			}
+		}
+		detail := val
+		if c.VMDiskPath != "" {
+			detail += fmt.Sprintf(`<br><span class="mono" style="font-size:.75rem;color:var(--muted)">%s</span>`, template.HTMLEscapeString(c.VMDiskPath))
+		}
+		rows += row(label+" VM / Engine disk", detail)
+	}
+	if rows == "" {
+		return ""
+	}
+	return `<div class="sectiontitle">Container Virtual Disk & Storage</div>` + card(rows)
 }
 
 // diskIOProcessSection renders a "Top processes by disk I/O" table when

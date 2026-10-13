@@ -55,14 +55,32 @@ func (c Container) Running() bool {
 	return strings.EqualFold(c.State, "running")
 }
 
+// StorageBreakdown captures disk usage within the container engine (e.g. docker system df).
+type StorageBreakdown struct {
+	ImagesBytes     uint64 `json:"images_bytes,omitempty"`
+	ContainersBytes uint64 `json:"containers_bytes,omitempty"`
+	VolumesBytes    uint64 `json:"volumes_bytes,omitempty"`
+	BuildCacheBytes uint64 `json:"build_cache_bytes,omitempty"`
+}
+
+// Total returns the sum of all engine storage layers.
+func (s StorageBreakdown) Total() uint64 {
+	return s.ImagesBytes + s.ContainersBytes + s.VolumesBytes + s.BuildCacheBytes
+}
+
 // Report is the whole container-runtime picture for one snapshot.
 type Report struct {
-	Runtime      string      `json:"runtime"`                  // "docker", "kubernetes", or "" when none is reachable
-	Reachable    bool        `json:"reachable"`                // a runtime was found and answered
-	Endpoint     string      `json:"endpoint,omitempty"`       // the socket path or kube context that answered
-	VMTotalBytes uint64      `json:"vm_total_bytes,omitempty"` // Engine API /info MemTotal — the runtime VM's RAM ceiling
-	Containers   []Container `json:"containers,omitempty"`
-	Note         string      `json:"note,omitempty"` // why nothing was returned despite a socket (e.g. daemon not responding)
+	Runtime             string            `json:"runtime"`                          // "docker", "kubernetes", or "" when none is reachable
+	Reachable           bool              `json:"reachable"`                        // a runtime was found and answered
+	Endpoint            string            `json:"endpoint,omitempty"`               // the socket path or kube context that answered
+	VMCPUs              int               `json:"vm_cpus,omitempty"`                // Engine API /info NCPU — allocated vCPUs
+	VMTotalBytes        uint64            `json:"vm_total_bytes,omitempty"`         // Engine API /info MemTotal — the runtime VM's RAM ceiling
+	VMDiskPath          string            `json:"vm_disk_path,omitempty"`           // host path to the VM disk file (e.g. Docker.raw, ext4.vhdx)
+	VMDiskBytes         uint64            `json:"vm_disk_bytes,omitempty"`          // virtual size / allocation limit of VM disk
+	VMDiskPhysicalBytes uint64            `json:"vm_disk_physical_bytes,omitempty"` // actual physical disk space occupied by the VM image
+	Storage             *StorageBreakdown `json:"storage,omitempty"`                // engine storage breakdown (images, volumes, build cache)
+	Containers          []Container       `json:"containers,omitempty"`
+	Note                string            `json:"note,omitempty"` // why nothing was returned despite a socket (e.g. daemon not responding)
 }
 
 // Counts summarises Containers by state for a one-line headline.

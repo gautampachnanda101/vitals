@@ -141,7 +141,7 @@ vitals doctor --webhook https://hooks.slack.com/...   # notify, but only when so
 vitals doctor --compare before.json after.json        # diff two saved reports
 ```
 
-The `--json` payload carries a `schema_version` (currently `1.6.0`), and the
+The `--json` payload carries a `schema_version` (currently `1.8.0`), and the
 shape only ever grows — nothing is renamed or removed without a major
 version bump. `vitals doctor --schema` prints the full JSON Schema. The
 same envelope comes back from the MCP `system_health` tool and from

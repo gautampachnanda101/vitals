@@ -283,3 +283,85 @@ func TestSanitizeStripsControlSequences(t *testing.T) {
 		t.Errorf("sanitize = %q, want %q", got, "evil")
 	}
 }
+
+func TestParseStorageBreakdown(t *testing.T) {
+	if s := parseStorageBreakdown([]byte("invalid json")); s != nil {
+		t.Errorf("want nil for invalid json, got %+v", s)
+	}
+
+	payload := `{
+	  "LayersSize": 1000000000,
+	  "Images": [{"Size": 250000000}, {"Size": 150000000}],
+	  "Containers": [{"SizeRw": 50000000, "SizeRootFs": 200000000}, {"SizeRw": 10000000}],
+	  "Volumes": [{"UsageData": {"Size": 300000000}}, {"UsageData": {"Size": 200000000}}],
+	  "BuildCache": [{"Size": 120000000}]
+	}`
+	s := parseStorageBreakdown([]byte(payload))
+	if s == nil {
+		t.Fatal("expected non-nil StorageBreakdown")
+	}
+	if s.ImagesBytes != 400000000 {
+		t.Errorf("ImagesBytes = %d, want 400000000", s.ImagesBytes)
+	}
+	if s.ContainersBytes != 60000000 {
+		t.Errorf("ContainersBytes = %d, want 60000000", s.ContainersBytes)
+	}
+	if s.VolumesBytes != 500000000 {
+		t.Errorf("VolumesBytes = %d, want 500000000", s.VolumesBytes)
+	}
+	if s.BuildCacheBytes != 120000000 {
+		t.Errorf("BuildCacheBytes = %d, want 120000000", s.BuildCacheBytes)
+	}
+}
+
+func TestProbeDockerWithStorageAndVMStats(t *testing.T) {
+	f := newFakeDocker()
+	defer f.srv.Close()
+	f.infoBody = `{"MemTotal": 8360198144, "NCPU": 4}`
+
+	// Test fake server returning /system/df as well
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"MemTotal": 8360198144, "NCPU": 6}`))
+	})
+	mux.HandleFunc("/system/df", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"Images": [{"Size": 1000}],
+			"Containers": [{"SizeRw": 200}],
+			"Volumes": [{"UsageData": {"Size": 300}}],
+			"BuildCache": [{"Size": 400}]
+		}`))
+	})
+	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("[]"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tr := transport{
+		goos:           "linux",
+		dockerEndpoint: func() string { return "/fake/docker.sock" },
+		dialDocker: func(ctx context.Context, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", srv.Listener.Addr().String())
+		},
+		lookPath: func(string) (string, error) { return "", errors.New("no kubectl") },
+		run:      func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("no exec") },
+	}
+
+	r := probe(context.Background(), tr)
+	if !r.Reachable || r.VMCPUs != 6 {
+		t.Errorf("VMCPUs = %d, want 6", r.VMCPUs)
+	}
+	if r.Storage == nil {
+		t.Fatal("expected Storage breakdown")
+	}
+	if r.Storage.ImagesBytes != 1000 || r.Storage.ContainersBytes != 200 || r.Storage.VolumesBytes != 300 || r.Storage.BuildCacheBytes != 400 {
+		t.Errorf("unexpected storage values: %+v", r.Storage)
+	}
+}

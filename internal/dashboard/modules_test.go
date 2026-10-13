@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"vitals/internal/containers"
 	"vitals/internal/diag"
 	"vitals/internal/doctor"
 	"vitals/internal/llm"
@@ -390,6 +391,41 @@ func TestRenderDiskShowsSMARTWhenPresent(t *testing.T) {
 	none := renderDisk(doctor.Snapshot{Disks: []doctor.Disk{{Mount: "/", UsedPct: 50, FreeBytes: 1 << 30}}})
 	if strings.Contains(none, "S.M.A.R.T.") {
 		t.Errorf("no SMART data -> no SMART line: %s", none)
+	}
+}
+
+func TestRenderDiskShowsContainerVMDiskSectionWhenPresent(t *testing.T) {
+	stubResourceExtras(t)
+	s := doctor.Snapshot{
+		Disks: []doctor.Disk{{Mount: "/", UsedPct: 80, FreeBytes: 20 << 30}},
+		Containers: []containers.Report{
+			{
+				Runtime:             "docker",
+				Reachable:           true,
+				VMDiskPath:          "/Users/test/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw",
+				VMDiskBytes:         100 << 30,
+				VMDiskPhysicalBytes: 20 << 30,
+				Storage: &containers.StorageBreakdown{
+					ImagesBytes:     10 << 30,
+					ContainersBytes: 2 << 30,
+					VolumesBytes:    5 << 30,
+					BuildCacheBytes: 3 << 30,
+				},
+			},
+		},
+	}
+	out := renderDisk(s)
+	for _, want := range []string{
+		"Container Virtual Disk & Storage",
+		"Docker VM / Engine disk",
+		"100.00 GB virtual limit",
+		"20.00 GB physical on host disk",
+		"Engine storage: 20.00 GB total",
+		"Docker.raw",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderDisk missing %q:\n%s", want, out)
+		}
 	}
 }
 

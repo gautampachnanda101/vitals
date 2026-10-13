@@ -3,7 +3,7 @@
   "$id": "https://github.com/gautampachnanda101/vitals/schema/doctor.json",
   "title": "vitals doctor --json payload",
   "description": "Envelope emitted by `vitals doctor --json` and the resource deep-dive commands, and carried in the MCP system_health tool result.",
-  "x-schema-version": "1.7.0",
+  "x-schema-version": "1.8.0",
   "type": "object",
   "required": ["schema_version", "timestamp", "verdict", "exit_code", "findings", "snapshot"],
   "additionalProperties": false,
@@ -222,7 +222,21 @@
             "runtime": { "type": "string" },
             "reachable": { "type": "boolean" },
             "endpoint": { "type": "string" },
+            "vm_cpus": { "type": "integer" },
             "vm_total_bytes": { "type": "integer" },
+            "vm_disk_path": { "type": "string" },
+            "vm_disk_bytes": { "type": "integer" },
+            "vm_disk_physical_bytes": { "type": "integer" },
+            "storage": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "images_bytes": { "type": "integer" },
+                "containers_bytes": { "type": "integer" },
+                "volumes_bytes": { "type": "integer" },
+                "build_cache_bytes": { "type": "integer" }
+              }
+            },
             "note": { "type": "string" },
             "containers": {
               "type": ["array", "null"],

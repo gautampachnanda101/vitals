@@ -6,6 +6,7 @@ package doctor
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 
 	"vitals/internal/containers"
@@ -200,16 +201,17 @@ func analyzeMemory(r *diag.Report, s Snapshot) {
 
 	switch {
 	case m.SwapUsedPct >= 50 && m.SwapOutPerSec > 0:
+		fixes := []string{quitFix(m.TopProc)}
+		if runtime.GOOS == "darwin" {
+			fixes = append(fixes, "macOS: `sudo purge`")
+		}
+		fixes = append(fixes, "reboot if swap stays pinned after freeing RAM")
 		r.Add(diag.Finding{
 			Severity: diag.Critical,
 			Title:    "Swap thrashing",
 			Detail: fmt.Sprintf("swap %.0f%% full and paging out at %s/s — the machine is stalling on disk, not working%s",
 				m.SwapUsedPct, ui.HumanBytes(int64(m.SwapOutPerSec)), topProc),
-			Fixes: []string{
-				quitFix(m.TopProc),
-				"macOS: `sudo purge`",
-				"reboot if swap stays pinned after freeing RAM",
-			},
+			Fixes: fixes,
 		})
 	case m.SwapUsedPct >= 60:
 		r.Add(diag.Finding{
@@ -236,14 +238,20 @@ func analyzeMemory(r *diag.Report, s Snapshot) {
 			Fixes: []string{quitFix(m.TopProc), "add RAM or swap headroom"},
 		})
 	case m.UsedPct >= thresholds.RAMHighPercent:
+		fixes := []string{"no action needed unless apps slow down", "confirm with `vitals memcheck`"}
+		var rem *diag.Remedy
+		if runtime.GOOS == "darwin" {
+			fixes = append(fixes, "macOS: `sudo purge` frees the drop-on-demand cache immediately")
+			rem = purgeRemedy()
+		}
 		r.Add(diag.Finding{
 			Severity: diag.Warn,
 			ID:       "mac-reclaimable",
 			Title:    "RAM usage high (likely reclaimable)",
 			Detail: fmt.Sprintf("%.0f%% in use but %.0f%% is still available and no swap-out is happening — much of this is probably file cache the kernel will drop on demand",
 				m.UsedPct, m.AvailablePct),
-			Fixes:  []string{"no action needed unless apps slow down", "confirm with `vitals memcheck`", "macOS: `sudo purge` frees the drop-on-demand cache immediately"},
-			Remedy: purgeRemedy(),
+			Fixes:  fixes,
+			Remedy: rem,
 		})
 	case m.UsedPct >= thresholds.RAMWarnPercent:
 		r.Add(diag.Finding{

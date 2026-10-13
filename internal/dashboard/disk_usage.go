@@ -403,6 +403,22 @@ type pathRow struct {
 	Partial                       bool
 }
 
+func pathAdvice(p string) string {
+	lower := strings.ToLower(filepath.ToSlash(p))
+	switch {
+	case strings.Contains(lower, "docker.raw") || strings.Contains(lower, "com.docker.docker") || strings.Contains(lower, ".docker"):
+		return "Docker virtual disk or data. Sparse file allocated size is often smaller than logical ceiling. Reclaim space using `docker system df` to check allocations, `docker system prune` for stopped containers/unused images, and `docker volume prune` for orphaned volumes."
+	case strings.Contains(lower, ".ollama") || strings.Contains(lower, "huggingface") || strings.Contains(lower, "lm-studio") || (strings.Contains(lower, "models") && !strings.Contains(lower, "cache")):
+		return "Local LLM model weights. Managed by the runtime or model manager; prune unused models using `ollama rm <model>` or your model UI rather than deleting files directly."
+	case strings.Contains(lower, ".cache") || strings.Contains(lower, "caches") || strings.Contains(lower, "library/caches"):
+		return "Application cache. Usually safe to clean; inspect with `vitals clean --dry-run` or the Clean page."
+	case strings.Contains(lower, ".trash") || strings.Contains(lower, "$recycle.bin"):
+		return "Recoverable deleted files in Trash/Recycle Bin; clean via the Clean page or system trash."
+	default:
+		return "Manual review only; use the owning application's storage management for personal, model or VM data. Large does not mean disposable."
+	}
+}
+
 func diskRows(rows []diskusage.Row, home string, opts diskusage.Options, dirs bool) []pathRow {
 	ordered := append([]diskusage.Row(nil), rows...)
 	sort.Slice(ordered, func(i, j int) bool {
@@ -422,7 +438,7 @@ func diskRows(rows []diskusage.Row, home string, opts diskusage.Options, dirs bo
 		if dirs && err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			link = diskURL(rel, opts, false)
 		}
-		advice := "Manual review only; use the owning application's storage management for personal, model or VM data. Large does not mean disposable."
+		advice := pathAdvice(row.Path)
 		out = append(out, pathRow{Path: diskusage.DisplayPath(display), Size: ui.HumanBytes(row.Bytes), URL: link, Root: filepath.ToSlash(rel), Advice: advice, Partial: !row.Complete})
 	}
 	return out

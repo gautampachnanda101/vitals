@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,13 +18,15 @@ import (
 // All GET, all read-only. Anything not on this list is a bug.
 //
 //	GET /_ping                      - is the daemon alive
-//	GET /info                       - MemTotal (the runtime VM's RAM ceiling)
+//	GET /info                       - MemTotal, NCPU (the runtime VM's RAM and CPU ceilings)
+//	GET /system/df                  - storage breakdown: images, containers, volumes, build cache
 //	GET /containers/json?all=1      - every container: name, image, state, status, labels
 //	GET /containers/{id}/json       - inspect (RestartCount, State.OOMKilled) for not-cleanly-running containers only
 //	GET /containers/{id}/stats?stream=false - one CPU/mem sample, opt-in via Sample()
 const (
 	epPing    = "/_ping"
 	epInfo    = "/info"
+	epSysDf   = "/system/df"
 	epList    = "/containers/json?all=1"
 	epInspect = "/containers/%s/json"
 	epStats   = "/containers/%s/stats?stream=false"
@@ -52,12 +56,26 @@ func probeDocker(ctx context.Context, t transport) (Report, bool) {
 	r := Report{Runtime: "docker", Reachable: true, Endpoint: socket}
 	if body, err := dockerGET(dctx, cl, base, epInfo); err == nil {
 		var info struct {
+			NCPU     int   `json:"NCPU"`
 			MemTotal int64 `json:"MemTotal"`
 		}
-		if json.Unmarshal(body, &info) == nil && info.MemTotal > 0 {
-			r.VMTotalBytes = uint64(info.MemTotal)
+		if json.Unmarshal(body, &info) == nil {
+			if info.MemTotal > 0 {
+				r.VMTotalBytes = uint64(info.MemTotal)
+			}
+			if info.NCPU > 0 {
+				r.VMCPUs = info.NCPU
+			}
 		}
 	}
+
+	// Attempt to query engine storage layers (/system/df)
+	if body, err := dockerGET(dctx, cl, base, epSysDf); err == nil {
+		r.Storage = parseStorageBreakdown(body)
+	}
+
+	// Inspect local VM disk image if running under a virtualized desktop runtime (macOS / Windows WSL2)
+	detectVMDisk(&r, t.goos)
 
 	body, err := dockerGET(dctx, cl, base, epList)
 	if err != nil {
@@ -329,4 +347,85 @@ func oneStat(ctx context.Context, cl *http.Client, base, id string) (cpuPct floa
 		cpuPct = (cpuDelta / sysDelta) * ncpu * 100
 	}
 	return cpuPct, mem, memLimit
+}
+
+func parseStorageBreakdown(body []byte) *StorageBreakdown {
+	var raw struct {
+		LayersSize int64 `json:"LayersSize"`
+		Images     []struct {
+			Size int64 `json:"Size"`
+		} `json:"Images"`
+		Containers []struct {
+			SizeRw     int64 `json:"SizeRw"`
+			SizeRootFs int64 `json:"SizeRootFs"`
+		} `json:"Containers"`
+		Volumes []struct {
+			UsageData struct {
+				Size int64 `json:"Size"`
+			} `json:"UsageData"`
+		} `json:"Volumes"`
+		BuildCache []struct {
+			Size int64 `json:"Size"`
+		} `json:"BuildCache"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil
+	}
+	s := &StorageBreakdown{}
+	for _, img := range raw.Images {
+		if img.Size > 0 {
+			s.ImagesBytes += uint64(img.Size)
+		}
+	}
+	for _, c := range raw.Containers {
+		if c.SizeRw > 0 {
+			s.ContainersBytes += uint64(c.SizeRw)
+		}
+	}
+	for _, v := range raw.Volumes {
+		if v.UsageData.Size > 0 {
+			s.VolumesBytes += uint64(v.UsageData.Size)
+		}
+	}
+	for _, b := range raw.BuildCache {
+		if b.Size > 0 {
+			s.BuildCacheBytes += uint64(b.Size)
+		}
+	}
+	return s
+}
+
+// detectVMDisk checks for virtual machine disk images (e.g. Docker Desktop Docker.raw, WSL2 ext4.vhdx).
+func detectVMDisk(r *Report, goos string) {
+	candidates := []string{}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		return
+	}
+
+	switch goos {
+	case "darwin":
+		candidates = append(candidates,
+			filepath.Join(home, "Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"),
+			filepath.Join(home, "Library/Containers/com.docker.docker/Data/vms/0/Docker.raw"),
+		)
+	case "windows":
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData != "" {
+			candidates = append(candidates,
+				filepath.Join(localAppData, "Docker", "wsl", "data", "ext4.vhdx"),
+				filepath.Join(localAppData, "Docker", "wsl", "distro", "ext4.vhdx"),
+			)
+		}
+	}
+
+	for _, p := range candidates {
+		info, err := os.Stat(p)
+		if err == nil && !info.IsDir() {
+			r.VMDiskPath = p
+			r.VMDiskBytes = uint64(info.Size())
+			r.VMDiskPhysicalBytes = filePhysicalBytes(info)
+			return
+		}
+	}
 }
