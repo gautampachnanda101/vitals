@@ -67,6 +67,9 @@ func TestLiveRootFailuresAndSymlinks(t *testing.T) {
 }
 
 func TestBorrowedRootSurvivesRenameAndRemainsOpen(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows locks open directories against rename")
+	}
 	root := fixture(t, map[string]string{"file": "abc"})
 	handle, err := os.OpenRoot(root)
 	if err != nil {

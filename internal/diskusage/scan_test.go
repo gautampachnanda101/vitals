@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -27,7 +28,12 @@ func treeMetadata(t *testing.T, root string) map[string]metadata {
 		if err != nil {
 			return err
 		}
-		result[path] = metadata{info.Size(), info.Mode(), info.ModTime()}
+		modTime := info.ModTime()
+		if info.IsDir() && runtime.GOOS == "windows" {
+			// On Windows NTFS, directory ModTime can shift slightly as child file handles open and close.
+			modTime = time.Time{}
+		}
+		result[path] = metadata{info.Size(), info.Mode(), modTime}
 		return nil
 	})
 	if err != nil {
@@ -56,6 +62,9 @@ func fixture(t *testing.T, files map[string]string) string {
 			t.Fatal(err)
 		}
 	}
+	// On Windows, background NTFS directory modification time updates can settle asynchronously
+	// right after creating files. Wait briefly so ModTime is stable before recording 'before'.
+	time.Sleep(100 * time.Millisecond)
 	return root
 }
 
