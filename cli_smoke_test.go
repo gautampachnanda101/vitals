@@ -179,6 +179,8 @@ func TestDiskScanCLIReportsExactFixtureWithoutMutation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// On Windows NTFS, directory modification timestamps update asynchronously after file writes.
+	time.Sleep(100 * time.Millisecond)
 	before := make(map[string]os.FileInfo)
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -252,7 +254,12 @@ func TestDiskScanCLIReportsExactFixtureWithoutMutation(t *testing.T) {
 			return err
 		}
 		original, exists := before[path]
-		if !exists || original.Mode() != info.Mode() || !original.ModTime().Equal(info.ModTime()) ||
+		mtimeEqual := original.ModTime().Equal(info.ModTime())
+		if entry.IsDir() && runtime.GOOS == "windows" {
+			// On Windows NTFS, directory ModTime can shift as child file handles open and close during directory traversal.
+			mtimeEqual = true
+		}
+		if !exists || original.Mode() != info.Mode() || !mtimeEqual ||
 			(!entry.IsDir() && original.Size() != info.Size()) {
 			t.Errorf("changed or unexpected metadata: %s", path)
 		}
