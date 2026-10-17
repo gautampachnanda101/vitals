@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // --- Docker: an httptest server behind the injected dialer ---------------
@@ -470,5 +471,45 @@ func TestStorageBreakdownTotal(t *testing.T) {
 	}
 	if got := (StorageBreakdown{}).Total(); got != 0 {
 		t.Errorf("empty Total() = %d, want 0", got)
+	}
+}
+
+// A slow /system/df must never cost the container list: it runs last, on
+// its own budget, and a timeout there only leaves Storage nil.
+func TestProbeDockerSlowStorageDoesNotStarveTheList(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_ping", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("OK")) })
+	mux.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{}`)) })
+	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"Id":"abc","Names":["/web"],"Image":"nginx","State":"running","Status":"Up"}]`))
+	})
+	mux.HandleFunc("/system/df", func(w http.ResponseWriter, r *http.Request) {
+		select { // slower than storageTimeout; ends when the client gives up
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	tr := transport{
+		goos:           "linux",
+		dockerEndpoint: func() string { return "/fake/docker.sock" },
+		dialDocker: func(ctx context.Context, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", srv.Listener.Addr().String())
+		},
+		lookPath: func(string) (string, error) { return "", errors.New("no kubectl") },
+		run:      func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("no exec") },
+	}
+	start := time.Now()
+	r, ok := probeDocker(context.Background(), tr)
+	if elapsed := time.Since(start); elapsed > storageTimeout+time.Second {
+		t.Errorf("probe took %v; a slow /system/df should cost at most storageTimeout", elapsed)
+	}
+	if !ok || len(r.Containers) != 1 || r.Note != "" {
+		t.Fatalf("the container list must survive a slow /system/df: ok=%v containers=%d note=%q", ok, len(r.Containers), r.Note)
+	}
+	if r.Storage != nil {
+		t.Errorf("Storage should be nil when /system/df timed out, got %+v", r.Storage)
 	}
 }

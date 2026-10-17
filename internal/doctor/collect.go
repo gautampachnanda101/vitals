@@ -107,11 +107,37 @@ func collect(src source, opts Options) Snapshot {
 // a hang), and — like the GPU/power/LLM probes — only run when
 // SkipProbes is off. It does NOT fetch per-container stats; those are
 // the opt-in `vitals containers` / dashboard-page path.
+//
+// The probe gets containersBudget through its context, and collectContainers
+// also stops waiting at that same wall-clock deadline regardless: a cold
+// Docker service on a Windows named pipe once stalled the first probe of a
+// CI run far past its context (`doctor --json` hung >20s), so doctor's
+// latency can't depend on every transport honouring cancellation. An
+// abandoned probe's goroutine finishes on its own; the same trade
+// diskUsage makes for a hung mount.
 func collectContainers() []containers.Report {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), containersBudget)
 	defer cancel()
-	return containers.ProbeAll(ctx)
+	probe := probeContainers // read once: an abandoned goroutine must not touch the var later
+	ch := make(chan []containers.Report, 1)
+	go func() { ch <- probe(ctx) }()
+	select {
+	case r := <-ch:
+		if r == nil {
+			r = []containers.Report{}
+		}
+		return r
+	case <-ctx.Done():
+		return []containers.Report{}
+	}
 }
+
+// probeContainers and containersBudget are variables so tests can stand in
+// a hung runtime without one.
+var (
+	probeContainers  = containers.ProbeAll
+	containersBudget = 5 * time.Second
+)
 
 // collectCPU turns two CPU-times readings (whole-machine and per-core)
 // plus the already-computed top CPU consumer into the CPU signal. Pure

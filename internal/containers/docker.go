@@ -69,11 +69,6 @@ func probeDocker(ctx context.Context, t transport) (Report, bool) {
 		}
 	}
 
-	// Attempt to query engine storage layers (/system/df)
-	if body, err := dockerGET(dctx, cl, base, epSysDf); err == nil {
-		r.Storage = parseStorageBreakdown(body)
-	}
-
 	// Inspect local VM disk image if running under a virtualized desktop runtime (macOS / Windows WSL2)
 	detectVMDisk(&r, t.goos)
 
@@ -84,6 +79,17 @@ func probeDocker(ctx context.Context, t transport) (Report, bool) {
 	}
 	r.Containers = parseContainerList(body)
 	inspectNotRunning(dctx, cl, base, r.Containers)
+
+	// Engine storage layers last, on a budget of their own: /system/df
+	// sizes every image and volume and is often the slowest Engine call
+	// (seconds on hosts with many images). Run first, it could spend the
+	// whole probe budget and cost the container list itself; here a slow
+	// one only leaves Storage nil.
+	sctx, cancel3 := context.WithTimeout(ctx, storageTimeout)
+	defer cancel3()
+	if body, err := dockerGET(sctx, cl, base, epSysDf); err == nil {
+		r.Storage = parseStorageBreakdown(body)
+	}
 	return r, true
 }
 

@@ -103,8 +103,9 @@ func (r Report) Counts() (running, stopped, unhealthy int) {
 // list fetch. Both are short — this rides the snapshot refresh and must
 // never be what makes `doctor` slow.
 const (
-	pingTimeout  = 300 * time.Millisecond
-	probeTimeout = 2 * time.Second
+	pingTimeout    = 300 * time.Millisecond
+	probeTimeout   = 2 * time.Second
+	storageTimeout = 1 * time.Second // /system/df, after the list — see probeDocker
 )
 
 // maxContainers caps how many containers are carried into a Report, so a

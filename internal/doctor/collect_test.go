@@ -1,9 +1,11 @@
 package doctor
 
 import (
+	"context"
 	"math"
 	"testing"
 	"time"
+	"vitals/internal/containers"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 )
@@ -108,4 +110,35 @@ func TestCPUStatePercents(t *testing.T) {
 			t.Errorf("negative percentage after reset: %.2f/%.2f/%.2f", used, iowait, steal)
 		}
 	})
+}
+
+// A container runtime that never answers (a cold or wedged Docker service
+// on a Windows named pipe stalled `doctor --json` past 20s in CI) must not
+// hold up doctor: the probe is abandoned at containersBudget and doctor
+// carries on with an empty, non-nil list.
+func TestCollectContainersIsBoundedEvenIfTheProbeIgnoresItsContext(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	old, oldBudget := probeContainers, containersBudget
+	probeContainers = func(context.Context) []containers.Report { <-release; return nil }
+	containersBudget = 50 * time.Millisecond
+	t.Cleanup(func() { probeContainers, containersBudget = old, oldBudget })
+
+	start := time.Now()
+	got := collectContainers()
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("collectContainers waited %v on a hung probe", elapsed)
+	}
+	if got == nil || len(got) != 0 {
+		t.Errorf("a timed-out probe should yield an empty, non-nil list, got %#v", got)
+	}
+}
+
+func TestCollectContainersReturnsTheProbeResult(t *testing.T) {
+	old := probeContainers
+	probeContainers = func(context.Context) []containers.Report { return []containers.Report{{Runtime: "docker"}} }
+	t.Cleanup(func() { probeContainers = old })
+	if got := collectContainers(); len(got) != 1 || got[0].Runtime != "docker" {
+		t.Errorf("got %#v", got)
+	}
 }
