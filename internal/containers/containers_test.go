@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -363,5 +365,110 @@ func TestProbeDockerWithStorageAndVMStats(t *testing.T) {
 	}
 	if r.Storage.ImagesBytes != 1000 || r.Storage.ContainersBytes != 200 || r.Storage.VolumesBytes != 300 || r.Storage.BuildCacheBytes != 400 {
 		t.Errorf("unexpected storage values: %+v", r.Storage)
+	}
+}
+
+// isolateHome points every OS's home-directory lookup at a fresh temp
+// dir (HOME on macOS/Linux, USERPROFILE on Windows) and clears
+// LOCALAPPDATA, so detectVMDisk never sees the real machine's images.
+func isolateHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("LOCALAPPDATA", "")
+	return dir
+}
+
+func writeImage(t *testing.T, path string, size int) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// detectVMDisk takes goos as a parameter, so every platform's candidate
+// list is exercised on every CI runner, not only on the matching OS.
+func TestDetectVMDiskPerPlatform(t *testing.T) {
+	t.Run("darwin Docker Desktop raw image", func(t *testing.T) {
+		home := isolateHome(t)
+		want := filepath.Join(home, "Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw")
+		writeImage(t, want, 4096)
+		var r Report
+		detectVMDisk(&r, "darwin")
+		if r.VMDiskPath != want || r.VMDiskBytes != 4096 || r.VMDiskPhysicalBytes == 0 {
+			t.Errorf("got path=%q bytes=%d physical=%d", r.VMDiskPath, r.VMDiskBytes, r.VMDiskPhysicalBytes)
+		}
+	})
+	t.Run("darwin legacy location is the fallback", func(t *testing.T) {
+		home := isolateHome(t)
+		want := filepath.Join(home, "Library/Containers/com.docker.docker/Data/vms/0/Docker.raw")
+		writeImage(t, want, 512)
+		var r Report
+		detectVMDisk(&r, "darwin")
+		if r.VMDiskPath != want {
+			t.Errorf("VMDiskPath = %q, want %q", r.VMDiskPath, want)
+		}
+	})
+	t.Run("windows WSL2 vhdx under LOCALAPPDATA", func(t *testing.T) {
+		isolateHome(t)
+		local := t.TempDir()
+		t.Setenv("LOCALAPPDATA", local)
+		want := filepath.Join(local, "Docker", "wsl", "distro", "ext4.vhdx")
+		writeImage(t, want, 2048)
+		var r Report
+		detectVMDisk(&r, "windows")
+		if r.VMDiskPath != want || r.VMDiskBytes != 2048 {
+			t.Errorf("got path=%q bytes=%d", r.VMDiskPath, r.VMDiskBytes)
+		}
+	})
+	t.Run("windows without LOCALAPPDATA finds nothing", func(t *testing.T) {
+		isolateHome(t)
+		var r Report
+		detectVMDisk(&r, "windows")
+		if r.VMDiskPath != "" {
+			t.Errorf("VMDiskPath = %q, want empty", r.VMDiskPath)
+		}
+	})
+	t.Run("a directory named like the image is ignored", func(t *testing.T) {
+		home := isolateHome(t)
+		if err := os.MkdirAll(filepath.Join(home, "Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var r Report
+		detectVMDisk(&r, "darwin")
+		if r.VMDiskPath != "" {
+			t.Errorf("VMDiskPath = %q, want empty for a directory", r.VMDiskPath)
+		}
+	})
+	t.Run("linux has no desktop VM image to find", func(t *testing.T) {
+		isolateHome(t)
+		var r Report
+		detectVMDisk(&r, "linux")
+		if r.VMDiskPath != "" || r.VMDiskBytes != 0 {
+			t.Errorf("got %+v, want zero VM fields", r)
+		}
+	})
+	t.Run("no resolvable home directory returns early", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("USERPROFILE", "")
+		var r Report
+		detectVMDisk(&r, "darwin")
+		if r.VMDiskPath != "" {
+			t.Errorf("VMDiskPath = %q, want empty", r.VMDiskPath)
+		}
+	})
+}
+
+func TestStorageBreakdownTotal(t *testing.T) {
+	s := StorageBreakdown{ImagesBytes: 1, ContainersBytes: 20, VolumesBytes: 300, BuildCacheBytes: 4000}
+	if got := s.Total(); got != 4321 {
+		t.Errorf("Total() = %d, want 4321", got)
+	}
+	if got := (StorageBreakdown{}).Total(); got != 0 {
+		t.Errorf("empty Total() = %d, want 0", got)
 	}
 }
