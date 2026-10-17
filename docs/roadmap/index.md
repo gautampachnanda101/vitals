@@ -56,6 +56,11 @@ The [GitHub Releases](https://github.com/gautampachnanda101/vitals/releases)
 page is the authoritative, per-tag history with binaries. These pages
 map a release to the roadmap items it shipped.
 
+- [v0.12.0](releases/v0.12.0.md) — dashboard theme matching the
+  homebrew-tap site in light and dark (WCAG 2.2 AAA, embedded fonts),
+  container VM disk and engine storage, `vitals licenses` with every
+  third-party notice embedded, coloured help, and doctor fixes.
+  `--json` schema **1.8.0**.
 - [v0.11.0](releases/v0.11.0.md) — `vitals disk --scan` native deep disk
   analysis, dashboard disk drill-down & charts, elevated disk warnings,
   context-aware memory diagnostics, and advice commentary resilience.
