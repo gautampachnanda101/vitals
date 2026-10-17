@@ -382,3 +382,56 @@ func TestAnalyzeSortsCriticalFirst(t *testing.T) {
 		t.Errorf("most severe finding should sort first, got %v", sorted[0].Severity)
 	}
 }
+
+// macOS mounts the sealed system volume at / and user data at
+// /System/Volumes/Data inside one APFS container: both report the same
+// free bytes and fill level. That is one storage pool and must produce one
+// capacity finding, not the same warning twice.
+func TestAnalyzeDisksReportsASharedStoragePoolOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name, id string
+		used     float64
+	}{
+		{"elevated", "disk-elevated", 86},
+		{"nearly full", "disk-low", 95},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Snapshot{Disks: []Disk{
+				{Mount: "/System/Volumes/Data", UsedPct: tc.used, FreeBytes: 31_820_000_000},
+				{Mount: "/", UsedPct: tc.used, FreeBytes: 31_820_000_000},
+			}}
+			r := Analyze(s)
+			var got []diag.Finding
+			for _, f := range r.Findings {
+				if f.ID == tc.id {
+					got = append(got, f)
+				}
+			}
+			if len(got) != 1 {
+				t.Fatalf("want exactly one %s finding for a shared pool, got %d: %+v", tc.id, len(got), got)
+			}
+			if !strings.Contains(got[0].Title, "Disk / ") {
+				t.Errorf("the finding should be titled by the shortest mount, got %q", got[0].Title)
+			}
+			if !strings.Contains(got[0].Detail, "/System/Volumes/Data") {
+				t.Errorf("the detail should name the mount sharing the pool, got %q", got[0].Detail)
+			}
+		})
+	}
+}
+
+func TestAnalyzeDisksKeepsSeparateDisksSeparate(t *testing.T) {
+	s := Snapshot{Disks: []Disk{
+		{Mount: "/", UsedPct: 86, FreeBytes: 31_820_000_000},
+		{Mount: "/Volumes/External", UsedPct: 86, FreeBytes: 120_000_000_000},
+	}}
+	n := 0
+	for _, f := range Analyze(s).Findings {
+		if f.ID == "disk-elevated" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("two different disks at the same fill level are two findings, got %d", n)
+	}
+}

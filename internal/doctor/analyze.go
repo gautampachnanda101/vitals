@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 
 	"vitals/internal/containers"
 	"vitals/internal/diag"
@@ -377,8 +378,59 @@ func analyzeThermal(r *diag.Report, s Snapshot) {
 	})
 }
 
+// storagePools groups mounts that are one storage pool: byte-identical
+// free space and the same fill level. On macOS the sealed system volume
+// (/) and the data volume (/System/Volumes/Data) share one APFS container
+// and report exactly that, so without grouping every per-disk finding
+// appeared twice. Two genuinely separate disks never agree to the byte.
+// The shortest mount (then lexically first) represents the pool; shared
+// lists the other mounts under it, and secondary marks those to skip.
+func storagePools(disks []Disk) (shared map[int][]string, secondary map[int]bool) {
+	shared, secondary = map[int][]string{}, map[int]bool{}
+	groups := map[string][]int{}
+	var order []string
+	for i, d := range disks {
+		if d.FreeBytes == 0 {
+			continue
+		}
+		k := fmt.Sprintf("%d/%.1f", d.FreeBytes, d.UsedPct)
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], i)
+	}
+	for _, k := range order {
+		idx := groups[k]
+		if len(idx) < 2 {
+			continue
+		}
+		primary := idx[0]
+		for _, i := range idx[1:] {
+			a, b := disks[i].Mount, disks[primary].Mount
+			if len(a) < len(b) || (len(a) == len(b) && a < b) {
+				primary = i
+			}
+		}
+		for _, i := range idx {
+			if i != primary {
+				secondary[i] = true
+				shared[primary] = append(shared[primary], disks[i].Mount)
+			}
+		}
+	}
+	return shared, secondary
+}
+
 func analyzeDisks(r *diag.Report, s Snapshot) {
-	for _, d := range s.Disks {
+	shared, secondary := storagePools(s.Disks)
+	for i, d := range s.Disks {
+		if secondary[i] {
+			continue // reported under its pool's primary mount
+		}
+		poolNote := ""
+		if others := shared[i]; len(others) > 0 {
+			poolNote = " (same storage pool as " + strings.Join(others, ", ") + ")"
+		}
 		warnThresh := thresholds.DiskWarnPercent
 		if warnThresh <= 0 {
 			warnThresh = 90
@@ -392,7 +444,7 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 			if d.UsedPct >= critThresh {
 				sev = diag.Critical
 			}
-			detail := fmt.Sprintf("%s is %.0f%% full (%s free)", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)))
+			detail := fmt.Sprintf("%s is %.0f%% full (%s free)%s", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)), poolNote)
 			if d.GrowthBytesPerSec > 0 {
 				secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
 				detail += " and filling — " + timeToFull(secs)
@@ -415,7 +467,7 @@ func analyzeDisks(r *diag.Report, s Snapshot) {
 				headroomThresh = 40
 			}
 			if d.UsedPct >= elevatedThresh || (d.FreeBytes > 0 && d.FreeBytes < 50*(1<<30) && d.UsedPct >= headroomThresh) {
-				detail := fmt.Sprintf("%s is %.0f%% full with %s free headroom", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)))
+				detail := fmt.Sprintf("%s is %.0f%% full with %s free headroom%s", d.Mount, d.UsedPct, ui.HumanBytes(int64(d.FreeBytes)), poolNote)
 				if d.GrowthBytesPerSec > 0 {
 					secs := float64(d.FreeBytes) / d.GrowthBytesPerSec
 					detail += " and filling — " + timeToFull(secs)
