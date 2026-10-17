@@ -1,6 +1,9 @@
 package help
 
 import (
+	"vitals/internal/doctor"
+	"vitals/internal/ui"
+
 	"bytes"
 	"slices"
 	"strings"
@@ -78,5 +81,57 @@ func TestCompletionScript(t *testing.T) {
 	}
 	if _, err := CompletionScript("powershell"); err == nil {
 		t.Error("unknown shell should error")
+	}
+}
+
+func TestRenderCommandFlagColumnFitsTheLongestFlag(t *testing.T) {
+	var b strings.Builder
+	if err := RenderCommand(&b, "doctor"); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	// The longest doctor flag must still leave a gap before its help text.
+	if !strings.Contains(out, "--webhook-allow-insecure  allow plain http") {
+		t.Errorf("long flag runs into its description:\n%s", out)
+	}
+	// Every flag's description starts in the same column.
+	col := -1
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "  --") {
+			continue
+		}
+		i := strings.Index(line, "  ")
+		j := strings.Index(line[i+2:], "  ")
+		// position after the padded flag column
+		rest := line[i+2+j:]
+		pos := len(line) - len(strings.TrimLeft(rest, " "))
+		if col == -1 {
+			col = pos
+		} else if pos != col {
+			t.Errorf("flag descriptions are misaligned (col %d vs %d): %q", pos, col, line)
+		}
+	}
+}
+
+func TestRenderCommandSchemaVersionIsCurrent(t *testing.T) {
+	var b strings.Builder
+	_ = RenderCommand(&b, "doctor")
+	if !strings.Contains(b.String(), "schema v"+doctor.SchemaVersion+")") {
+		t.Errorf("doctor help should quote the live schema version %s:\n%s", doctor.SchemaVersion, b.String())
+	}
+}
+
+func TestExamplesGetAPromptAndKeepNotes(t *testing.T) {
+	if got := ui.StripANSI(example("vitals doctor")); got != "$ vitals doctor" {
+		t.Errorf("example = %q", got)
+	}
+	if got := ui.StripANSI(example("vitals top  # the default view")); got != "$ vitals top  # the default view" {
+		t.Errorf("example with note = %q", got)
+	}
+	if got := ui.StripANSI(flagHelp("base URL (default http://x)")); got != "base URL (default http://x)" {
+		t.Errorf("flagHelp changed the text: %q", got)
+	}
+	if got := flagHelp("no default here"); got != "no default here" {
+		t.Errorf("flagHelp without a default = %q", got)
 	}
 }

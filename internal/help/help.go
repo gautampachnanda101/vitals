@@ -10,12 +10,57 @@ import (
 	"slices"
 	"strings"
 
+	"vitals/internal/doctor"
 	"vitals/internal/ui"
 )
 
 // section renders a section heading (USAGE, COMMANDS, FLAGS, EXAMPLES) in the
 // same bold-cyan used by ui.Header elsewhere in the CLI.
 func section(s string) string { return ui.Bold + ui.Cyan + s + ui.Reset }
+
+// Colour roles for help text, matching the rest of the CLI: green for
+// anything the reader types (commands, flags, examples), dim for
+// placeholders and asides. Every helper pads the plain text before
+// wrapping it in escapes — padding a coloured string with %-Ns counts the
+// invisible bytes and breaks the column (see AGENTS.md, "ANSI color +
+// fixed-width tables").
+func typed(s string) string { return ui.Green + s + ui.Reset }
+
+// padTyped left-aligns s in a width-wide column, coloured as typed text.
+func padTyped(s string, width int) string {
+	return typed(s) + strings.Repeat(" ", max(width-len(s), 0))
+}
+
+// flagLeft renders "--name ARG" with the flag in green and the metavar
+// dimmed, padded to width as plain text.
+func flagLeft(f Flag, width int) string {
+	plain := "--" + f.Name
+	out := typed(plain)
+	if f.Arg != "" {
+		plain += " " + f.Arg
+		out += " " + ui.Dim + f.Arg + ui.Reset
+	}
+	return out + strings.Repeat(" ", max(width-len(plain), 0))
+}
+
+// flagHelp dims a trailing "(default …)" so the description reads first.
+func flagHelp(h string) string {
+	if i := strings.LastIndex(h, " (default "); i >= 0 && strings.HasSuffix(h, ")") {
+		return h[:i] + " " + ui.Dim + h[i+1:] + ui.Reset
+	}
+	return h
+}
+
+// example renders one example line: a dim "$" prompt and the command in
+// green; any "  # note" tail stays dim.
+func example(e string) string {
+	cmd, note, hasNote := strings.Cut(e, "  # ")
+	out := ui.Dim + "$ " + ui.Reset + typed(cmd)
+	if hasNote {
+		out += "  " + ui.Dim + "# " + note + ui.Reset
+	}
+	return out
+}
 
 // Flag documents one command flag.
 type Flag struct {
@@ -71,7 +116,7 @@ var commands = []Command{
 			"Exit code: 0 healthy, 1 warning, 2 critical — usable in scripts and CI.",
 		Flags: []Flag{
 			{"ollama-url", "URL", "base URL of the Ollama server (default http://localhost:11434)"},
-			{"json", "", "emit the findings and the underlying snapshot as JSON (schema v1.1.0)"},
+			{"json", "", "emit the findings and the underlying snapshot as JSON (schema v" + doctor.SchemaVersion + ")"},
 			{"output", "FILE", "also write the JSON envelope to this file, regardless of --json"},
 			{"ci", "", "print one grep-friendly line instead of the full report"},
 			{"quiet", "", "print nothing; only the exit code carries the verdict (-q)"},
@@ -520,25 +565,31 @@ func RenderCommand(w io.Writer, name string) error {
 	if c.Long != "" {
 		fmt.Fprintf(w, "%s\n\n", c.Long)
 	}
-	fmt.Fprintf(w, "%s\n  vitals %s", section("USAGE"), c.Name)
+	fmt.Fprintf(w, "%s\n  %s", section("USAGE"), typed("vitals "+c.Name))
 	if len(c.Flags) > 0 {
-		fmt.Fprint(w, " [flags]")
+		fmt.Fprint(w, " "+ui.Dim+"[flags]"+ui.Reset)
 	}
 	fmt.Fprint(w, "\n")
 	if len(c.Flags) > 0 {
+		// Size the column to the longest flag so none runs into its
+		// description (--webhook-allow-insecure once did at a fixed 22).
+		width := 0
+		for _, f := range c.Flags {
+			n := len("--" + f.Name)
+			if f.Arg != "" {
+				n += 1 + len(f.Arg)
+			}
+			width = max(width, n)
+		}
 		fmt.Fprintf(w, "\n%s\n", section("FLAGS"))
 		for _, f := range c.Flags {
-			left := "--" + f.Name
-			if f.Arg != "" {
-				left += " " + f.Arg
-			}
-			fmt.Fprintf(w, "  %s %s\n", ui.Bold+fmt.Sprintf("%-22s", left)+ui.Reset, f.Help)
+			fmt.Fprintf(w, "  %s  %s\n", flagLeft(f, width), flagHelp(f.Help))
 		}
 	}
 	if len(c.Examples) > 0 {
 		fmt.Fprintf(w, "\n%s\n", section("EXAMPLES"))
 		for _, e := range c.Examples {
-			fmt.Fprintf(w, "  %s\n", e)
+			fmt.Fprintf(w, "  %s\n", example(e))
 		}
 	}
 	return nil
@@ -546,13 +597,17 @@ func RenderCommand(w io.Writer, name string) error {
 
 // RenderList writes the top-level command listing.
 func RenderList(w io.Writer, version string) {
-	fmt.Fprintf(w, "%svitals%s — cross-platform system diagnostics (%s)\n\n", ui.Bold, ui.Reset, version)
-	fmt.Fprintf(w, "%s\n  vitals [--no-color] <command> [flags]\n\n", section("USAGE"))
+	fmt.Fprintf(w, "%svitals%s — cross-platform system diagnostics %s(%s)%s\n\n", ui.Bold, ui.Reset, ui.Dim, version, ui.Reset)
+	fmt.Fprintf(w, "%s\n  %s %s\n\n", section("USAGE"), typed("vitals"), ui.Dim+"[--no-color] <command> [flags]"+ui.Reset)
 	fmt.Fprintf(w, "%s\n", section("COMMANDS"))
+	width := 0
 	for _, c := range commands {
-		fmt.Fprintf(w, "  %s %s\n", ui.Bold+fmt.Sprintf("%-11s", c.Name)+ui.Reset, c.Synopsis)
+		width = max(width, len(c.Name))
 	}
-	fmt.Fprint(w, "\nRun 'vitals help <command>' for details on a command.\n")
+	for _, c := range commands {
+		fmt.Fprintf(w, "  %s  %s\n", padTyped(c.Name, width), c.Synopsis)
+	}
+	fmt.Fprintf(w, "\nRun %s for details on a command.\n", typed("vitals help <command>"))
 	fmt.Fprint(w, ui.Key("This binary complements htop/btop, ncdu, nvtop, glances; it does not replace them.\n"))
 }
 
