@@ -244,11 +244,23 @@ launched it to stop.
 
 Every read-only page refreshes itself in place every ten seconds, so a
 dashboard left open on a second monitor stays current without a reload.
-It only polls while the tab is actually visible, and the footer carries
+It only polls while the tab is actually visible, and the top bar carries
 an **auto-refresh: on/off** toggle (the choice is remembered per
 browser) for when you want the numbers to hold still. The Clean and
 Duplicates pages don't auto-refresh — they hold the result of a Preview
 you ran, which a refresh would wipe.
+
+The dashboard follows your system's light/dark setting; the sun/moon
+button in the top bar overrides it, and that choice is also remembered
+per browser. Both themes are built to WCAG 2.2 AAA: body and status text
+hold at least 7:1 contrast, every control is at least 44×44 px, the
+first Tab stop is a "Skip to content" link, and animations stop when
+your OS asks for reduced motion. Everything — styles, icons, scripts —
+is served by the binary itself, including its two typefaces (Space
+Grotesk and IBM Plex Mono, SIL Open Font License) and its Lucide icons
+(ISC), with every licence text embedded alongside them and readable at
+`/_static/LICENSE-*.txt` on the running dashboard — so it renders the
+same with no network.
 
 The clean page mirrors `vitals clean` for the browser: select categories
 and a temporary-file minimum age, then **Preview** without filesystem

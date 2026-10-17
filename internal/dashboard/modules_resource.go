@@ -150,11 +150,13 @@ func containerVMDiskSection(s doctor.Snapshot) string {
 				val = storageStr
 			}
 		}
-		detail := val
+		rows += row(label+" VM / Engine disk", val)
+		// row() escapes its value, so the path gets a row of its own
+		// rather than being spliced in as markup (which rendered as
+		// literal "<br><span …>" text).
 		if c.VMDiskPath != "" {
-			detail += fmt.Sprintf(`<br><span class="mono" style="font-size:.75rem;color:var(--muted)">%s</span>`, template.HTMLEscapeString(c.VMDiskPath))
+			rows += row(label+" disk image", c.VMDiskPath)
 		}
-		rows += row(label+" VM / Engine disk", detail)
 	}
 	if rows == "" {
 		return ""

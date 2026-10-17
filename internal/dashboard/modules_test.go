@@ -421,11 +421,16 @@ func TestRenderDiskShowsContainerVMDiskSectionWhenPresent(t *testing.T) {
 		"100.00 GB virtual limit",
 		"20.00 GB physical on host disk",
 		"Engine storage: 20.00 GB total",
+		"Docker disk image",
 		"Docker.raw",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("renderDisk missing %q:\n%s", want, out)
 		}
+	}
+	// Markup must never reach the page as escaped text.
+	if strings.Contains(out, "&lt;br&gt;") || strings.Contains(out, "&lt;span") {
+		t.Errorf("renderDisk shows escaped markup as text:\n%s", out)
 	}
 }
 

@@ -264,3 +264,25 @@ test('dark mode renders the page without breaking the layout', async ({ page }) 
   await expect(page.locator('nav[aria-label="Primary"]')).toBeVisible();
   await expect(page.locator('header.top')).toBeVisible();
 });
+
+test('theme toggle pins the opposite theme and it survives a reload', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+  const html = page.locator('html');
+  await expect(html).not.toHaveAttribute('data-theme', /.+/);
+  await page.locator('#vitals-theme-toggle').click();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('#vitals-theme-toggle')).toHaveAttribute('aria-label', 'Switch to light theme');
+  await page.reload();
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(bg).toBe('rgb(16, 23, 28)');
+});
+
+test('the first Tab stop is a skip link that moves focus to the content', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('a.skip')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#vitals-main')).toBeFocused();
+});

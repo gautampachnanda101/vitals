@@ -46,6 +46,10 @@ func dashboardHandler(opts Options, cache *snapshotCache) http.Handler {
 	llmOpts := llm.CompleteOptions{OllamaURL: opts.OllamaURL}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Static, embedded fonts and licences — answered before any snapshot work.
+		if serveStatic(w, r) {
+			return
+		}
 		if a, ok := findAsyncFragment(r.URL.Path); ok && a.SameOrigin {
 			status, body := route(r.URL.Path, PageContext{Request: r})
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

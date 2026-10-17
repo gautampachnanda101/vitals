@@ -151,14 +151,14 @@ func renderRuntimeSection(base containers.Report) string {
 			if rep.VMDiskPhysicalBytes > 0 && rep.VMDiskPhysicalBytes != rep.VMDiskBytes {
 				physStr = fmt.Sprintf(" (sparse: %s physical on host disk)", ui.HumanBytes(int64(rep.VMDiskPhysicalBytes)))
 			}
-			allocInfo += fmt.Sprintf(`<div style="color:var(--text-dim);margin-bottom:.2rem">Virtual disk: <strong>%s limit</strong>%s</div>`,
+			allocInfo += fmt.Sprintf(`<div style="color:var(--muted);margin-bottom:.2rem">Virtual disk: <strong>%s limit</strong>%s</div>`,
 				ui.HumanBytes(int64(rep.VMDiskBytes)), physStr)
 			if rep.VMDiskPath != "" {
 				allocInfo += fmt.Sprintf(`<div class="mono" style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem;word-break:break-all">%s</div>`, template.HTMLEscapeString(rep.VMDiskPath))
 			}
 		}
 		if rep.Storage != nil {
-			allocInfo += fmt.Sprintf(`<div style="color:var(--text-dim)">Engine objects: <strong>%s</strong> total · %s images · %s containers · %s volumes · %s build cache</div>`,
+			allocInfo += fmt.Sprintf(`<div style="color:var(--muted)">Engine objects: <strong>%s</strong> total · %s images · %s containers · %s volumes · %s build cache</div>`,
 				ui.HumanBytes(int64(rep.Storage.Total())),
 				ui.HumanBytes(int64(rep.Storage.ImagesBytes)),
 				ui.HumanBytes(int64(rep.Storage.ContainersBytes)),

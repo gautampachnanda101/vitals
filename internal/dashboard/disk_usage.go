@@ -403,6 +403,11 @@ type pathRow struct {
 	Partial                       bool
 }
 
+// genericPathAdvice is the fallback for paths with no specific guidance.
+// It's shown once per table rather than under every row — repeated on
+// each line it drowned out the rows that do carry specific advice.
+const genericPathAdvice = "Manual review only; use the owning application's storage management for personal, model or VM data. Large does not mean disposable."
+
 func pathAdvice(p string) string {
 	lower := strings.ToLower(filepath.ToSlash(p))
 	switch {
@@ -415,7 +420,7 @@ func pathAdvice(p string) string {
 	case strings.Contains(lower, ".trash") || strings.Contains(lower, "$recycle.bin"):
 		return "Recoverable deleted files in Trash/Recycle Bin; clean via the Clean page or system trash."
 	default:
-		return "Manual review only; use the owning application's storage management for personal, model or VM data. Large does not mean disposable."
+		return genericPathAdvice
 	}
 }
 
@@ -439,6 +444,9 @@ func diskRows(rows []diskusage.Row, home string, opts diskusage.Options, dirs bo
 			link = diskURL(rel, opts, false)
 		}
 		advice := pathAdvice(row.Path)
+		if advice == genericPathAdvice {
+			advice = "" // stated once above the table instead
+		}
 		out = append(out, pathRow{Path: diskusage.DisplayPath(display), Size: ui.HumanBytes(row.Bytes), URL: link, Root: filepath.ToSlash(rel), Advice: advice, Partial: !row.Complete})
 	}
 	return out
@@ -463,13 +471,16 @@ type donutChart struct {
 
 const donutCircumference = 339.292
 
+// chartPalette points at the page shell's --c1..--c6 tokens rather than
+// fixed hex values, so slices follow the light/dark theme and keep >=3:1
+// non-text contrast against the card in both (see render.go's tokens).
 var chartPalette = []string{
-	"#3b82f6", // blue
-	"#10b981", // emerald
-	"#f59e0b", // amber
-	"#8b5cf6", // purple
-	"#ec4899", // pink
-	"#06b6d4", // cyan
+	"var(--c1)", // blue
+	"var(--c2)", // gold
+	"var(--c3)", // green
+	"var(--c4)", // purple
+	"var(--c5)", // rust
+	"var(--c6)", // teal
 }
 
 func buildDonutChart(title string, rows []diskusage.Row, denominator int64) donutChart {
@@ -549,7 +560,7 @@ func buildDonutChart(title string, rows []diskusage.Row, denominator int64) donu
 			Label:      "Other",
 			Size:       ui.HumanBytes(remBytes),
 			PercentStr: fmt.Sprintf("%.1f%%", pct*100),
-			Color:      "#64748b",
+			Color:      "var(--c-other)",
 			Dash:       fmt.Sprintf("%.1f", dash),
 			Gap:        fmt.Sprintf("%.1f", gap),
 			Offset:     fmt.Sprintf("%.1f", offset),
@@ -707,11 +718,11 @@ For personal files, models and VM/application data, use the owning application's
 </div>
 {{end}}
 {{if .Dirs}}<div class="sectiontitle">{{.Title}}</div>{{template "rows" .Dirs}}{{end}}
-{{if .RootFiles}}<div class="sectiontitle">Files directly under this scope</div>{{template "rows" .RootFiles}}{{end}}
-{{if .Files}}<div class="sectiontitle">Biggest single files — largest observed when partial</div>{{template "rows" .Files}}{{end}}
+{{if .RootFiles}}<div class="sectiontitle">Files directly under this scope</div><p class="caption">Unless a row says otherwise: ` + genericPathAdvice + `</p>{{template "rows" .RootFiles}}{{end}}
+{{if .Files}}<div class="sectiontitle">Biggest single files — largest observed when partial</div><p class="caption">Unless a row says otherwise: ` + genericPathAdvice + `</p>{{template "rows" .Files}}{{end}}
 {{if .Errors}}<div class="sectiontitle">Access errors (bounded samples)</div><ul>{{range .Errors}}<li class="mono">{{.Path}}: {{.Message}}</li>{{end}}</ul>{{end}}
 {{define "donut"}}<svg viewBox="0 0 160 160" width="130" height="130" role="img" aria-label="{{.Title}} chart">
-  <circle cx="80" cy="80" r="54" fill="none" stroke="var(--line)" stroke-width="20" opacity="0.4" />
+  <circle cx="80" cy="80" r="54" fill="none" stroke="var(--surface-2)" stroke-width="20" />
   {{range .Slices}}
   <circle cx="80" cy="80" r="54" fill="none" stroke="{{.Color}}" stroke-width="20"
     stroke-dasharray="{{.Dash}} {{.Gap}}" stroke-dashoffset="{{.Offset}}"
@@ -719,29 +730,29 @@ For personal files, models and VM/application data, use the owning application's
     <title>{{.Label}}: {{.Size}} ({{.PercentStr}})</title>
   </circle>
   {{end}}
-  <text x="80" y="76" text-anchor="middle" font-size="10" fill="var(--text-dim)">Total</text>
-  <text x="80" y="92" text-anchor="middle" font-size="12" font-weight="bold" fill="var(--text)">{{.TotalSize}}</text>
+  <text x="80" y="76" text-anchor="middle" font-size="10" fill="var(--muted)">Total</text>
+  <text x="80" y="92" text-anchor="middle" font-size="12" font-weight="bold" fill="var(--ink)">{{.TotalSize}}</text>
 </svg>{{end}}
 {{define "chartLegend"}}<table style="width:100%;border-collapse:collapse;font-size:.78rem">
   <tbody>
     {{range .Slices}}
     <tr>
       <td style="padding:2px 4px;width:12px;vertical-align:middle">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:{{.Color}}"></span>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style="display:block"><rect width="10" height="10" rx="2" fill="{{.Color}}"/></svg>
       </td>
       <td style="padding:2px 4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle" title="{{.Label}}">
         <span class="mono">{{.Label}}</span>
       </td>
       <td style="padding:2px 4px;text-align:right;white-space:nowrap;vertical-align:middle" class="mono">{{.Size}}</td>
-      <td style="padding:2px 4px;text-align:right;white-space:nowrap;color:var(--text-dim);vertical-align:middle" class="mono">{{.PercentStr}}</td>
+      <td style="padding:2px 4px;text-align:right;white-space:nowrap;color:var(--muted);vertical-align:middle" class="mono">{{.PercentStr}}</td>
     </tr>
     {{end}}
   </tbody>
 </table>{{end}}
-{{define "rows"}}<table style="width:100%;border-collapse:collapse;font-size:.86rem"><thead><tr><th style="text-align:left">Path / next step</th><th style="text-align:right">Logical size</th></tr></thead>
-<tbody>{{range .}}<tr><td style="padding:.5rem;border-top:1px solid var(--line)"><span class="mono">{{.Path}}</span>
-{{if .URL}} · <a data-disk-scan data-disk-root="{{.Root}}" href="{{.URL}}">Drill down</a>{{else}}<p class="caption">{{.Advice}}</p>{{end}}</td>
-<td class="mono" style="text-align:right;white-space:nowrap">{{.Size}}{{if .Partial}} <span class="caption">lower bound (partial)</span>{{end}}</td></tr>{{end}}</tbody></table>{{end}}
+{{define "rows"}}<table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:.86rem"><colgroup><col><col style="width:9rem"></colgroup><thead><tr><th style="text-align:left">Path / next step</th><th style="text-align:right;white-space:nowrap">Logical size</th></tr></thead>
+<tbody>{{range .}}<tr><td style="overflow-wrap:anywhere"><span class="mono">{{.Path}}</span>
+{{if .URL}} · <a data-disk-scan data-disk-root="{{.Root}}" href="{{.URL}}">Drill down</a>{{else if .Advice}}<p class="caption" style="margin:.2rem 0 0">{{.Advice}}</p>{{end}}</td>
+<td class="mono" style="text-align:right;vertical-align:top"><span style="white-space:nowrap">{{.Size}}</span>{{if .Partial}}<br><span class="caption">lower bound (partial)</span>{{end}}</td></tr>{{end}}</tbody></table>{{end}}
 `))
 
 const diskUsageScript = `<script>

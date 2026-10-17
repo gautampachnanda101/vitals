@@ -18,6 +18,7 @@ import (
 
 	"vitals/internal/diskusage"
 	"vitals/internal/doctor"
+	"vitals/internal/ui"
 )
 
 func withFakeDiskUsageCache(t *testing.T, fn func(context.Context, string, diskusage.Options) (diskusage.Result, error)) {
@@ -832,5 +833,52 @@ func TestPathAdviceSpecializedTargets(t *testing.T) {
 		if !strings.Contains(adv, tc.contains) {
 			t.Errorf("pathAdvice(%q) = %q, want containing %q", tc.path, adv, tc.contains)
 		}
+	}
+}
+
+func TestDiskRowsStateGenericAdviceOnceNotPerRow(t *testing.T) {
+	home := t.TempDir()
+	rows := diskRows([]diskusage.Row{
+		{Path: filepath.Join(home, "notes.txt"), Bytes: 20},
+		{Path: filepath.Join(home, "Library", "Caches", "x.bin"), Bytes: 10},
+	}, home, diskusage.DefaultOptions(), false)
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %d", len(rows))
+	}
+	if rows[0].Advice != "" {
+		t.Errorf("generic advice should be dropped from the row, got %q", rows[0].Advice)
+	}
+	if !strings.Contains(rows[1].Advice, "Application cache") {
+		t.Errorf("path-specific advice must stay on its row, got %q", rows[1].Advice)
+	}
+}
+
+func TestBuildDonutChartOtherSliceZeroRowsAndLongLabels(t *testing.T) {
+	long := strings.Repeat("x", 30)
+	chart := buildDonutChart("Files", []diskusage.Row{
+		{Path: "a", Bytes: 400},
+		{Path: long, Bytes: 100},
+		{Path: "zero", Bytes: 0},
+	}, 1000)
+	var labels []string
+	for _, s := range chart.Slices {
+		labels = append(labels, s.Label)
+	}
+	if len(chart.Slices) != 3 {
+		t.Fatalf("want a, the long label and Other (zero-byte row skipped), got %v", labels)
+	}
+	if got := chart.Slices[1].Label; !strings.HasSuffix(got, "…") || len([]rune(got)) != 20 {
+		t.Errorf("long label should be truncated to 19 runes plus an ellipsis, got %q", got)
+	}
+	other := chart.Slices[2]
+	if other.Label != "Other" || other.Size != ui.HumanBytes(500) || other.PercentStr != "50.0%" || other.Color != "var(--c-other)" {
+		t.Errorf("unexpected Other slice: %+v", other)
+	}
+	if chart.TotalSize != ui.HumanBytes(1000) {
+		t.Errorf("TotalSize = %q, want the denominator", chart.TotalSize)
+	}
+
+	if c := buildDonutChart("Zero", []diskusage.Row{{Path: "z", Bytes: 0}}, 100); c.HasData {
+		t.Error("rows that sum to zero should report no data")
 	}
 }

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,5 +87,48 @@ func TestPowerImpactCacheDefaultIsWired(t *testing.T) {
 	procs, ok := c.Get()
 	if ok && len(procs) == 0 {
 		t.Error("cache reported ok but returned no processes")
+	}
+}
+
+// Get is single-flight: a caller arriving while a probe is in flight
+// waits for that probe instead of starting a second `top`, and a call
+// inside the TTL is served from cache without probing at all.
+func TestPowerImpactCacheSingleFlightAndTTL(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	c := &powerImpactCache{ttl: time.Hour, sample: func() ([]power.Proc, bool) {
+		calls.Add(1)
+		<-release
+		return []power.Proc{{PID: 1, Name: "a"}}, true
+	}}
+
+	first := make(chan bool)
+	go func() { _, ok := c.Get(); first <- ok }()
+	// Wait until the first Get has claimed the in-flight slot.
+	for {
+		c.mu.Lock()
+		inFlight := c.loading != nil
+		c.mu.Unlock()
+		if inFlight {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	second := make(chan []power.Proc)
+	go func() { p, _ := c.Get(); second <- p }()
+	time.Sleep(10 * time.Millisecond) // let the second caller block on the probe
+	close(release)
+
+	if !<-first {
+		t.Fatal("first caller should get ok=true")
+	}
+	if p := <-second; len(p) != 1 || p[0].Name != "a" {
+		t.Fatalf("waiting caller should share the probe's result, got %+v", p)
+	}
+	if p, ok := c.Get(); !ok || len(p) != 1 {
+		t.Fatalf("call inside the TTL should hit the cache, got %+v ok=%v", p, ok)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("sample ran %d times, want exactly 1", n)
 	}
 }

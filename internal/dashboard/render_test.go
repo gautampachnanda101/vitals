@@ -38,47 +38,120 @@ func channel(hexByte string) float64 {
 	return math.Pow((c+0.055)/1.055, 2.4)
 }
 
-// Text colors and every background they can actually appear behind in
-// pageShell/layout — see the comment above the :root block in render.go.
-// A new background a text color gets placed on must be added here, not
-// just visually checked, or a future edit can silently drop back below
-// AAA the same way the original --muted value did.
-const (
-	mutedLight, mutedDark = "#4b4e53", "#b4b9bd"
-	accentLight           = "#2b5d53" // also --ok
-	accentDark            = "#6fbfa8" // also --ok
-)
+// parseTokens reads the "--name:#rrggbb" pairs out of one of render.go's
+// token blocks, so these tests check the colors the page actually ships
+// rather than a hand-copied list that can drift from it. rgba() tokens
+// (decorative lines, shadows) are skipped — none of them carry meaning.
+func parseTokens(t *testing.T, block string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, decl := range strings.Split(block, ";") {
+		name, val, ok := strings.Cut(strings.TrimSpace(decl), ":")
+		if ok && strings.HasPrefix(name, "--") && strings.HasPrefix(val, "#") && len(val) == 7 {
+			out[name] = val
+		}
+	}
+	if len(out) < 30 {
+		t.Fatalf("parsed only %d color tokens — has the token block's format changed?", len(out))
+	}
+	return out
+}
+
+// Text colors and every background they can actually be painted on in
+// the dashboard. A new background a text color gets placed on must be
+// added here, not just visually checked, or a future edit can silently
+// drop back below AAA the same way an earlier --muted value did.
+var aaaTextPairs = []struct{ fg, bg string }{
+	{"--ink", "--bg"}, {"--ink", "--surface"}, {"--ink", "--surface-2"},
+	{"--ink", "--ok-bg"}, {"--ink", "--warn-bg"}, {"--ink", "--crit-bg"},
+	// --muted renders almost everywhere: captions, finding details, table
+	// headers, the verdict summary line, inside pills.
+	{"--muted", "--bg"}, {"--muted", "--surface"}, {"--muted", "--surface-2"},
+	{"--muted", "--ok-bg"}, {"--muted", "--warn-bg"}, {"--muted", "--crit-bg"}, {"--muted", "--k8s-bg"},
+	// --accent: links, content headings, the selected runtime pill/chip.
+	{"--accent", "--bg"}, {"--accent", "--surface"}, {"--accent", "--surface-2"}, {"--accent", "--ok-bg"},
+	// Status text (pills, warn/crit headline values) on their tints and cards.
+	{"--ok-ink", "--ok-bg"}, {"--ok-ink", "--surface"},
+	{"--warn-ink", "--warn-bg"}, {"--warn-ink", "--surface"}, {"--warn-ink", "--bg"},
+	{"--crit-ink", "--crit-bg"}, {"--crit-ink", "--surface"}, {"--crit-ink", "--bg"},
+	{"--k8s-ink", "--k8s-bg"}, {"--k8s-ink", "--surface"}, {"--k8s-ink", "--bg"},
+	// The ink-navy sidebar, resting and hovered/current.
+	{"--side-ink", "--side"}, {"--side-ink", "--side-hover"},
+	{"--side-muted", "--side"}, {"--side-muted", "--side-hover"},
+	{"--side-gold", "--side"}, {"--side-gold", "--side-hover"},
+	// Primary (gold) buttons and text selection, resting and hovered.
+	{"--btn-ink", "--btn"}, {"--btn-ink", "--btn-hover"},
+}
+
+// Non-text marks (WCAG 1.4.11, 3:1): status bars/dots/borders, control
+// outlines, the gold accent rule and every chart slice, against each
+// surface they're drawn on.
+var nonTextMarks = []string{"--ok", "--warn", "--crit", "--k8s", "--gold", "--ctl", "--accent",
+	"--c1", "--c2", "--c3", "--c4", "--c5", "--c6", "--c-other"}
 
 func TestPaletteMeetsWCAGAAAForNormalText(t *testing.T) {
 	const aaa = 7.0 // WCAG 2.2 Level AAA, normal-size text (1.4.6)
-	cases := []struct {
-		name, fg, bg string
-	}{
-		{"muted/bg light", mutedLight, "#fbfaf7"},
-		{"muted/surface light", mutedLight, "#ffffff"},
-		{"muted/surface-2 light", mutedLight, "#f3f1ea"},
-		{"muted/ok-bg light", mutedLight, "#e2eeea"},
-		{"muted/warn-bg light", mutedLight, "#fbf1dc"},
-		{"muted/crit-bg light", mutedLight, "#fbe9e3"},
-		{"muted/bg dark", mutedDark, "#14171a"},
-		{"muted/surface dark", mutedDark, "#1b1f23"},
-		{"muted/surface-2 dark", mutedDark, "#1f242a"},
-		{"muted/ok-bg dark", mutedDark, "#1b2b26"},
-		{"muted/warn-bg dark", mutedDark, "#362b18"},
-		{"muted/crit-bg dark", mutedDark, "#3a241f"},
-		// accent/bg is also .btn:hover's background (render.go) — chosen
-		// specifically because it was already verified here, unlike
-		// --ok-bg, which a first attempt at .btn:hover used and which
-		// actually fails AAA for accent-colored text (6.32:1/6.83:1,
-		// caught by this test before it shipped).
-		{"accent/bg light", accentLight, "#fbfaf7"},
-		{"accent/surface light", accentLight, "#ffffff"},
-		{"accent/bg dark", accentDark, "#14171a"},
-		{"accent/surface dark", accentDark, "#1b1f23"},
+	for theme, block := range map[string]string{"light": lightTokens, "dark": darkTokens} {
+		tok := parseTokens(t, block)
+		for _, p := range aaaTextPairs {
+			fg, bg := tok[p.fg], tok[p.bg]
+			if fg == "" || bg == "" {
+				t.Errorf("%s: token %s or %s missing", theme, p.fg, p.bg)
+				continue
+			}
+			if got := wcagContrast(fg, bg); got < aaa {
+				t.Errorf("%s %s on %s: contrast %.2f:1, want >= %.0f:1 (%s on %s)", theme, p.fg, p.bg, got, aaa, fg, bg)
+			}
+		}
 	}
-	for _, c := range cases {
-		if got := wcagContrast(c.fg, c.bg); got < aaa {
-			t.Errorf("%s: contrast %.2f:1, want >= %.0f:1 (fg %s on bg %s)", c.name, got, aaa, c.fg, c.bg)
+}
+
+func TestPaletteMarksMeetNonTextContrast(t *testing.T) {
+	const min = 3.0 // WCAG 1.4.11 non-text contrast
+	for theme, block := range map[string]string{"light": lightTokens, "dark": darkTokens} {
+		tok := parseTokens(t, block)
+		for _, m := range nonTextMarks {
+			for _, bg := range []string{"--bg", "--surface", "--surface-2"} {
+				if got := wcagContrast(tok[m], tok[bg]); got < min {
+					t.Errorf("%s %s on %s: contrast %.2f:1, want >= %.0f:1", theme, m, bg, got, min)
+				}
+			}
+		}
+	}
+}
+
+// The light/dark token blocks must define the same names, or a token set
+// only in light silently keeps its light value in dark mode.
+func TestThemeTokenSetsMatch(t *testing.T) {
+	light, dark := parseTokens(t, lightTokens), parseTokens(t, darkTokens)
+	for k := range light {
+		if _, ok := dark[k]; !ok {
+			t.Errorf("token %s is defined for light but not dark", k)
+		}
+	}
+	for k := range dark {
+		if _, ok := light[k]; !ok {
+			t.Errorf("token %s is defined for dark but not light", k)
+		}
+	}
+}
+
+func TestPageShellThemingAndAccessibilityHooks(t *testing.T) {
+	out := layoutLive("CPU", "cpu", "1.2.3", nil, "<p>x</p>", true)
+	for _, want := range []string{
+		`@media (prefers-color-scheme: dark){:root:not([data-theme="light"])`, // follows the OS by default
+		`:root[data-theme="dark"]{`,            // explicit pin from the toggle
+		`id="vitals-theme-toggle"`,             // the toggle itself
+		`localStorage.getItem('vitals.theme')`, // pinned theme applied before paint
+		`<a class="skip" href="#vitals-main">`, // skip link (2.4.1)
+		`data-live="1" tabindex="-1"`,          // skip target can take focus
+		`min-height:44px`,                      // AAA target size (2.5.5)
+		`prefers-reduced-motion:reduce`,
+		`[hidden]{display:none!important}`, // keeps hidden destructive buttons hidden
+		`aria-pressed="true"`,              // live toggle exposes its state
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("page shell missing %q", want)
 		}
 	}
 }
@@ -174,8 +247,10 @@ func TestLayoutRendersGroupHeadingsAndIcons(t *testing.T) {
 
 func TestLayoutOmitsIconMarkupWhenModuleHasNone(t *testing.T) {
 	out := layout("t", "", "1.0", []Module{{Slug: "x", NavLabel: "X", Group: "Tools"}}, "")
-	if strings.Contains(out, "<svg") {
-		t.Errorf("no <svg> should render for a module with no Icon, got:\n%s", out)
+	// Scope to the nav: the top bar's theme toggle carries its own icons.
+	nav := out[strings.Index(out, `<nav aria-label="Primary">`):strings.Index(out, "</nav>")]
+	if strings.Contains(nav, "<svg") {
+		t.Errorf("no <svg> should render for a module with no Icon, got:\n%s", nav)
 	}
 }
 
