@@ -101,6 +101,8 @@ jobs:
           install-go: false
       - name: Docs consistency (links, roadmap nav, breadcrumbs)
         run: python3 check_docs.py
+      - name: Third-party notices up to date (every compiled-in licence)
+        run: python3 scripts/third_party_notices.py --check
 
   e2e:
     name: e2e (${{ matrix.os }})

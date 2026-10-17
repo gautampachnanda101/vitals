@@ -156,6 +156,28 @@ func TestRunVersionPrintsVersionAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestRunLicensesPrintsOwnAndThirdPartyNotices(t *testing.T) {
+	for _, arg := range []string{"licenses", "licences", "--licenses"} {
+		var code int
+		out := captureStdout(t, func() { code = run([]string{arg}, "9.9.9") })
+		if code != 0 {
+			t.Fatalf("run([%s]) = %d, want 0", arg, code)
+		}
+		for _, want := range []string{
+			"MIT License",                       // vitals' own LICENSE
+			"Go standard library",               // stdlib BSD-3-Clause
+			"github.com/shirou/gopsutil/v4",     // a compiled-in module
+			`Reserved Font Name "Plex"`,         // IBM Plex Mono's real notice
+			"Lucide Icons and Contributors",     // inlined icon paths
+			"SIL OPEN FONT LICENSE Version 1.1", // full licence text, not a pointer
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: output missing %q", arg, want)
+			}
+		}
+	}
+}
+
 func TestRunHelpVariants(t *testing.T) {
 	t.Run("no args lists commands", func(t *testing.T) {
 		var code int

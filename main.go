@@ -92,6 +92,18 @@ var version = "dev"
 //go:embed docs/user-guide.md
 var userGuide string
 
+// licenseText and thirdPartyNotices travel inside the binary because
+// release archives and package managers may ship it alone: the MIT,
+// BSD-3-Clause, Apache-2.0, OFL and ISC licences of what's compiled in all
+// require their notices to accompany binary copies. `vitals licenses`
+// prints both. THIRD_PARTY_NOTICES.txt is generated — `make notices`.
+//
+//go:embed LICENSE
+var licenseText string
+
+//go:embed THIRD_PARTY_NOTICES.txt
+var thirdPartyNotices string
+
 // newFlagSet builds a subcommand flag set whose -h / -help output is the
 // contextual help from the help package, so `vitals X -h` and
 // `vitals help X` always agree.
@@ -421,6 +433,10 @@ func run(argv []string, version string) int {
 
 	case "version", "--version", "-v":
 		fmt.Printf("vitals %s\n", version)
+		return 0
+
+	case "licenses", "licences", "--licenses":
+		fmt.Print("vitals — " + licenseText + "\n" + thirdPartyNotices)
 		return 0
 
 	case "info":

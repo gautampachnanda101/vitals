@@ -8,7 +8,7 @@ BOLD  := \033[1m
 CYAN  := \033[36m
 RESET := \033[0m
 
-.PHONY: help build build-all run install clean test race vet staticcheck lint coverage check-docs ci hooks-install
+.PHONY: help build build-all run install clean test race vet staticcheck lint coverage check-docs notices check-notices ci hooks-install
 
 ##@ Help
 
@@ -68,7 +68,13 @@ check-docs: ## Verify docs/ links, roadmap nav, and breadcrumb navigation
 
 ##@ Everything
 
-ci: lint race build-all check-docs ## Run the full local CI-equivalent gate
+notices: ## Regenerate THIRD_PARTY_NOTICES.txt from the compiled-in modules and embedded assets
+	python3 scripts/third_party_notices.py
+
+check-notices: ## Fail if THIRD_PARTY_NOTICES.txt is stale (CI runs this)
+	python3 scripts/third_party_notices.py --check
+
+ci: lint race build-all check-docs check-notices ## Run the full local CI-equivalent gate
 
 hooks-install: ## Install the pre-commit hook (gofmt/vet/staticcheck/race/coverage/docs)
 	git config core.hooksPath .githooks

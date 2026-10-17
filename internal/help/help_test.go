@@ -28,7 +28,7 @@ func TestNamesAreSortedAndComplete(t *testing.T) {
 	if !slices.IsSorted(names) {
 		t.Errorf("Names() not sorted: %v", names)
 	}
-	for _, want := range []string{"doctor", "top", "clean", "memhogs", "memcheck", "llm", "guide", "completion"} {
+	for _, want := range []string{"doctor", "top", "clean", "memhogs", "memcheck", "llm", "guide", "completion", "licenses"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("command %q missing from Names()", want)
 		}

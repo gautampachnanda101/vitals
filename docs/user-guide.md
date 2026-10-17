@@ -794,3 +794,17 @@ vitals help              # command list
 vitals help doctor       # full help for one command
 vitals doctor -h         # the same, from the command itself
 ```
+
+## Licences
+
+```bash
+vitals licenses          # vitals' MIT licence + every third-party notice
+```
+
+vitals is MIT-licensed. The binary also contains the Go standard library,
+a handful of Go modules (MIT, BSD-3-Clause, Apache-2.0) and the
+dashboard's fonts and icons (SIL Open Font License, ISC), and their
+licences require their notices to travel with every copy — so all of
+them are embedded and printed in full by `vitals licenses`. Each release
+archive also carries `LICENSE` and `THIRD_PARTY_NOTICES.txt` as plain
+files. Nothing to configure.

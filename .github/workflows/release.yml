@@ -73,8 +73,12 @@ jobs:
               cp "dist/$bin" dist/Vitals.app/Contents/Resources/vitals
               extra="Vitals.app"
             fi
+            # Licences travel with every archive as plain files too (the
+            # binary also embeds them — `vitals licenses`).
+            cp LICENSE THIRD_PARTY_NOTICES.txt dist/
+            extra="$extra LICENSE THIRD_PARTY_NOTICES.txt"
             if [ "$ext" = zip ]; then (cd dist && zip -qr "$name" "$bin" $extra); else tar -C dist -czf "dist/$name" "$bin" $extra; fi
-            rm -f "dist/$bin"
+            rm -f "dist/$bin" dist/LICENSE dist/THIRD_PARTY_NOTICES.txt
             rm -rf dist/Vitals.app
           }
           build darwin  amd64 Darwin  x86_64 tar.gz

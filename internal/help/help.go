@@ -471,6 +471,18 @@ var commands = []Command{
 		Examples: []string{"vitals info", "vitals info --json | jq .config"},
 	},
 	{
+		Name:     "licenses",
+		Synopsis: "print vitals' licence and every third-party notice",
+		Long: "Prints vitals' own MIT licence followed by the full licence text of\n" +
+			"everything compiled into this binary: the Go standard library, each\n" +
+			"Go module, and the dashboard's embedded fonts (Space Grotesk, IBM Plex\n" +
+			"Mono — SIL Open Font License) and icons (Lucide — ISC). Nothing to\n" +
+			"configure; it's here because those licences require their notices to\n" +
+			"travel with every copy of the binary. Also available as\n" +
+			"THIRD_PARTY_NOTICES.txt in each release archive.",
+		Examples: []string{"vitals licenses", "vitals licenses | less"},
+	},
+	{
 		Name:     "version",
 		Synopsis: "print version information",
 		Long:     "Prints the vitals version the binary was built from.",
